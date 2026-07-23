@@ -263,6 +263,7 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
   (`financial_profiles`, `financial_extractions` keyed on `(source_doc_id, topic_id)`), Alembic
   migration, config endpoints. Schema only.
   _Exit: create a financial profile for a topic via API; migration passes CI._
+  — docs: [thread-06](./threads/thread-06-numbatch-financial-schema-and-api.md)
 - **Thread 7 — Numbatch extension: financial extraction worker.** Arq stage reads womblex
   table cells for a topic's **matched, deduped** chunks; extracts currency-normalised figures or
   description fallback; writes `financial_extractions` with provenance — one figure per
@@ -349,8 +350,8 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | 4 — Extraction reader adapter | ✅ **done** | Exit test **PASSED**: `WomblexExtractionReader` (`redline-adapters`) reads a real sidecar run into typed `ExtractionElement`/`ExtractionChunk`/`ExtractionTableCell` provenance; 8 contract tests against a captured fixture (`__fixtures__/extraction-tender.pdf.json`) cover the happy path + error taxonomy (NOT_FOUND / INFRA_FAILURE / EXTRACTION_FAILED). Decision #2 **LOCKED: JSON** ([ADR-0003](./adr/0003-parquet-to-json-boundary.adr.md)) — sidecar reads its own Parquet and serves JSON at `GET /extractions/{eval}/{doc}` (stored beside the shards for restart durability); TS never links a Parquet reader. Sidecar grew a JSON read model (`records.py`) + read endpoint; pytest **17/17** (was 12), workspace **7/7**, `./validate.sh` **10/10**. Docs: [thread-04](./threads/thread-04-extraction-reader-adapter.md). |
 | 2a — Generalise requirements (user-defined criteria) | ✅ **done** | Exit test **PASSED**: dropped fixed 1–6; new `Requirement` (`id`/`name`/`definition`) + `RequirementSet` (ordered, unique, ≤10 = `MAX_REQUIREMENTS_PER_SET`); `requirementNumber` → `requirementId` + added `confidence` in `ProcurementResponse`; `requirementId` in `RequirementClassification` (dropped `categorisation`) and `FinancialExtraction`. `procurement-requirement.ts` deleted; no `RequirementNumber` remains. `redline-domain` **42/42** (6 files), `./validate.sh` **10/10** incl. purity check #4. Enacts [ADR-0004](./adr/0004-user-defined-requirements-not-fixed-1-6.adr.md). Docs: [thread-02a](./threads/thread-02a-generalise-requirements.md). |
 | 5 — Numbatch integration (fork; run all-but-frontend) | ✅ **done** | Exit test **PASSED**: `NumbatchClassifier` (`redline-adapters`) triggers a batch run → polls to success → reads the per-document roll-up → maps Numbatch `topic_id` → `requirementId` into `RequirementClassification[]`; 9 contract tests against a **captured Numbatch payload** (`__fixtures__/batch-rollup.json`) pin the mapping + full error taxonomy (adapters **17/17**). Service scaffold: `services/numbatch/` (README + idempotent `bootstrap-profile.py`) + `numbatch` compose profile (postgres/redis/minio/backend/worker/inference, **no frontend**). Decision #3 **LOCKED** ([ADR-0005](./adr/0005-numbatch-fork-all-but-frontend.adr.md)). `./validate.sh` **10/10**. Docs: [thread-05](./threads/thread-05-numbatch-integration.md). |
-| 6 — Numbatch financial_profile schema & API | 🔵 **next** | Tables keyed on `(source_doc_id, topic_id)`. Extends the forked Numbatch backend. |
-| 7 — Numbatch financial extraction worker | ⚪ not started | One figure per (document, requirement); reuses roll-up dedupe. |
+| 6 — Numbatch financial_profile schema & API | ✅ **done** | Exit test **PASSED**: `POST /financial-profiles` creates a profile for a topic → `201` with the persisted body (idempotent by `topic_id` → re-`POST` `200`); the Alembic revision applies through a real `Operations` context — both tables created, `(source_doc_id, topic_id)` uniqueness enforced, `downgrade` reverses. Additive overlay `services/numbatch/financial_extension/` (SQLAlchemy 2.0 models `FinancialProfile`/`FinancialExtraction`, Pydantic v2 schemas, `FinancialProfileRepository`, config router, migration) written to graft onto the fork unchanged (Thread 16); provable standalone against SQLite — no GPU/fork on disk (ADR-0005). **11/11** pytest; `./validate.sh` **11/11** (new check #11). Docs: [thread-06](./threads/thread-06-numbatch-financial-schema-and-api.md). |
+| 7 — Numbatch financial extraction worker | 🔵 **next** | One figure per (document, requirement); reuses roll-up dedupe. Writes to `financial_extractions` (already created by Thread 6). |
 | 8 — IFinancialExtractor adapter | ⚪ not started | |
 | 9 — redline_ persistence layer | ⚪ not started | |
 | 10 — Orchestration use-cases | ⚪ not started | |
@@ -622,3 +623,56 @@ compose-up integration run lands when the fork is checked out (Thread 16).
 breaking changes (pre-1.0).
 
 **Docs:** [thread-05](./threads/thread-05-numbatch-integration.md).
+
+### Thread 6 log (2026-07-27) — ✅ COMPLETE
+
+**Extended** the forked Numbatch backend (additively — ADR-0005) with the financial
+extension's **schema + config API**. Built as a self-contained overlay at
+`services/numbatch/financial_extension/`, written to graft onto the fork's `app/` +
+`alembic/` layout unchanged, but buildable and testable **without the GPU-bearing fork
+vendored on disk** (same posture as Thread 5's captured-payload contract test).
+
+**Schema (`src/numbatch_financial/models.py`) — two additive tables:**
+- `financial_profiles` — per Numbatch topic (= a redline requirement, ADR-0004): config for
+  *what* monetary facts to pull (`target_currency`, `cost_basis` one-off/recurring,
+  `granularity` line-item/bundle). Unique per `topic_id` (one live profile per requirement).
+- `financial_extractions` — the Thread 7 worker's output (`amount`/`currency`/`description`
+  fallback + `source_elem_order` provenance). **`uq_financial_extractions_doc_topic
+  (source_doc_id, topic_id)`** enforces the no-duplication invariant (build plan §6). Declared
+  now so the migration creates both tables in one additive step; Thread 7 only adds the writer.
+
+**Config API (`api.py`, `schemas.py`, `repository.py`):** `POST /financial-profiles`
+(idempotent by `topic_id`: existing → `200`, new → `201`), `GET /financial-profiles`,
+`GET /financial-profiles/{id}` (`404` `NOT_FOUND`). Pydantic v2 DTOs (ISO-4217 `^[A-Z]{3}$`).
+Result-shaped errors (`{error:{code,message}}`) mirror the womblex sidecar, mapping cleanly
+into the Thread 8 adapter's `DomainError`.
+
+**Migration (`migrations/redline_financial_0001_financial_tables.py`):** the additive Alembic
+revision creating both tables + indexes + unique constraints, with a `downgrade`.
+`down_revision = None` for standalone testing; repointed at Numbatch's head when vendored
+(Thread 16).
+
+**Design decisions.** (1) *Overlay, not a fork edit* — the fork isn't on disk (ADR-0005; no
+GPU); rather than block on Thread 16, the extension is a package written to drop in unchanged
+(local `Base` swaps for Numbatch's; router mounts via `include_router`). (2) *Both tables in
+one migration* — atomic additive change; Thread 7 adds only the worker that inserts rows.
+(3) *Idempotent by `topic_id`* — same "safe to re-run" contract as the profile bootstrap
+(ADR-0005). (4) *Uniqueness in the schema* — `uq_financial_extractions_doc_topic` enforces
+no-duplication, and the migration test proves the constraint bites.
+
+**Exit test — PASSED.** `services/numbatch/financial_extension` pytest **11/11**:
+`test_config_api.py` (8) creates a profile for `topic-data-residency` → `201` with the
+persisted body (**create a financial profile via API**) + idempotency/list/read/`404`/`422`;
+`test_migration.py` (3) applies the Alembic revision through a real `Operations` context —
+both tables created, `(source_doc_id, topic_id)` uniqueness enforced, downgrade reverses
+(**migration passes CI**). `./validate.sh` → **11/11** (new check #11).
+
+**Known limitation.** No live Postgres `alembic upgrade head` against the vendored fork in this
+environment (no GPU; fork not on disk — ADR-0005); the exit test runs the overlay against
+SQLite. Grafting into the fork (bind to Numbatch's `Base`, repoint `down_revision`,
+`include_router`) is a Thread 16 mechanical step, documented in the overlay README.
+
+**Version bump intent:** MINOR — additive backend schema + config API; no breaking changes
+(pre-1.0).
+
+**Docs:** [thread-06](./threads/thread-06-numbatch-financial-schema-and-api.md).
