@@ -7,14 +7,17 @@
 
 Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
+[![CI](https://github.com/DeepCivic/Redline/actions/workflows/ci.yml/badge.svg)](https://github.com/DeepCivic/Redline/actions/workflows/ci.yml)
+
 ## Status
 
 Under construction. See the living build plan and progress log at
 [`docs/procurement-evaluation-plan.md`](./docs/procurement-evaluation-plan.md).
 
-Current thread: **Thread 4 — Extraction reader adapter (Parquet→JSON boundary).**
-(Threads 1–3 are ✅ complete and verified — scaffold, `redline-domain`, and the
-`womblex-ingest` sidecar with its exit test passing against real MinIO.)
+Threads 1–5 (+ 2a) are ✅ complete: scaffold, `redline-domain` (user-defined
+requirements), the `womblex-ingest` sidecar, the extraction reader adapter, and the
+Numbatch classifier + service scaffold. Current thread: **Thread 6 — Numbatch
+`financial_profile` schema & config API.**
 
 ## Architecture
 
@@ -59,7 +62,11 @@ pnpm build      # turbo run build across @redline/* packages
 pnpm test       # vitest — includes the Wayfinder consumption spike
 pnpm typecheck
 pnpm lint
+./validate.sh   # the full gate — also what CI runs
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same `./validate.sh` gate on every push to
+`main` and every PR. See [`docs/guides/local-dev-and-validation.md`](./docs/guides/local-dev-and-validation.md).
 
 ### Running without a local Node (Podman)
 

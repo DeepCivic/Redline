@@ -10,3 +10,8 @@ coverage/
 # Podman validation scratch (created by scripts/podman-run.sh if SCRATCH_BASE is set here)
 .redline-scratch/
 __pycache__/
+
+# Wayfinder is consumed read-only and never committed (validate.sh check #6).
+# CI materialises vendor/wayfinder at build time via scripts/vendor-wayfinder.sh;
+# local Podman dev vendors into its own scratch copy. Either way, keep it untracked.
+vendor/

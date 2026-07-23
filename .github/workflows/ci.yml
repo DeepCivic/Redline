@@ -1,0 +1,74 @@
+# CI — the same gate as ./validate.sh, run on a real Node runner.
+#
+# redline consumes Wayfinder's `@rbrasier/domain` as a workspace package
+# (ADR-0001, Strategy A). We never commit Wayfinder source (validate.sh check
+# #6), so CI checks Wayfinder out separately and materialises the packages we
+# consume into vendor/wayfinder via scripts/vendor-wayfinder.sh — the non-Podman
+# counterpart of what scripts/podman-run.sh does locally.
+#
+# Wayfinder repo/ref are configurable via repository variables so this works
+# whether the mirror is DeepCivic/wayfinder (default) or another fork:
+#   vars.WAYFINDER_REPO (default DeepCivic/wayfinder)
+#   vars.WAYFINDER_REF  (default main)
+# If the Wayfinder repo is private, add a secret WAYFINDER_TOKEN (a PAT with read
+# access); otherwise the default GITHUB_TOKEN is used (works for public repos).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: validate workspace
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout redline
+        uses: actions/checkout@v4
+
+      - name: Checkout Wayfinder (read-only, for @rbrasier/* reuse)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.WAYFINDER_REPO || 'DeepCivic/wayfinder' }}
+          ref: ${{ vars.WAYFINDER_REF || 'main' }}
+          token: ${{ secrets.WAYFINDER_TOKEN || github.token }}
+          path: .wayfinder-src
+
+      - name: Vendor Wayfinder domain into vendor/wayfinder
+        run: WAYFINDER_DIR="$GITHUB_WORKSPACE/.wayfinder-src" scripts/vendor-wayfinder.sh
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # No pnpm cache yet: caching needs a committed lockfile to key on, and
+          # we don't commit one pre-1.0. Add `cache: pnpm` once a lockfile lands.
+
+      - name: Install workspace dependencies
+        # No committed lockfile yet (pre-1.0; the vendored @rbrasier/domain link
+        # makes a stable checked-in lockfile fragile). Switch to --frozen-lockfile
+        # once a lockfile is committed.
+        run: pnpm install
+
+      - name: Set up Python (womblex-ingest sidecar tests)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run validate.sh (typecheck, lint, test, build, static guards, pytest)
+        run: ./validate.sh

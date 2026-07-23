@@ -94,10 +94,20 @@ if [ -z "$APP_LEAKS" ]; then pass "redline-application purity"; else
 fi
 
 # ── 6. Wayfinder tree untouched ──────────────────────────────────────────────
-# We must never commit a modified copy of Wayfinder into this repo.
+# We must never *commit* a copy of Wayfinder into this repo. The tree may exist
+# on disk at build time (CI materialises it via scripts/vendor-wayfinder.sh; the
+# Podman harness uses its own scratch copy), but it must stay untracked — .gitignore
+# excludes vendor/. This checks what git tracks, not what's on disk.
 section "6. vendor/wayfinder not committed into this repo"
-if [ -d vendor/wayfinder ] && [ -n "$(find vendor/wayfinder -type f 2>/dev/null | head -1)" ]; then
-  fail "vendor/wayfinder contains files — it must be a submodule or absent, never committed source"
+if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  TRACKED_WAYFINDER=$(git ls-files -- 'vendor/wayfinder/**' 2>/dev/null)
+  if [ -z "$TRACKED_WAYFINDER" ]; then pass "no committed Wayfinder source"; else
+    fail "vendor/wayfinder is tracked in git — it must be materialised at build time, never committed:"
+    echo "$TRACKED_WAYFINDER" | head
+  fi
+elif [ -d vendor/wayfinder ] && [ -n "$(find vendor/wayfinder -type f 2>/dev/null | head -1)" ]; then
+  # No git available: fall back to the filesystem heuristic.
+  fail "vendor/wayfinder contains files and git is unavailable to verify it is untracked"
 else
   pass "no committed Wayfinder source"
 fi
