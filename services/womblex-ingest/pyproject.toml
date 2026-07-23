@@ -1,0 +1,33 @@
+[project]
+name = "womblex-ingest"
+version = "0.1.0"
+description = "womblex document-extraction sidecar for redline: ingest(documents) -> run_id, status(run_id); writes Parquet shards to MinIO under proc/{evaluationId}/."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.111,<0.116",
+    "uvicorn[standard]>=0.30,<0.35",
+    "boto3>=1.34,<2.0",
+    "pydantic>=2.7,<3.0",
+]
+
+[project.optional-dependencies]
+# Real womblex extraction (WOMBLEX_MODE=real). Isaacus is opt-in on top of this
+# (see the Dockerfile ISAACUS build arg); womblex has non-Isaacus modes too.
+womblex = [
+    "womblex",
+]
+dev = [
+    "pytest>=8.0,<9.0",
+    "httpx>=0.27,<0.29",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]

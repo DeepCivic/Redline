@@ -12,8 +12,9 @@ Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 Under construction. See the living build plan and progress log at
 [`docs/procurement-evaluation-plan.md`](./docs/procurement-evaluation-plan.md).
 
-Current thread: **Thread 2 — redline-domain core entities & ports.**
-(Thread 1 — scaffold & Wayfinder consumption spike — is ✅ complete and verified.)
+Current thread: **Thread 4 — Extraction reader adapter (Parquet→JSON boundary).**
+(Threads 1–3 are ✅ complete and verified — scaffold, `redline-domain`, and the
+`womblex-ingest` sidecar with its exit test passing against real MinIO.)
 
 ## Architecture
 

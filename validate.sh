@@ -131,11 +131,33 @@ while IFS= read -r f; do
   lc=$(wc -l < "$f")
   [ "$lc" -lt 700 ] && continue
   if [ "$lc" -ge 800 ]; then SIZE_FAILURES+="  $lc  $f\n"; else SIZE_WARNINGS+="  $lc  $f\n"; fi
-done < <(find packages/*/src apps/*/src -type f \( -name "*.ts" -o -name "*.tsx" \) \
+done < <(find packages/*/src apps/*/src services/*/src -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.py" \) \
   ! -name "*.test.ts" ! -name "*.test.tsx" 2>/dev/null)
 [ -n "$SIZE_WARNINGS" ] && { warn "files ≥ 700 lines — split when next touched:"; printf '%b' "$SIZE_WARNINGS"; }
 if [ -z "$SIZE_FAILURES" ]; then pass "no source file ≥ 800 lines"; else
   fail "source files ≥ 800 lines — decompose:"; printf '%b' "$SIZE_FAILURES"
+fi
+
+# ── 10. Python sidecar tests (services/womblex-ingest) ───────────────────────
+# Runs the sidecar's pytest suite when Python is available; SKIPs cleanly on
+# hosts without Python so the workspace checks still gate. Uses an isolated venv
+# so the host site-packages is untouched.
+section "10. services/womblex-ingest pytest"
+if [ ! -d services/womblex-ingest ]; then
+  skip "womblex-ingest — service not present"
+elif ! command -v python3 >/dev/null 2>&1; then
+  skip "womblex-ingest pytest — no python3 on host"
+else
+  PY_VENV="$(mktemp -d)/venv"
+  if python3 -m venv "$PY_VENV" >/dev/null 2>&1 \
+    && "$PY_VENV/bin/pip" install -q -e 'services/womblex-ingest[dev]' >/dev/null 2>&1 \
+    && ( cd services/womblex-ingest && "$PY_VENV/bin/python" -m pytest -q >/dev/null 2>&1 ); then
+    pass "womblex-ingest pytest"
+  else
+    fail "womblex-ingest pytest"
+  fi
+  rm -rf "$PY_VENV" services/womblex-ingest/src/*.egg-info services/womblex-ingest/.pytest_cache 2>/dev/null || true
+  find services/womblex-ingest -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

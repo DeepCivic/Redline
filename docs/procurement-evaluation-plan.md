@@ -189,6 +189,7 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
   (Isaacus behind opt-in build arg/flag); HTTP/MCP wrapper `ingest(documents) → run_id`,
   `status(run_id)`; writes Parquet to MinIO under `proc/{evaluationId}/`.
   _Exit: compose up, POST docs, shards land in MinIO._
+  — docs: [thread-03](./threads/thread-03-womblex-sidecar-service.md)
 - **Thread 4 — Extraction reader adapter (Parquet→JSON boundary).** Decide + implement boundary:
   sidecar emits **JSON** (recommended — keeps TS free of Parquet) or a Parquet-reading TS adapter.
   Implement `IProcurementExtractionReader` (elements/table-cells/chunks + provenance).
@@ -250,8 +251,7 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
 2. **Parquet boundary (Thread 4)** — _open_ — womblex sidecar emits **JSON** (recommended) vs a Parquet-reading TS adapter. Decide in Thread 4.
 3. **Numbatch coupling** — _open, fork implied_ — fork into `services/numbatch` (required for the financial extension, Threads 6–7)
    vs run upstream + thin extension service. Confirm before Thread 5.
-4. **Shared vs separate MinIO/Postgres** — _open_ — share Wayfinder's MinIO bucket & Postgres (different prefix/schema)
-   vs stand up its own? Decide before Thread 3 / Thread 9.
+4. **Shared vs separate MinIO/Postgres** — **LOCKED: own** — redline stands up its own MinIO (bucket `redline`, shards under `proc/{evaluationId}/`) and its own Postgres (`redline_` prefix); the seam stays plain S3/Postgres so a deployment can still collapse to a shared instance by config. Recorded in [ADR-0002](./adr/0002-own-minio-and-postgres.adr.md).
 5. **Auth/roles** — _open_ — does the review surface reuse Wayfinder auth/roles, or its own? Decide before Thread 11.
 
 > **ADR model adopted.** This repo now follows Wayfinder's ADR format under
@@ -277,8 +277,8 @@ _This section is the living "current state" tracker. Update it at the end of eve
 |---|---|---|
 | 1 — Repo scaffold & Wayfinder consumption spike | ✅ **done** | Exit test **passing**: `pnpm build` green (4/4), spike importing `typedDisplayCell` from `@rbrasier/domain` passes (3/3), `./validate.sh` 9/9. Verified in a Node 20 container via Podman. Docs: [thread-01](./threads/thread-01-scaffold-and-spike.md). Also adopted: `.claude/` skills + `CLAUDE.md`, Podman-aware `validate.sh`, `docs/guides/local-dev-and-validation.md`. |
 | 2 — redline-domain core entities & ports | ✅ **done** | Exit test **passing**: `redline-domain` builds; 36 new invariant tests (entities + port conformance) green, Thread 1 spike still 3/3 → 39/39; `./validate.sh` 9/9 incl. purity check #4. Entities: `Evaluation`, `Vendor`, `ResponseGroup`, `IntakeStage`, `ProcurementRequirement`, `ProcurementResponse` (smart constructors). Ports: `IProcurementExtractionReader`, `IProcurementClassifier`, `IFinancialExtractor`, `IEvaluationRepository`. Docs: [thread-02](./threads/thread-02-redline-domain-entities-and-ports.md). |
-| 3 — womblex sidecar service | 🟡 next | |
-| 4 — Extraction reader adapter | ⚪ not started | |
+| 3 — womblex sidecar service | ✅ **done** | Exit test **PASSED** against real MinIO via `podman compose` (`ingest` profile): `POST /ingest` → `202 succeeded`, three shards land under `proc/{eval}/` (`_manifest` + per-doc `*.elements.parquet`), `GET /status` reports succeeded, unknown run → 404. `services/womblex-ingest` = FastAPI sidecar (`/health`, `POST /ingest`, `GET /status/{run_id}`), boto3 S3 writer, deterministic stub extractor default (`WOMBLEX_MODE=stub`; real womblex + Isaacus opt-in build args, finalised Thread 4). 12 pytest + `./validate.sh` **10/10** (new check #10). Decision #4 **LOCKED** ([ADR-0002](./adr/0002-own-minio-and-postgres.adr.md): own MinIO/Postgres). Docs: [thread-03](./threads/thread-03-womblex-sidecar-service.md). |
+| 4 — Extraction reader adapter | 🟡 next | |
 | 5 — Numbatch as-is integration | ⚪ not started | |
 | 6 — Numbatch financial_profile schema & API | ⚪ not started | |
 | 7 — Numbatch financial extraction worker | ⚪ not started | |
@@ -365,3 +365,41 @@ pnpm 9.12.0:
 **Version bump intent:** MINOR — new public surface, no breaking changes (pre-1.0).
 
 **Docs:** [thread-02](./threads/thread-02-redline-domain-entities-and-ports.md).
+
+### Thread 3 log (2026-07-24) — ✅ COMPLETE
+
+**Built** `services/womblex-ingest` — a FastAPI womblex document-extraction sidecar
+(foreign-runtime, composed over HTTP + object storage; never imported into the TS
+packages), mirroring Wayfinder's `services/australian-writing-mcp` precedent.
+
+- **HTTP surface**: `GET /health`, `POST /ingest` (`{evaluationId, documentNames}` →
+  `202 {runId, status, documentCount, shardKeys}`), `GET /status/{run_id}`. Errors are
+  Result-shaped (`{error:{code,message}}`) — `INVALID_REQUEST`/`RUN_NOT_FOUND`/`EXTRACTION_FAILED`.
+- **Seams**: `ObjectStorage` protocol + boto3 `S3ObjectStorage` (auto-creates the bucket);
+  `Extractor` protocol with a deterministic `StubWomblexExtractor` (default) and a lazily
+  imported `RealWomblexExtractor`. Shards land under `proc/{evaluationId}/`.
+- **Modes**: `WOMBLEX_MODE=stub` (default; no womblex/Isaacus) vs `real` (opt-in image build
+  arg `INSTALL_WOMBLEX=1`; Isaacus a further `ISAACUS=1` + runtime key). Real path is
+  finalised in Thread 4 alongside the Parquet schema; it fails loudly until then.
+- **Infra**: `infra/docker-compose.yml` with `minio` + `womblex-ingest` under the `ingest`
+  compose profile; `scripts/thread-03-smoke.sh` runs the exit test end-to-end.
+
+**Decision #4 LOCKED** — [ADR-0002](./adr/0002-own-minio-and-postgres.adr.md): redline owns
+its own MinIO and Postgres; the seam stays plain S3/Postgres so a deployment can collapse to a
+shared instance by config.
+
+**Design decisions.** (1) *Synchronous runs + in-memory registry* — womblex on a small doc set
+is fast; MinIO is the durable record; a queue/worker split is deferred. (2) *Stub is the default*
+so the exit test and the air-gap mode run with zero external deps; the real Parquet schema is a
+Thread 4 concern. (3) *Result-shaped HTTP errors* map cleanly into the Thread 4 adapter's
+`DomainError`.
+
+**Exit test — PASSED.** `podman compose --profile ingest up` (Podman 5.8) against a real MinIO:
+`POST /ingest` → `202 succeeded`; `mc ls local/redline/proc/{eval}/` shows `_manifest.parquet`
++ `tender.pdf.elements.parquet` + `pricing.xlsx.elements.parquet` (**shards landed in MinIO**);
+`GET /status/{runId}` → `succeeded`; unknown run → `404`. Unit suite **12/12** (isolated venv);
+`./validate.sh` → **10/10** incl. new check #10 (womblex-ingest pytest).
+
+**Version bump intent:** MINOR — new service + ADR-0002; no breaking changes (pre-1.0).
+
+**Docs:** [thread-03](./threads/thread-03-womblex-sidecar-service.md).

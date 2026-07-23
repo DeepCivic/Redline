@@ -1,0 +1,61 @@
+# redline runtime stack — womblex + numbatch + postgres + minio, wired with
+# compose profiles so you bring up only what a given thread needs.
+#
+# Per ADR-0002, redline owns its own MinIO and Postgres; the seam stays plain
+# S3/Postgres so a deployment can repoint these at a shared instance by config.
+#
+# Profiles:
+#   ingest    — womblex-ingest + minio (Thread 3; the ingestion path)
+#   numbatch  — the Numbatch stack (added Threads 5–7)
+#
+# Usage (Thread 3 exit test):
+#   podman compose -f infra/docker-compose.yml --profile ingest up -d
+#   ../scripts/thread-03-smoke.sh
+#   podman compose -f infra/docker-compose.yml --profile ingest down -v
+
+name: redline
+
+services:
+  minio:
+    image: docker.io/minio/minio:latest
+    profiles: ["ingest"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  womblex-ingest:
+    build:
+      context: ../services/womblex-ingest
+      dockerfile: Dockerfile
+      args:
+        # Opt in to the real womblex pipeline / Isaacus enrichment at build time.
+        INSTALL_WOMBLEX: ${INSTALL_WOMBLEX:-0}
+        ISAACUS: ${ISAACUS:-0}
+    profiles: ["ingest"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      REDLINE_BUCKET: ${REDLINE_BUCKET:-redline}
+      WOMBLEX_MODE: ${WOMBLEX_MODE:-stub}
+      # Only consulted when WOMBLEX_MODE=real and the image was built with ISAACUS=1.
+      ISAACUS_API_KEY: ${ISAACUS_API_KEY:-}
+    ports:
+      - "8000:8000"
+
+volumes:
+  minio-data:
