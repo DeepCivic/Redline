@@ -108,8 +108,7 @@ class StubClassifier implements IProcurementClassifier {
     return ok([
       {
         documentId: "hashA",
-        requirementNumber: 1,
-        categorisation: { solutionScope: "whole_solution" },
+        requirementId: "req-1",
         confidence: 0.92,
         sourceChunkId: "hashA:0",
       },
@@ -119,7 +118,15 @@ class StubClassifier implements IProcurementClassifier {
 
 class StubFinancialExtractor implements IFinancialExtractor {
   async extractFinancials(): Promise<Result<readonly FinancialExtraction[]>> {
-    return ok([{ documentId: "hashA", elementOrder: 5, estimateAud: 80000, description: "" }]);
+    return ok([
+      {
+        documentId: "hashA",
+        requirementId: "req-1",
+        elementOrder: 5,
+        estimateAud: 80000,
+        description: "",
+      },
+    ]);
   }
 }
 
@@ -141,7 +148,8 @@ describe("port conformance (in-memory fakes)", () => {
       responseGroupId: "g1",
       vendorName: "Acme",
       productName: "Core Platform",
-      requirementNumber: 1,
+      requirementId: "req-1",
+      confidence: 0.92,
       productSummary: "A platform.",
       costing: { estimateAud: 80000, description: "" },
       source: { documentId: "hashA", elementOrder: 5 },
@@ -191,7 +199,7 @@ describe("port conformance (in-memory fakes)", () => {
 
     expect(isOk(cells) && isOk(classifications) && isOk(financials)).toBe(true);
     if (!isOk(classifications) || !isOk(financials)) return;
-    expect(classifications.data[0]?.requirementNumber).toBe(1);
+    expect(classifications.data[0]?.requirementId).toBe("req-1");
     expect(financials.data[0]?.estimateAud).toBe(80000);
   });
 });

@@ -12,8 +12,12 @@ export interface FinancialExtractionRequest {
 
 // estimateAud is null when only a prose description of costs was available — the
 // domain keeps both so the review grid can show a numeric cell or the fallback.
+// Keyed on (documentId, requirementId): the Numbatch financial worker (Thread 7)
+// writes one figure per (document, requirement) via the roll-up's deduped
+// matched-chunk provenance — no per-requirement re-extraction (ADR-0004).
 export interface FinancialExtraction {
   readonly documentId: string;
+  readonly requirementId: string;
   readonly elementOrder: number;
   readonly estimateAud: number | null;
   readonly description: string;

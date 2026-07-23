@@ -7,11 +7,8 @@ const validInput = () => ({
   responseGroupId: "g1",
   vendorName: "  Acme  ",
   productName: "  Core Platform  ",
-  requirementNumber: 1 as const,
-  categorisation: {
-    solutionScope: "whole_solution" as const,
-    userDefinedCategory: "  platform  ",
-  },
+  requirementId: "  req-data-residency  ",
+  confidence: 0.92,
   productSummary: "  A cloud-native procurement platform.  ",
   costing: { estimateAud: 80000, description: "  Annual licence  " },
   source: {
@@ -30,7 +27,8 @@ describe("makeProcurementResponse", () => {
     if (!isOk(result)) return;
     expect(result.data.vendorName).toBe("Acme");
     expect(result.data.productName).toBe("Core Platform");
-    expect(result.data.categorisation.userDefinedCategory).toBe("platform");
+    expect(result.data.requirementId).toBe("req-data-residency");
+    expect(result.data.confidence).toBe(0.92);
     expect(result.data.productSummary).toBe("A cloud-native procurement platform.");
     expect(result.data.costing.estimateAud).toBe(80000);
     expect(result.data.costing.description).toBe("Annual licence");
@@ -61,11 +59,16 @@ describe("makeProcurementResponse", () => {
     expect(result.data.source.chunkId).toBeNull();
   });
 
-  it("fails when the requirement number is out of range", () => {
-    const result = makeProcurementResponse({
-      ...validInput(),
-      requirementNumber: 8 as unknown as 1,
-    });
+  it("fails when the requirement id is blank", () => {
+    const result = makeProcurementResponse({ ...validInput(), requirementId: "   " });
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("fails when the confidence is outside the 0–1 range", () => {
+    const result = makeProcurementResponse({ ...validInput(), confidence: 1.5 });
 
     expect(isErr(result)).toBe(true);
     if (!isErr(result)) return;

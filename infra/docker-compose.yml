@@ -6,19 +6,27 @@
 #
 # Profiles:
 #   ingest    — womblex-ingest + minio (Thread 3; the ingestion path)
-#   numbatch  — the Numbatch stack (added Threads 5–7)
+#   numbatch  — the Numbatch stack, all-but-frontend: postgres + redis + minio +
+#               backend API + Arq worker + inference service + one-shot migrate
+#               (Thread 5; ADR-0004/ADR-0005 — the SvelteKit frontend is excluded,
+#               redline owns its own control surface). Requires the vendored fork
+#               under ../services/numbatch (see services/README.md).
 #
 # Usage (Thread 3 exit test):
 #   podman compose -f infra/docker-compose.yml --profile ingest up -d
 #   ../scripts/thread-03-smoke.sh
 #   podman compose -f infra/docker-compose.yml --profile ingest down -v
+#
+# Usage (Numbatch stack):
+#   podman compose -f infra/docker-compose.yml --profile numbatch up -d
+#   # backend API on :8080, inference on :8100 (frontend is NOT started)
 
 name: redline
 
 services:
   minio:
     image: docker.io/minio/minio:latest
-    profiles: ["ingest"]
+    profiles: ["ingest", "numbatch"]
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
@@ -57,5 +65,105 @@ services:
     ports:
       - "8000:8000"
 
+  # ── Numbatch stack (all-but-frontend) ─────────────────────────────────────
+  # Vendored fork under ../services/numbatch (DeepCivic/Numbatch). We run its
+  # backend + Arq worker + inference service; the SvelteKit frontend is never
+  # started — redline owns its own UI (ADR-0005). Numbatch reads the same MinIO
+  # (its ingestion feed points at redline's `proc/{evaluationId}/` chunks).
+
+  numbatch-postgres:
+    image: docker.io/library/postgres:16
+    profiles: ["numbatch"]
+    environment:
+      POSTGRES_USER: ${NUMBATCH_DB_USER:-numbatch}
+      POSTGRES_PASSWORD: ${NUMBATCH_DB_PASSWORD:-numbatch}
+      POSTGRES_DB: ${NUMBATCH_DB_NAME:-numbatch}
+    volumes:
+      - numbatch-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NUMBATCH_DB_USER:-numbatch}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  numbatch-redis:
+    image: docker.io/library/redis:7
+    profiles: ["numbatch"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # One-shot Alembic migration; the backend/worker wait on it completing.
+  numbatch-migrate:
+    build:
+      context: ../services/numbatch
+      dockerfile: infra/docker/backend.Dockerfile
+    profiles: ["numbatch"]
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      numbatch-postgres:
+        condition: service_healthy
+    environment: &numbatch-backend-env
+      DATABASE_URL: postgresql+asyncpg://${NUMBATCH_DB_USER:-numbatch}:${NUMBATCH_DB_PASSWORD:-numbatch}@numbatch-postgres:5432/${NUMBATCH_DB_NAME:-numbatch}
+      REDIS_URL: redis://numbatch-redis:6379
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ADAPTERS_BUCKET: ${NUMBATCH_ADAPTERS_BUCKET:-numbatch-adapters}
+      S3_WOMBLEX_BUCKET: ${REDLINE_BUCKET:-redline}
+      INFERENCE_URL: http://numbatch-inference:8100
+
+  numbatch-backend:
+    build:
+      context: ../services/numbatch
+      dockerfile: infra/docker/backend.Dockerfile
+    profiles: ["numbatch"]
+    depends_on:
+      numbatch-migrate:
+        condition: service_completed_successfully
+      numbatch-redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment: *numbatch-backend-env
+    ports:
+      - "8080:8000"
+
+  # The Arq worker shares the backend image/package; runs training + ingestion +
+  # batch-inference tasks. GPU split is a deployment change, not a code change.
+  numbatch-worker:
+    build:
+      context: ../services/numbatch
+      dockerfile: infra/docker/backend.Dockerfile
+    profiles: ["numbatch"]
+    command: ["arq", "app.workers.settings.WorkerSettings"]
+    depends_on:
+      numbatch-migrate:
+        condition: service_completed_successfully
+      numbatch-redis:
+        condition: service_healthy
+    environment: *numbatch-backend-env
+
+  # DB-free inference service (ADR-0017); own image (torch/PEFT footprint).
+  numbatch-inference:
+    build:
+      context: ../services/numbatch
+      dockerfile: infra/docker/inference.Dockerfile
+    profiles: ["numbatch"]
+    environment:
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ADAPTERS_BUCKET: ${NUMBATCH_ADAPTERS_BUCKET:-numbatch-adapters}
+      BASE_MODEL_NAME: ${NUMBATCH_BASE_MODEL:-answerdotai/ModernBERT-base}
+      DEVICE: ${NUMBATCH_DEVICE:-auto}
+    ports:
+      - "8100:8100"
+
 volumes:
   minio-data:
+  numbatch-postgres-data:

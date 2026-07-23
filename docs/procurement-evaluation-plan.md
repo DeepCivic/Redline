@@ -1,8 +1,13 @@
 # Procurement Evaluation Adapter — Build Plan
 
 > A Wayfinder plugin/adapter (its own repo) for procurement evaluation, integrating
-> **womblex** (document extraction) and **Numbatch** (no-code classification, extended
-> with configurable financial table extraction).
+> **womblex** (document extraction) and **Numbatch** (no-code classification of
+> **user-defined requirements/criteria**, extended with financial figures mapped to
+> those requirements).
+>
+> **Update (2026-07-26, [ADR-0004](./adr/0004-user-defined-requirements-not-fixed-1-6.adr.md)):**
+> requirements are **user-defined criteria**, not a fixed 1–6 set. This is the whole
+> reason for Numbatch. §1/§5/§6 and Threads 2a & 5–8 below reflect the correction.
 
 _Repository:_ **`DeepCivic/Redline`**.
 
@@ -12,18 +17,26 @@ _Repository:_ **`DeepCivic/Redline`**.
 
 A tabular, sortable **in-app review flow** for procurement responses, with Excel export.
 
+The evaluation is driven by a set of **user-defined requirements/criteria** — the user
+names each criterion and defines it *semantically* (a prose definition plus curated
+example passages that train a Numbatch topic classifier). An evaluation bundles up to
+**10** requirements (Numbatch's per-profile cap; more than 10 degrades some base models
+— [ADR-0004](./adr/0004-user-defined-requirements-not-fixed-1-6.adr.md)).
+
 **Per response, capture:**
 - vendor name
 - product name
-- response to which requirement (fixed **1–6**)
-- extra categorisation (e.g. req 1: whole-solution vs component; req 6: broad category) — the **user-defined** element
+- **which requirement(s)/criteria the response matched** (user-defined; a document may
+  match more than one, ≤3 per Numbatch roll-up), each with a confidence + source chunk
 - one-paragraph product summary
-- dot-point costing extract (dollar estimate if provided, else a short description of costs)
+- dot-point costing extract (dollar estimate if provided, else a short description of
+  costs), **mapped to the matched requirement** with no duplication (reuses the
+  roll-up's deduped per-chunk provenance)
 - link to document location (page / chunk provenance)
 
 **Aggregate:**
 - pricing per brand (vendor)
-- pricing per user-defined category
+- pricing per requirement/criterion
 
 **Priorities:** in-app review first; Excel export second.
 
@@ -34,7 +47,7 @@ A tabular, sortable **in-app review flow** for procurement responses, with Excel
 | Tool | What it is | Consumption |
 |---|---|---|
 | **womblex** | Python document-extraction pipeline. Detects doc type, extracts, chunks, optionally enriches/classifies via Isaacus. Writes **Parquet shards to S3/MinIO** (`*.elements.parquet`, `*.table_cells.parquet`, `*.form_fields.parquet`, `*.chunks.parquet`, `*._manifest.parquet`). | Run as a sidecar/worker; consume Parquet output (or a JSON wrapper) from object storage. Has non-Isaacus modes (edge/offline). |
-| **Numbatch** | Python no-code multi-topic classifier (FastAPI + SvelteKit + Arq + LoRA). Ingests womblex chunk Parquet, trains classifiers, batch inference with **document roll-ups** + review/correct loop. | Standalone stack with a FastAPI/OpenAPI surface. **Forked & extended** here for financial table extraction. |
+| **Numbatch** | Python no-code multi-topic classifier (FastAPI backend + Arq workers, a **DB-free inference service**, SvelteKit frontend). A **topic** = name + description + curated samples → a trained **LoRA adapter**; a **profile** bundles ≤10 topics; batch inference rolls per-chunk predictions up into per-document classifications with per-chunk provenance. Ingests womblex chunk Parquet natively. | Standalone stack (three services + Postgres/Redis/MinIO). **Forked**; we run **all services except the SvelteKit frontend** (redline owns its own control surface + review grid), and **extend the backend** for financial extraction. A redline **requirement/criterion** maps to a Numbatch **topic**; an evaluation's requirement set maps to a Numbatch **profile**. |
 
 **Womblex provenance keys:** `source_hash` (document identity), `elem_order`, `page`/`bbox`,
 `chunk_id = "{source_hash}:{chunk_index}"`, currency cells in `table_cells` / `sheet_cell` / `form_fields`.
@@ -70,7 +83,7 @@ plugin only depends on Wayfinder's ports — a true adapter, not a fork.
 redline/
 ├── services/
 │   ├── womblex-ingest/          # womblex sidecar; Isaacus optional (flag)
-│   └── numbatch/                # Numbatch stack, FORKED + EXTENDED (financial extraction)
+│   └── numbatch/                # Numbatch fork: backend + inference (NOT frontend); + financial extension
 ├── packages/
 │   ├── redline-domain/             # entities + ports (zero deps, Result pattern)
 │   ├── redline-application/        # use-cases (imports redline-domain + @rbrasier/domain types)
@@ -90,16 +103,29 @@ redline/
 ## 5. Core data model
 
 ```typescript
+// redline-domain/src/entities/requirement.ts
+// A user-defined criterion. Maps to a Numbatch topic at the adapter boundary.
+// The semantic definition is `definition` (prose) + curated samples in Numbatch.
+export interface Requirement {
+  id: string;
+  name: string;
+  definition: string;               // the semantic definition of the criterion
+}
+
+// An evaluation's ordered requirement set. Mirrors a Numbatch profile (≤10).
+export interface RequirementSet {
+  evaluationId: string;
+  requirements: Requirement[];       // ordered; max 10 (ADR-0004)
+}
+
 // redline-domain/src/entities/procurement-response.ts
 export interface ProcurementResponse {
   evaluationId: string;
+  responseGroupId: string;
   vendorName: string;                        // "brand"
   productName: string;
-  requirementNumber: 1 | 2 | 3 | 4 | 5 | 6;  // fixed — from Numbatch profile
-  categorisation: {
-    solutionScope?: "whole_solution" | "component";  // e.g. requirement 1
-    userDefinedCategory?: string;                     // e.g. requirement 6 — Numbatch user topic
-  };
+  requirementId: string;                     // user-defined criterion (was: fixed 1–6)
+  confidence: number;                        // roll-up confidence for this requirement
   productSummary: string;          // one paragraph, AI-generated over the vendor's chunks
   costing: {
     estimateAud: number | null;    // typed currency → real numeric Excel cell
@@ -113,6 +139,10 @@ export interface ProcurementResponse {
   };
 }
 ```
+
+> A document may match **more than one** requirement (Numbatch roll-ups are multi-label,
+> ≤3 topics per document), so a response group yields **one `ProcurementResponse` row per
+> (document, matched requirement)** — the review grid's natural unit.
 
 ### Workflow manager model (one response ≠ one document)
 
@@ -139,7 +169,7 @@ export interface ResponseGroup {
 export type IntakeStage =
   | "documents_uploaded"   // womblex extraction done
   | "grouping"             // specialist assigns docs → response groups / vendors
-  | "classifying"          // Numbatch: requirements 1–6 + categories + financials
+  | "classifying"          // Numbatch: user-defined requirements + financials
   | "review"               // the tabular review grid
   | "finalised";
 ```
@@ -149,18 +179,26 @@ split a vendor's multiple bids, and (re)run classification per group.
 
 ---
 
-## 6. Numbatch extension — configurable financial table extraction aligned to topics
+## 6. Numbatch extension — financial figures mapped to requirements (no duplication)
 
-Numbatch today: chunk → topic classification → document roll-up. We add:
+Numbatch today: chunk → topic classification → per-document roll-up (with per-chunk
+provenance, and a chunk feeding two topics classified once). We add:
 
-- **`financial_profile`** (new concept): per topic (or profile), a config declaring what monetary
-  facts to pull (unit price, total, recurring vs one-off, currency, line-item vs bundle) and how to normalise.
-- **New Arq worker stage:** reads womblex `table_cells` / `sheet_cell` / `form_fields` (currency-typed)
-  for the chunks a topic matched; extracts figures or a **description fallback**; writes
-  `financial_extractions` (per `source_doc_id`, per topic, with provenance to `elem_order`).
+- **`financial_profile`** (new concept): per topic (= requirement/criterion), a config
+  declaring what monetary facts to pull (unit price, total, recurring vs one-off,
+  currency, line-item vs bundle) and how to normalise.
+- **New Arq worker stage:** for each topic a document matched, reads womblex
+  `table_cells` / `sheet_cell` / `form_fields` (currency-typed) **for that topic's
+  already-deduped matched chunks**; extracts figures or a **description fallback**;
+  writes `financial_extractions` keyed on **(`source_doc_id`, `topic_id`)** with
+  provenance to `elem_order`.
+- **No duplication:** the figure attaches to the (document, requirement) pair via the
+  roll-up's matched-chunk provenance — Numbatch already guarantees a chunk feeds a topic
+  at most once (`uq_topic_samples_provenance`), so no re-extraction per requirement
+  ([ADR-0004](./adr/0004-user-defined-requirements-not-fixed-1-6.adr.md)).
 - Directly serves the "dollar estimate **or** short description" requirement.
 
-This is the largest net-new engineering item; a **fork of Numbatch is implied**.
+This is the largest net-new engineering item; it lives in the **forked Numbatch backend**.
 
 ---
 
@@ -183,6 +221,16 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
   `IProcurementExtractionReader`, `IProcurementClassifier`, `IFinancialExtractor`, `IEvaluationRepository`.
   Zero deps, Result pattern, tests-first. _Exit: domain builds; entity invariants covered._
   — docs: [thread-02](./threads/thread-02-redline-domain-entities-and-ports.md)
+- **Thread 2a — Generalise requirements: user-defined criteria (fix-forward).** Reverses the
+  fixed 1–6 model per [ADR-0004](./adr/0004-user-defined-requirements-not-fixed-1-6.adr.md).
+  Replace `procurement-requirement.ts`'s `REQUIREMENT_NUMBERS`/`RequirementNumber` with a
+  user-defined `Requirement` (`id`, `name`, `definition`) + `RequirementSet` (ordered, ≤10);
+  swap `requirementNumber` → `requirementId` in `ProcurementResponse`, `RequirementClassification`
+  (add `confidence` already present), and `FinancialExtraction` (Threads 6–8). Update
+  `procurement-classifier.ts`/`financial-extractor.ts` port DTOs. Zero deps, tests-first.
+  _Exit: domain builds; `Requirement`/`RequirementSet` invariants covered (incl. the ≤10 cap);
+  no `RequirementNumber` remains; `./validate.sh` green incl. purity check #4._
+  — docs: [thread-02a](./threads/thread-02a-generalise-requirements.md)
 
 ### Track 1 — Ingestion (womblex)
 - **Thread 3 — womblex sidecar service.** `services/womblex-ingest`: Dockerfile installing womblex
@@ -197,19 +245,32 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
   — docs: [thread-04](./threads/thread-04-extraction-reader-adapter.md)
 
 ### Track 2 — Classification & financials (Numbatch)
-- **Thread 5 — Numbatch as-is integration.** `services/numbatch` in compose; `NumbatchClassifier`
-  adapter (HTTP/OpenAPI) implementing `IProcurementClassifier`: fixed 6-requirement profile;
-  batch inference over a group's chunks; read roll-ups.
-  _Exit: ingested chunks → requirement 1–6 classifications per document._
+- **Thread 5 — Numbatch integration (fork; run all-but-frontend).** Vendor the Numbatch fork
+  into `services/numbatch`; add a `numbatch` compose profile running **backend + Arq worker +
+  inference service + Postgres + Redis + MinIO** (the SvelteKit frontend is excluded — redline
+  owns its own control surface, Thread 11). Provide an idempotent bootstrap that creates an
+  evaluation's **user-defined requirement topics** (name + definition + curated samples) and a
+  **profile** (≤10), then trains it. Implement `NumbatchClassifier` (`redline-adapters`,
+  HTTP/OpenAPI over an injected `HttpClient`) implementing `IProcurementClassifier`: trigger batch
+  inference over a group's chunks, read per-document roll-ups, and **map Numbatch `topic_id` →
+  `requirementId`** into `RequirementClassification[]` (one row per matched requirement). Requires
+  Thread 2a. Locks decision #3 ([ADR-0004] scope + a fork ADR).
+  _Exit: ingested chunks → per-document requirement classifications (user-defined topics), each
+  with confidence + source chunk; contract test pins the topic→requirement mapping against a
+  captured Numbatch payload._
+  — docs: [thread-05](./threads/thread-05-numbatch-integration.md)
 - **Thread 6 — Numbatch extension: `financial_profile` schema & config API.** New tables
-  (`financial_profiles`, `financial_extractions`), Alembic migration, config endpoints. Schema only.
+  (`financial_profiles`, `financial_extractions` keyed on `(source_doc_id, topic_id)`), Alembic
+  migration, config endpoints. Schema only.
   _Exit: create a financial profile for a topic via API; migration passes CI._
 - **Thread 7 — Numbatch extension: financial extraction worker.** Arq stage reads womblex
-  table cells for matched chunks; extracts currency-normalised figures or description fallback;
-  writes `financial_extractions` with provenance.
+  table cells for a topic's **matched, deduped** chunks; extracts currency-normalised figures or
+  description fallback; writes `financial_extractions` with provenance — one figure per
+  (document, requirement), no duplication.
   _Exit: synthetic tender workbook → figures + provenance in DB; unit + integration tests._
 - **Thread 8 — `IFinancialExtractor` adapter.** `redline-adapters` client pulling `financial_extractions`
-  into `ProcurementResponse.costing` (`estimateAud: number | null` + `description`).
+  (per document + `requirementId`) into `ProcurementResponse.costing` (`estimateAud: number | null`
+  + `description`).
   _Exit: contract test; currency numeric via `typedDisplayCell`._
 
 ### Track 3 — Persistence & orchestration
@@ -228,8 +289,8 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
 - **Thread 12 — In-app review grid (priority 1).** Sortable/filterable table reusing
   `field-report-view` typed cells; source column deep-links to document location; all required columns.
   _Exit: real evaluation renders; currency sorts numerically; source links resolve._
-- **Thread 13 — Pricing pivots.** Reuse `computePivot` for per-brand and per-user-defined-category
-  rollups (sum/avg of `estimateAud`); axis selection (brand, category, brand×category).
+- **Thread 13 — Pricing pivots.** Reuse `computePivot` for per-brand and per-requirement/criterion
+  rollups (sum/avg of `estimateAud`); axis selection (brand, requirement, brand×requirement).
   _Exit: pivot matches hand-computed totals on a fixture._
 - **Thread 14 — Excel export (priority 2).** "Export to Excel" reusing Wayfinder's XLSX path so
   currency stays numeric; one sheet for the table, one per pivot.
@@ -250,13 +311,19 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
    Recorded in [ADR-0001](./adr/0001-adapter-over-wayfinder.adr.md). Wayfinder resolves via
    `pnpm-workspace.yaml` entry `vendor/wayfinder/packages/*`.
 2. **Parquet boundary (Thread 4)** — **LOCKED: JSON** — the `womblex-ingest` sidecar reads its own Parquet shards and serves a typed JSON read model (`GET /extractions/{evaluationId}/{documentId}`); the TypeScript adapter never links a Parquet reader. Recorded in [ADR-0003](./adr/0003-parquet-to-json-boundary.adr.md).
-3. **Numbatch coupling** — _open, fork implied_ — fork into `services/numbatch` (required for the financial extension, Threads 6–7)
-   vs run upstream + thin extension service. Confirm before Thread 5.
+3. **Numbatch coupling** — **LOCKED: fork, run all-but-frontend** — vendor the Numbatch fork into
+   `services/numbatch` and run its backend + Arq worker + inference service (SvelteKit frontend
+   excluded; redline owns its own UI). The fork is required for the financial extension (Threads
+   6–7). A redline **requirement/criterion** ⇔ Numbatch **topic**; an evaluation's requirement set
+   ⇔ a Numbatch **profile** (≤10). Requirements are **user-defined**, not fixed 1–6
+   ([ADR-0004](./adr/0004-user-defined-requirements-not-fixed-1-6.adr.md)). The fork mechanics
+   — vendor, run all-but-frontend, bootstrap via API, `topic_id ⇔ requirementId` only in the
+   adapter — are recorded in [ADR-0005](./adr/0005-numbatch-fork-all-but-frontend.adr.md).
 4. **Shared vs separate MinIO/Postgres** — **LOCKED: own** — redline stands up its own MinIO (bucket `redline`, shards under `proc/{evaluationId}/`) and its own Postgres (`redline_` prefix); the seam stays plain S3/Postgres so a deployment can still collapse to a shared instance by config. Recorded in [ADR-0002](./adr/0002-own-minio-and-postgres.adr.md).
 5. **Auth/roles** — _open_ — does the review surface reuse Wayfinder auth/roles, or its own? Decide before Thread 11.
 
 > **ADR model adopted.** This repo now follows Wayfinder's ADR format under
-> [`docs/adr/`](./adr/README.md). Decisions 3 & 5 will each get their own ADR when locked.
+> [`docs/adr/`](./adr/README.md). Decision 5 will get its own ADR when locked.
 
 ---
 
@@ -280,9 +347,10 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | 2 — redline-domain core entities & ports | ✅ **done** | Exit test **passing**: `redline-domain` builds; 36 new invariant tests (entities + port conformance) green, Thread 1 spike still 3/3 → 39/39; `./validate.sh` 9/9 incl. purity check #4. Entities: `Evaluation`, `Vendor`, `ResponseGroup`, `IntakeStage`, `ProcurementRequirement`, `ProcurementResponse` (smart constructors). Ports: `IProcurementExtractionReader`, `IProcurementClassifier`, `IFinancialExtractor`, `IEvaluationRepository`. Docs: [thread-02](./threads/thread-02-redline-domain-entities-and-ports.md). |
 | 3 — womblex sidecar service | ✅ **done** | Exit test **PASSED** against real MinIO via `podman compose` (`ingest` profile): `POST /ingest` → `202 succeeded`, three shards land under `proc/{eval}/` (`_manifest` + per-doc `*.elements.parquet`), `GET /status` reports succeeded, unknown run → 404. `services/womblex-ingest` = FastAPI sidecar (`/health`, `POST /ingest`, `GET /status/{run_id}`), boto3 S3 writer, deterministic stub extractor default (`WOMBLEX_MODE=stub`; real womblex + Isaacus opt-in build args, finalised Thread 4). 12 pytest + `./validate.sh` **10/10** (new check #10). Decision #4 **LOCKED** ([ADR-0002](./adr/0002-own-minio-and-postgres.adr.md): own MinIO/Postgres). Docs: [thread-03](./threads/thread-03-womblex-sidecar-service.md). |
 | 4 — Extraction reader adapter | ✅ **done** | Exit test **PASSED**: `WomblexExtractionReader` (`redline-adapters`) reads a real sidecar run into typed `ExtractionElement`/`ExtractionChunk`/`ExtractionTableCell` provenance; 8 contract tests against a captured fixture (`__fixtures__/extraction-tender.pdf.json`) cover the happy path + error taxonomy (NOT_FOUND / INFRA_FAILURE / EXTRACTION_FAILED). Decision #2 **LOCKED: JSON** ([ADR-0003](./adr/0003-parquet-to-json-boundary.adr.md)) — sidecar reads its own Parquet and serves JSON at `GET /extractions/{eval}/{doc}` (stored beside the shards for restart durability); TS never links a Parquet reader. Sidecar grew a JSON read model (`records.py`) + read endpoint; pytest **17/17** (was 12), workspace **7/7**, `./validate.sh` **10/10**. Docs: [thread-04](./threads/thread-04-extraction-reader-adapter.md). |
-| 5 — Numbatch as-is integration | ⚪ not started | |
-| 6 — Numbatch financial_profile schema & API | ⚪ not started | |
-| 7 — Numbatch financial extraction worker | ⚪ not started | |
+| 2a — Generalise requirements (user-defined criteria) | ✅ **done** | Exit test **PASSED**: dropped fixed 1–6; new `Requirement` (`id`/`name`/`definition`) + `RequirementSet` (ordered, unique, ≤10 = `MAX_REQUIREMENTS_PER_SET`); `requirementNumber` → `requirementId` + added `confidence` in `ProcurementResponse`; `requirementId` in `RequirementClassification` (dropped `categorisation`) and `FinancialExtraction`. `procurement-requirement.ts` deleted; no `RequirementNumber` remains. `redline-domain` **42/42** (6 files), `./validate.sh` **10/10** incl. purity check #4. Enacts [ADR-0004](./adr/0004-user-defined-requirements-not-fixed-1-6.adr.md). Docs: [thread-02a](./threads/thread-02a-generalise-requirements.md). |
+| 5 — Numbatch integration (fork; run all-but-frontend) | ✅ **done** | Exit test **PASSED**: `NumbatchClassifier` (`redline-adapters`) triggers a batch run → polls to success → reads the per-document roll-up → maps Numbatch `topic_id` → `requirementId` into `RequirementClassification[]`; 9 contract tests against a **captured Numbatch payload** (`__fixtures__/batch-rollup.json`) pin the mapping + full error taxonomy (adapters **17/17**). Service scaffold: `services/numbatch/` (README + idempotent `bootstrap-profile.py`) + `numbatch` compose profile (postgres/redis/minio/backend/worker/inference, **no frontend**). Decision #3 **LOCKED** ([ADR-0005](./adr/0005-numbatch-fork-all-but-frontend.adr.md)). `./validate.sh` **10/10**. Docs: [thread-05](./threads/thread-05-numbatch-integration.md). |
+| 6 — Numbatch financial_profile schema & API | 🔵 **next** | Tables keyed on `(source_doc_id, topic_id)`. Extends the forked Numbatch backend. |
+| 7 — Numbatch financial extraction worker | ⚪ not started | One figure per (document, requirement); reuses roll-up dedupe. |
 | 8 — IFinancialExtractor adapter | ⚪ not started | |
 | 9 — redline_ persistence layer | ⚪ not started | |
 | 10 — Orchestration use-cases | ⚪ not started | |
@@ -455,3 +523,102 @@ a real capture so the contract is pinned on both sides.
 no breaking changes (pre-1.0).
 
 **Docs:** [thread-04](./threads/thread-04-extraction-reader-adapter.md).
+
+### Fix-forward (2026-07-26) — requirements are user-defined criteria
+
+**Decision.** Reviewing the actual Numbatch (DeepCivic/Numbatch) showed the "fixed 1–6
+requirements" model was a misread. Numbatch is a **no-code, user-defined multi-topic
+classifier**: a topic = name + description + curated samples → a trained LoRA adapter;
+a profile bundles ≤10 topics. The product needs (a) N user-defined requirements/criteria,
+(b) each **semantically defined** (the reason we use Numbatch), (c) financial figures
+mapped to requirements **without duplication**. Recorded in
+[ADR-0004](./adr/0004-user-defined-requirements-not-fixed-1-6.adr.md).
+
+**Fix-forward plan edits (this commit):**
+- §1 goal, §2 Numbatch row, §5 data model, §6 financial extension rewritten off the fixed
+  1–6 model onto **user-defined `Requirement`/`RequirementSet`** (≤10, mirroring a Numbatch
+  profile) and **`requirementId`** in place of `requirementNumber`.
+- **Decision #3 LOCKED**: fork Numbatch into `services/numbatch`, run **backend + Arq worker +
+  inference** (SvelteKit frontend excluded — redline owns its UI/review), extend the backend for
+  financials.
+- **New Thread 2a** (domain reshape, tests-first) inserted *before* Thread 5 and marked **next**;
+  Thread 5 rewritten as "fork; run all-but-frontend; `NumbatchClassifier` maps topic→requirementId";
+  Threads 6–8 re-anchored on `(source_doc_id, topic_id)` financial keys.
+
+**Not yet touched (deliberate — belongs to Thread 2a):** the `redline-domain` *code* still
+carries `REQUIREMENT_NUMBERS`/`requirementNumber`. Thread 2a lands the entity/port edits so the
+change is tested, not just planned. Thread 5 depends on Thread 2a.
+
+### Thread 2a log (2026-07-26) — ✅ COMPLETE
+
+**Reshaped** `@redline/redline-domain` off the fixed 1–6 model onto user-defined criteria,
+enacting [ADR-0004](./adr/0004-user-defined-requirements-not-fixed-1-6.adr.md). Domain-only,
+zero deps, tests-first.
+
+- **New `entities/requirement.ts`** (replaces the deleted `procurement-requirement.ts`):
+  `Requirement` (`id`/`name`/`definition`) + `makeRequirement` (all trimmed, non-blank);
+  `RequirementSet` (`evaluationId` + ordered `requirements`) + `makeRequirementSet`
+  (non-empty, unique by `id`, order-preserving, capped at `MAX_REQUIREMENTS_PER_SET = 10`).
+- **`ProcurementResponse`**: `requirementNumber` → **`requirementId: string`**; added
+  **`confidence: number`** (0–1); dropped `ResponseCategorisation` (the fixed-model bolt-on).
+- **Ports**: `RequirementClassification` → `requirementId` (dropped `categorisation`);
+  `FinancialExtraction` gains `requirementId` (keyed on `(documentId, requirementId)`).
+- **Deletions**: `procurement-requirement.ts` + its test; `grep` confirms no
+  `RequirementNumber`/`REQUIREMENT_NUMBERS` remains in `src/`.
+
+**Exit test — PASSED.** `redline-domain` **42/42** (6 files; new `requirement.test.ts` 10,
+`procurement-response.test.ts` 10); `./validate.sh` → **10/10** incl. check #4
+(redline-domain purity — zero non-relative imports).
+
+**Version bump intent:** MINOR — reshapes an unreleased domain surface (pre-1.0; no consumers yet).
+
+**Docs:** [thread-02a](./threads/thread-02a-generalise-requirements.md).
+
+### Thread 5 log (2026-07-26) — ✅ COMPLETE
+
+**Wired** redline to **Numbatch** (DeepCivic/Numbatch), the user-defined multi-topic
+classifier. API shapes verified from the fork's own `docs/ARCHITECTURE.md` /
+`docs/DATA_MODEL.md` — not training data.
+
+**Adapter — `packages/redline-adapters/src/numbatch/`:**
+- `NumbatchClassifier implements IProcurementClassifier` over an injected method-aware
+  `HttpClient` (POST body + GET). One `classifyResponseGroup`: `POST /batch-inference/trigger`
+  → poll `GET /batch-inference/jobs/{id}` to `succeeded`/`failed` (bounded) →
+  `GET /batch-inference/jobs/{id}/documents` → map each roll-up `topic_id` →
+  `requirementId` via an injected `NumbatchProfileBinding`. One `RequirementClassification`
+  per (document, matched requirement); unmapped topics dropped; `sourceChunkId` null at the
+  per-document roll-up.
+- `wire.ts` narrows Numbatch's snake_case wire in one place (`parseBatchJob`,
+  `parseDocumentRollup`, `parseErrorBody`); nothing throws across the port edge.
+
+**Service — `services/numbatch/`:** README (vendored fork; backend + worker + inference,
+**no frontend**) + idempotent `bootstrap-profile.py` (turns a `RequirementSet` + curated
+samples into a trained profile over the API, printing the `NumbatchProfileBinding`).
+`infra/docker-compose.yml` gains a `numbatch` profile: postgres/redis/minio/migrate/backend
+(:8080)/worker/inference (:8100), no frontend service.
+
+**Decision #3 LOCKED** — [ADR-0005](./adr/0005-numbatch-fork-all-but-frontend.adr.md):
+vendor the fork; run all-but-frontend; bootstrap via API; `topic_id ↔ requirementId` only in
+the adapter.
+
+**Design decisions.** (1) *Trigger → poll → roll-up in the adapter* — async batch inference
+behind a synchronous `Result` port; poll interval/attempts injectable (tests run at 0ms).
+(2) *`sourceChunkId: null`* — the roll-up is per document, not per chunk; the domain field is
+nullable, so no chunk is invented. (3) *Drop unmapped topics* — the binding is the source of
+truth for which topics belong to this evaluation. (4) *Method-aware `HttpClient`* — Numbatch
+needs a POST body, unlike the womblex reader's GET-only seam.
+
+**Exit test — PASSED.** Contract test against a **captured Numbatch payload**
+(`__fixtures__/batch-rollup.json`): two documents → 3 `RequirementClassification` rows,
+`t-data-residency` → `req-data-residency` with confidence ≈ 0.86, full error taxonomy
+(failed / timeout / transport / non-2xx). Adapters **17/17** (was 8; +9), `./validate.sh`
+**10/10**; `bootstrap-profile.py` `py_compile` clean.
+
+**Known limitation.** No live Numbatch run in this environment (no GPU; fork not yet vendored
+on disk) — the exit test is the captured-payload contract test the plan specifies. A
+compose-up integration run lands when the fork is checked out (Thread 16).
+
+**Version bump intent:** MINOR — new adapter surface + service scaffold + ADR-0005; no
+breaking changes (pre-1.0).
+
+**Docs:** [thread-05](./threads/thread-05-numbatch-integration.md).

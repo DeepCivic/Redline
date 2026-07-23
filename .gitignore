@@ -9,3 +9,4 @@ coverage/
 
 # Podman validation scratch (created by scripts/podman-run.sh if SCRATCH_BASE is set here)
 .redline-scratch/
+__pycache__/

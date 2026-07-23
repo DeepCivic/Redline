@@ -7,7 +7,7 @@ export * from "./errors/domain-error";
 // Entities
 export * from "./entities/evaluation";
 export * from "./entities/evaluation-structure";
-export * from "./entities/procurement-requirement";
+export * from "./entities/requirement";
 export * from "./entities/procurement-response";
 
 // Ports

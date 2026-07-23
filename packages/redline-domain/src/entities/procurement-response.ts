@@ -1,14 +1,5 @@
 import { domainError } from "../errors/domain-error";
 import { err, ok, type Result } from "../result";
-import { isRequirementNumber, type RequirementNumber } from "./procurement-requirement";
-
-// The user-defined categorisation captured alongside the fixed requirement.
-// solutionScope applies to whole-solution-vs-component questions (e.g. req 1);
-// userDefinedCategory carries the Numbatch user topic (e.g. req 6). Both optional.
-export interface ResponseCategorisation {
-  readonly solutionScope?: "whole_solution" | "component";
-  readonly userDefinedCategory?: string;
-}
 
 // Costing satisfies the "dollar estimate OR short description" requirement:
 // estimateAud is a real number when womblex/Numbatch found a figure, else null,
@@ -33,8 +24,8 @@ export interface ProcurementResponse {
   readonly responseGroupId: string;
   readonly vendorName: string;
   readonly productName: string;
-  readonly requirementNumber: RequirementNumber;
-  readonly categorisation: ResponseCategorisation;
+  readonly requirementId: string;
+  readonly confidence: number;
   readonly productSummary: string;
   readonly costing: ResponseCosting;
   readonly source: ResponseSource;
@@ -45,8 +36,8 @@ export interface MakeProcurementResponseInput {
   readonly responseGroupId: string;
   readonly vendorName: string;
   readonly productName: string;
-  readonly requirementNumber: RequirementNumber;
-  readonly categorisation?: ResponseCategorisation;
+  readonly requirementId: string;
+  readonly confidence: number;
   readonly productSummary: string;
   readonly costing: { readonly estimateAud: number | null; readonly description: string };
   readonly source: {
@@ -57,22 +48,18 @@ export interface MakeProcurementResponseInput {
   };
 }
 
-const normaliseCategorisation = (
-  categorisation: ResponseCategorisation | undefined,
-): ResponseCategorisation => {
-  if (!categorisation) return {};
-  const userDefinedCategory = categorisation.userDefinedCategory?.trim();
-  return {
-    ...(categorisation.solutionScope ? { solutionScope: categorisation.solutionScope } : {}),
-    ...(userDefinedCategory ? { userDefinedCategory } : {}),
-  };
-};
-
 export const makeProcurementResponse = (
   input: MakeProcurementResponseInput,
 ): Result<ProcurementResponse> => {
-  if (!isRequirementNumber(input.requirementNumber)) {
-    return err(domainError("VALIDATION_FAILED", "response requirement number must be 1–6"));
+  const requirementId = input.requirementId.trim();
+  if (requirementId === "") {
+    return err(domainError("VALIDATION_FAILED", "response requirement id must not be blank"));
+  }
+
+  if (!Number.isFinite(input.confidence) || input.confidence < 0 || input.confidence > 1) {
+    return err(
+      domainError("VALIDATION_FAILED", "response confidence must be between 0 and 1"),
+    );
   }
 
   const vendorName = input.vendorName.trim();
@@ -124,8 +111,8 @@ export const makeProcurementResponse = (
     responseGroupId: input.responseGroupId,
     vendorName,
     productName,
-    requirementNumber: input.requirementNumber,
-    categorisation: normaliseCategorisation(input.categorisation),
+    requirementId,
+    confidence: input.confidence,
     productSummary,
     costing: { estimateAud, description: costDescription },
     source: {
