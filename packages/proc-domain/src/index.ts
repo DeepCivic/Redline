@@ -1,7 +1,17 @@
 // @procautomatr/proc-domain — public surface.
 //
-// Thread 1 establishes only the Result/DomainError primitives. Entities and ports
-// (ProcurementResponse, Vendor, ResponseGroup, IntakeStage, IProcurementExtractionReader,
-// IProcurementClassifier, IFinancialExtractor, IEvaluationRepository) land in Thread 2.
+// Primitives (Thread 1) plus the core entities and port interfaces (Thread 2).
 export * from "./result";
 export * from "./errors/domain-error";
+
+// Entities
+export * from "./entities/evaluation";
+export * from "./entities/evaluation-structure";
+export * from "./entities/procurement-requirement";
+export * from "./entities/procurement-response";
+
+// Ports
+export * from "./ports/evaluation-repository";
+export * from "./ports/financial-extractor";
+export * from "./ports/procurement-classifier";
+export * from "./ports/procurement-extraction-reader";

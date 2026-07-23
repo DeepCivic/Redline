@@ -182,6 +182,7 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
   `ProcurementResponse`, `ProcurementRequirement` (fixed 1–6 + user-defined categories); ports:
   `IProcurementExtractionReader`, `IProcurementClassifier`, `IFinancialExtractor`, `IEvaluationRepository`.
   Zero deps, Result pattern, tests-first. _Exit: domain builds; entity invariants covered._
+  — docs: [thread-02](./threads/thread-02-proc-domain-entities-and-ports.md)
 
 ### Track 1 — Ingestion (womblex)
 - **Thread 3 — womblex sidecar service.** `services/womblex-ingest`: Dockerfile installing womblex
@@ -275,8 +276,8 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | Thread | Status | Notes |
 |---|---|---|
 | 1 — Repo scaffold & Wayfinder consumption spike | ✅ **done** | Exit test **passing**: `pnpm build` green (4/4), spike importing `typedDisplayCell` from `@rbrasier/domain` passes (3/3), `./validate.sh` 9/9. Verified in a Node 20 container via Podman. Docs: [thread-01](./threads/thread-01-scaffold-and-spike.md). Also adopted: `.claude/` skills + `CLAUDE.md`, Podman-aware `validate.sh`, `docs/guides/local-dev-and-validation.md`. |
-| 2 — proc-domain core entities & ports | 🟡 next | |
-| 3 — womblex sidecar service | ⚪ not started | |
+| 2 — proc-domain core entities & ports | ✅ **done** | Exit test **passing**: `proc-domain` builds; 36 new invariant tests (entities + port conformance) green, Thread 1 spike still 3/3 → 39/39; `./validate.sh` 9/9 incl. purity check #4. Entities: `Evaluation`, `Vendor`, `ResponseGroup`, `IntakeStage`, `ProcurementRequirement`, `ProcurementResponse` (smart constructors). Ports: `IProcurementExtractionReader`, `IProcurementClassifier`, `IFinancialExtractor`, `IEvaluationRepository`. Docs: [thread-02](./threads/thread-02-proc-domain-entities-and-ports.md). |
+| 3 — womblex sidecar service | 🟡 next | |
 | 4 — Extraction reader adapter | ⚪ not started | |
 | 5 — Numbatch as-is integration | ⚪ not started | |
 | 6 — Numbatch financial_profile schema & API | ⚪ not started | |
@@ -333,3 +334,34 @@ written to. This keeps a hard boundary while `@rbrasier/*` still resolves as wor
 1. `git init` `procautomatr` and add the DeepCivic remote.
 2. Wire `vendor/wayfinder` for local (non-Podman) dev — submodule against the DeepCivic Wayfinder
    mirror, or a symlink to a sibling checkout.
+
+### Thread 2 log (2026-07-23) — ✅ COMPLETE
+
+**Built** `@procautomatr/proc-domain` entities and ports (zero deps, Result pattern, tests-first).
+
+- **Entities** (`src/entities/`): `procurement-requirement.ts` (fixed `REQUIREMENT_NUMBERS`
+  1–6, `ProcurementRequirement` + `makeProcurementRequirement`), `evaluation-structure.ts`
+  (`Vendor`, `ResponseGroup`, `IntakeStage` + `makeVendor`/`makeResponseGroup`/`nextIntakeStage`/
+  `canAdvanceIntakeStage`), `procurement-response.ts` (`ProcurementResponse` +
+  `makeProcurementResponse`), `evaluation.ts` (the `Evaluation` aggregate root + `makeEvaluation`/
+  `withIntakeStage`).
+- **Ports** (`src/ports/`): `IProcurementExtractionReader`, `IProcurementClassifier`,
+  `IFinancialExtractor`, `IEvaluationRepository` — all methods return `Promise<Result<…>>`.
+- **Public surface**: `src/index.ts` re-exports all entities + ports alongside the Thread 1
+  primitives.
+
+**Design decisions.** (1) *Smart constructors, not classes* — entities are plain readonly
+interfaces, invariants live in `make*` factories returning `Result`. (2) *Added an `Evaluation`
+aggregate root* — §5 named no root but the `IntakeStage` needed a home and Thread 9 needs a unit
+to persist; a minimal `{ id, name, stage }` gap-fill within the plan's model (not an ADR).
+(3) *Port DTOs mirror womblex keys* so the Thread 4 reader is a thin mapping.
+
+**Exit test — PASSED.** Run in `node:20-bookworm-slim` via Podman (`flatpak-spawn --host`),
+pnpm 9.12.0:
+- `proc-domain` test → **6 files, 39/39** (36 new invariant + port-conformance tests; the
+  Thread 1 spike still 3/3).
+- `./validate.sh` → **9/9**, including check #4 (proc-domain purity: zero non-relative imports).
+
+**Version bump intent:** MINOR — new public surface, no breaking changes (pre-1.0).
+
+**Docs:** [thread-02](./threads/thread-02-proc-domain-entities-and-ports.md).
