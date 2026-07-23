@@ -1,0 +1,30 @@
+{
+  "name": "procautomatr",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Procurement Evaluation Adapter — a Wayfinder plugin integrating womblex + Numbatch.",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build --filter=@procautomatr/*",
+    "dev": "turbo run dev --filter=@procautomatr/*",
+    "lint": "turbo run lint --filter=@procautomatr/*",
+    "typecheck": "turbo run typecheck --filter=@procautomatr/*",
+    "test": "turbo run test --filter=@procautomatr/*",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^20.14.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "turbo": "^2.1.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "files": [],
+  "references": [
+    { "path": "./packages/proc-domain" },
+    { "path": "./packages/proc-shared" },
+    { "path": "./packages/proc-application" },
+    { "path": "./packages/proc-adapters" }
+  ]
+}

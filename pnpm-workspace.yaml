@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  # Strategy A: consume Wayfinder's unpublished `@rbrasier/*` workspace packages
+  # through this shared workspace. `vendor/wayfinder` is a git submodule.
+  - "vendor/wayfinder/packages/*"

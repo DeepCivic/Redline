@@ -1,0 +1,17 @@
+# Strategy A — Wayfinder is consumed as a git submodule for typed reuse only.
+# Its `@rbrasier/*` packages are resolved via pnpm-workspace.yaml
+# (`vendor/wayfinder/packages/*`). We never modify Wayfinder's internals; we only
+# import its ports and read-only typed helpers.
+#
+# Publishing target: the DeepCivic org (not johntooth).
+#
+# To initialise locally:
+#   git submodule add <deepcivic-wayfinder-remote> vendor/wayfinder
+#   git submodule update --init --recursive
+#
+# NOTE: `scripts/podman-run.sh` does NOT use this submodule — it vendors Wayfinder
+# source into a throwaway scratch copy inside the container, so CI/dev can run
+# without the submodule initialised. The submodule is for local (non-Podman) dev.
+[submodule "vendor/wayfinder"]
+	path = vendor/wayfinder
+	url = git@github.com:DeepCivic/wayfinder.git
