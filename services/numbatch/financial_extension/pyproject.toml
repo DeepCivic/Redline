@@ -1,7 +1,7 @@
 [project]
 name = "numbatch-financial"
 version = "0.1.0"
-description = "redline's additive financial extension to the forked Numbatch backend: financial_profiles + financial_extractions tables, an Alembic migration, and the config API. Consumed by the Thread 7 Arq worker stage and the Thread 8 IFinancialExtractor adapter."
+description = "redline's additive financial extension to the forked Numbatch backend: financial_profiles + financial_extractions tables, an Alembic migration, the config API (Thread 6), and the Arq extraction worker stage that writes financial_extractions (Thread 7). Consumed by the Thread 8 IFinancialExtractor adapter."
 requires-python = ">=3.11"
 # Mirrors the forked Numbatch backend's own stack (FastAPI + SQLAlchemy async +
 # Alembic + Pydantic v2). Pinned loosely so the overlay tracks the fork.
