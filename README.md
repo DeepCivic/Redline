@@ -14,10 +14,11 @@ Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 Under construction. See the living build plan and progress log at
 [`docs/procurement-evaluation-plan.md`](./docs/procurement-evaluation-plan.md).
 
-Threads 1–5 (+ 2a) are ✅ complete: scaffold, `redline-domain` (user-defined
-requirements), the `womblex-ingest` sidecar, the extraction reader adapter, and the
-Numbatch classifier + service scaffold. Current thread: **Thread 6 — Numbatch
-`financial_profile` schema & config API.**
+Threads 1–7 (+ 2a) are ✅ complete: scaffold, `redline-domain` (user-defined
+requirements), the `womblex-ingest` sidecar, the extraction reader adapter, the
+Numbatch classifier + service scaffold, and the financial extension (schema + config
+API + the extraction worker stage). Current thread: **Thread 8 — `IFinancialExtractor`
+adapter.**
 
 ## Architecture
 

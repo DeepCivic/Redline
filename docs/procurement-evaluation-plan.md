@@ -269,6 +269,7 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
   description fallback; writes `financial_extractions` with provenance — one figure per
   (document, requirement), no duplication.
   _Exit: synthetic tender workbook → figures + provenance in DB; unit + integration tests._
+  — docs: [thread-07](./threads/thread-07-numbatch-financial-extraction-worker.md)
 - **Thread 8 — `IFinancialExtractor` adapter.** `redline-adapters` client pulling `financial_extractions`
   (per document + `requirementId`) into `ProcurementResponse.costing` (`estimateAud: number | null`
   + `description`).
@@ -351,8 +352,8 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | 2a — Generalise requirements (user-defined criteria) | ✅ **done** | Exit test **PASSED**: dropped fixed 1–6; new `Requirement` (`id`/`name`/`definition`) + `RequirementSet` (ordered, unique, ≤10 = `MAX_REQUIREMENTS_PER_SET`); `requirementNumber` → `requirementId` + added `confidence` in `ProcurementResponse`; `requirementId` in `RequirementClassification` (dropped `categorisation`) and `FinancialExtraction`. `procurement-requirement.ts` deleted; no `RequirementNumber` remains. `redline-domain` **42/42** (6 files), `./validate.sh` **10/10** incl. purity check #4. Enacts [ADR-0004](./adr/0004-user-defined-requirements-not-fixed-1-6.adr.md). Docs: [thread-02a](./threads/thread-02a-generalise-requirements.md). |
 | 5 — Numbatch integration (fork; run all-but-frontend) | ✅ **done** | Exit test **PASSED**: `NumbatchClassifier` (`redline-adapters`) triggers a batch run → polls to success → reads the per-document roll-up → maps Numbatch `topic_id` → `requirementId` into `RequirementClassification[]`; 9 contract tests against a **captured Numbatch payload** (`__fixtures__/batch-rollup.json`) pin the mapping + full error taxonomy (adapters **17/17**). Service scaffold: `services/numbatch/` (README + idempotent `bootstrap-profile.py`) + `numbatch` compose profile (postgres/redis/minio/backend/worker/inference, **no frontend**). Decision #3 **LOCKED** ([ADR-0005](./adr/0005-numbatch-fork-all-but-frontend.adr.md)). `./validate.sh` **10/10**. Docs: [thread-05](./threads/thread-05-numbatch-integration.md). |
 | 6 — Numbatch financial_profile schema & API | ✅ **done** | Exit test **PASSED**: `POST /financial-profiles` creates a profile for a topic → `201` with the persisted body (idempotent by `topic_id` → re-`POST` `200`); the Alembic revision applies through a real `Operations` context — both tables created, `(source_doc_id, topic_id)` uniqueness enforced, `downgrade` reverses. Additive overlay `services/numbatch/financial_extension/` (SQLAlchemy 2.0 models `FinancialProfile`/`FinancialExtraction`, Pydantic v2 schemas, `FinancialProfileRepository`, config router, migration) written to graft onto the fork unchanged (Thread 16); provable standalone against SQLite — no GPU/fork on disk (ADR-0005). **11/11** pytest; `./validate.sh` **11/11** (new check #11). Docs: [thread-06](./threads/thread-06-numbatch-financial-schema-and-api.md). |
-| 7 — Numbatch financial extraction worker | 🔵 **next** | One figure per (document, requirement); reuses roll-up dedupe. Writes to `financial_extractions` (already created by Thread 6). |
-| 8 — IFinancialExtractor adapter | ⚪ not started | |
+| 7 — Numbatch financial extraction worker | ✅ **done** | Exit test **PASSED**: a synthetic tender workbook (womblex currency cells for a matched topic) → the worker writes one `financial_extractions` row per (document, requirement) with figure + `elem_order` provenance (`$1,200.50` + `$300.00` → `1500.50 AUD`, `source_elem_order 7`); no-currency topic → description fallback (`amount NULL`); double-run proves the `(source_doc_id, topic_id)` no-duplication invariant; unconfigured topics skipped. Additive to the Thread 6 overlay: `extractor.py` (pure figure logic — bundle sum vs line-item first, currency normalisation), `extraction_repository.py` (`upsert` enforcing no-duplication in code), `womblex_source.py` (`WomblexSource` protocol + in-memory fake), `worker.py` (`extract_financials_for_document` + the `financial_extraction_task` Arq entrypoint — no `arq` runtime dep; wired in the fork at Thread 16). **24/24** pytest (was 11; +13); `./validate.sh` **11/11**. Provable standalone against SQLite — no GPU/fork on disk (ADR-0005). Docs: [thread-07](./threads/thread-07-numbatch-financial-extraction-worker.md). |
+| 8 — IFinancialExtractor adapter | 🔵 **next** | Reads `financial_extractions` per (document, `requirementId`) into `ProcurementResponse.costing`; currency numeric via `typedDisplayCell`. |
 | 9 — redline_ persistence layer | ⚪ not started | |
 | 10 — Orchestration use-cases | ⚪ not started | |
 | 11 — Workflow manager UI | ⚪ not started | |
@@ -676,3 +677,57 @@ SQLite. Grafting into the fork (bind to Numbatch's `Base`, repoint `down_revisio
 (pre-1.0).
 
 **Docs:** [thread-06](./threads/thread-06-numbatch-financial-schema-and-api.md).
+
+### Thread 7 log (2026-07-28) — ✅ COMPLETE
+
+**Added** the financial extension's **Arq worker stage** (build plan §6) — the writer that
+fills `financial_extractions` (the table itself was created by the Thread 6 migration).
+Additive to the Thread 6 overlay at `services/numbatch/financial_extension/`; same standalone
+posture (SQLite + an in-memory womblex fake; no MinIO, no GPU, no vendored fork — ADR-0005).
+
+**New modules (`src/numbatch_financial/`):**
+- `extractor.py` — the **pure** logic. `MatchedCell` (a womblex table cell: `elem_order`,
+  `raw_value`, `is_currency`) + `extract_figure(profile, matched_cells, fallback_text)` →
+  `ExtractionFigure`. Currency cells are parsed (symbol/grouping stripped); a *bundle* profile
+  sums them, a *line-item* profile takes the first (lowest `elem_order`) figure; provenance
+  points at the first matched currency cell. No currency cell → a description-only fallback
+  (`amount`/`currency` = `None`). No I/O.
+- `extraction_repository.py` — `ExtractionFigure` DTO + `FinancialExtractionRepository`. `upsert`
+  enforces the `(source_doc_id, topic_id)` no-duplication invariant **in code** (update the
+  existing row in place), so a re-run never duplicates nor trips
+  `uq_financial_extractions_doc_topic`.
+- `womblex_source.py` — `MatchedTopic` (a matched topic + its deduped chunk ids), the
+  `WomblexSource` **protocol** (matched currency cells + fallback text), and an in-memory
+  `FakeWomblexSource` so the stage is provable standalone. In the fork the seam resolves through
+  Numbatch's ingestion store and the roll-up's matched chunk ids.
+- `worker.py` — `extract_financials_for_document` (load each matched topic's `financial_profile`,
+  pull its cells + fallback, extract, upsert; one transaction per document; topics without a live
+  profile skipped) + `financial_extraction_task(ctx, …)` the Arq entrypoint the fork registers
+  (Thread 16). No `arq` runtime dependency — the entrypoint takes a plain `ctx` dict.
+
+**Design decisions.** (1) *Pure extractor + thin repository + womblex seam* — mirrors redline's
+hexagonal seams (the TS adapters inject an `HttpClient`; here the worker injects a `WomblexSource`
++ `session_factory`), keeping the worker a short orchestration and the monetary logic I/O-free.
+(2) *No-duplication in `upsert`, not the caller* — the §6 invariant is both a schema constraint
+(Thread 6) and a repository behaviour; the double-run test proves one row per pair. (3) *`amount`
+OR `description`* — serves the "dollar estimate **or** short description" rule (§1). (4) *Bundle
+vs line-item honours `granularity`.* (5) *No `arq` dep* — Arq stays a deployment concern wired in
+the fork's `WorkerSettings` (Thread 16), keeping the overlay dependency-light and standalone-provable.
+
+**Exit test — PASSED.** `services/numbatch/financial_extension` pytest **24/24** (was 11; +13):
+`test_extractor.py` (6) pure figure logic; `test_extraction_repository.py` (3) upsert /
+no-duplication write side; `test_worker.py` (4) — **the exit test** — a synthetic tender workbook
+(`$1,200.50` @ `elem_order 7` + `$300.00` @ `elem_order 9` for matched `t-support`) → one
+`financial_extractions` row `amount 1500.50`, `currency AUD`, `source_elem_order 7` (**figures +
+provenance in DB**); no-currency topic → description fallback (`amount NULL`); double-run → one
+row per matched topic (no duplication); unconfigured topics skipped. `./validate.sh` → **11/11**.
+
+**Known limitation.** No live Numbatch compose-up here (no GPU; fork not on disk — ADR-0005); the
+exit test runs the worker against SQLite + `FakeWomblexSource`. Wiring the real seam over
+Numbatch's ingestion store and enqueuing `financial_extraction_task` from the roll-up land with
+the vendored fork (Thread 16), documented in the overlay README.
+
+**Version bump intent:** MINOR — additive Arq worker stage over the Thread 6 schema; no breaking
+changes (pre-1.0).
+
+**Docs:** [thread-07](./threads/thread-07-numbatch-financial-extraction-worker.md).

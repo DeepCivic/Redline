@@ -77,8 +77,11 @@ The forked backend gains `financial_profiles` + `financial_extractions` (keyed o
 `(source_doc_id, topic_id)`) and a new Arq worker stage — additive to the schema above,
 consumed by the `IFinancialExtractor` adapter (Thread 8).
 
-Thread 6 built the **schema + config API** as a self-contained overlay under
+Thread 6 built the **schema + config API** and Thread 7 the **extraction worker
+stage** as a self-contained overlay under
 [`financial_extension/`](./financial_extension/README.md), written to graft onto this
 fork's `app/` + `alembic/` unchanged (the wiring is a Thread 16 step) but provable
-standalone against SQLite — no GPU/fork checkout needed. Thread 7 adds the worker that
-writes `financial_extractions`; Thread 8 the redline-side adapter that reads them.
+standalone against SQLite — no GPU/fork checkout needed. Thread 7's worker reads womblex
+currency cells for a topic's matched, deduped chunks and writes one
+`financial_extractions` row per (document, requirement); Thread 8 is the redline-side
+adapter that reads them.

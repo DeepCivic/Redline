@@ -7,11 +7,11 @@ a new Arq worker stage), designed to drop into the forked Numbatch backend's
 - ``financial_profiles`` — per Numbatch topic (= a redline requirement/criterion,
   ADR-0004), a config declaring *what* monetary facts to pull and *how* to
   normalise them. This is the Thread 6 config surface.
-- ``financial_extractions`` — the Thread 7 worker's output: one extracted figure
-  (or description fallback) per ``(source_doc_id, topic_id)`` pair, with
-  provenance back to womblex's ``elem_order``. Declared here (Thread 6) so the
-  migration creates both tables in one additive step; the worker that *writes*
-  rows lands in Thread 7.
+- ``financial_extractions`` — the financial worker's output (Thread 7): one extracted
+  figure (or description fallback) per ``(source_doc_id, topic_id)`` pair, with
+  provenance back to womblex's ``elem_order``. Declared in Thread 6 so the
+  migration creates both tables in one additive step; written by
+  ``worker.py``/``extraction_repository.py`` (Thread 7).
 
 Keyed on ``(source_doc_id, topic_id)`` so a figure attaches to a (document,
 requirement) pair via the batch-inference roll-up's matched-chunk provenance —
@@ -119,10 +119,10 @@ class FinancialProfile(Base):
 class FinancialExtraction(Base):
     """One extracted figure (or description fallback) per (document, topic).
 
-    Written by the Thread 7 Arq worker; declared here so the Thread 6 migration
-    creates both tables. Keyed uniquely on ``(source_doc_id, topic_id)`` — the
-    no-duplication invariant (build plan §6): exactly one figure per (document,
-    requirement).
+    Written by the Thread 7 Arq worker (``worker.py`` → ``extraction_repository``);
+    declared in Thread 6 so its migration creates both tables. Keyed uniquely on
+    ``(source_doc_id, topic_id)`` — the no-duplication invariant (build plan §6):
+    exactly one figure per (document, requirement).
     """
 
     __tablename__ = "financial_extractions"
