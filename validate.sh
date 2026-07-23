@@ -170,6 +170,29 @@ else
   find services/womblex-ingest -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
+# ── 11. Numbatch financial extension tests (services/numbatch/financial_extension) ─
+# The Thread 6 overlay: financial_profiles/financial_extractions models, the
+# Alembic migration, and the config API. Provable standalone (SQLite; no fork,
+# no GPU). SKIPs cleanly when python3 is absent so the workspace checks still gate.
+section "11. services/numbatch/financial_extension pytest"
+FIN_EXT=services/numbatch/financial_extension
+if [ ! -d "$FIN_EXT" ]; then
+  skip "numbatch financial extension — not present"
+elif ! command -v python3 >/dev/null 2>&1; then
+  skip "numbatch financial extension pytest — no python3 on host"
+else
+  PY_VENV="$(mktemp -d)/venv"
+  if python3 -m venv "$PY_VENV" >/dev/null 2>&1 \
+    && "$PY_VENV/bin/pip" install -q -e "$FIN_EXT[dev]" >/dev/null 2>&1 \
+    && ( cd "$FIN_EXT" && "$PY_VENV/bin/python" -m pytest -q >/dev/null 2>&1 ); then
+    pass "numbatch financial extension pytest"
+  else
+    fail "numbatch financial extension pytest"
+  fi
+  rm -rf "$PY_VENV" "$FIN_EXT"/src/*.egg-info "$FIN_EXT/.pytest_cache" 2>/dev/null || true
+  find "$FIN_EXT" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo; echo "──────────────────────────────────────────"
 echo "Passed: $PASS"; echo "Failed: $FAIL"
