@@ -26,7 +26,7 @@ building, or when a thread spec exists in `docs/threads/` and the user says
 | 1 | Thread spec exists and is complete | Missing scope, entities/ports, or sub-components |
 | 2 | Thread has a single, verifiable **exit test** | Missing or vague (`_Exit:_` not measurable) |
 | 3 | Spec matches the build-plan thread scope | Spec implements something outside the thread |
-| 4 | DB changes follow conventions | Wrong prefix (must be `proc_`), camelCase columns, missing `id`/timestamps |
+| 4 | DB changes follow conventions | Wrong prefix (must be `redline_`), camelCase columns, missing `id`/timestamps |
 | 5 | Layering respected | Domain gains a dep; application imports an adapter; app reaches into Wayfinder internals |
 | 6 | Wayfinder reuse is read-only | Any plan to modify `vendor/wayfinder` |
 | 7 | ADRs consistent | Two ADRs make incompatible decisions, or a locked §8 decision is contradicted |
@@ -40,7 +40,7 @@ building, or when a thread spec exists in `docs/threads/` and the user says
 ```
 PASS — Thread spec exists and is complete
 PASS — Exit test is measurable (vitest suite asserting X)
-FAIL — DB table missing proc_ prefix
+FAIL — DB table missing redline_ prefix
 WARN — Risk section is sparse; note the womblex JSON-vs-Parquet decision risk
 ```
 

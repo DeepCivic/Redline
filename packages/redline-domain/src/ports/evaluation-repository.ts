@@ -3,7 +3,7 @@ import type { Evaluation } from "../entities/evaluation";
 import type { ProcurementResponse } from "../entities/procurement-response";
 import type { ResponseGroup, Vendor } from "../entities/evaluation-structure";
 
-// Persists the evaluation aggregate and its parts into the proc_ schema
+// Persists the evaluation aggregate and its parts into the redline_ schema
 // (Thread 9). All methods return Result — no thrown exceptions cross the port.
 export interface IEvaluationRepository {
   saveEvaluation(evaluation: Evaluation): Promise<Result<Evaluation>>;

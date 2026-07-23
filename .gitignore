@@ -8,4 +8,4 @@ coverage/
 .DS_Store
 
 # Podman validation scratch (created by scripts/podman-run.sh if SCRATCH_BASE is set here)
-.procautomatr-scratch/
+.redline-scratch/

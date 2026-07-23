@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# validate.sh — every check that must pass before a procautomatr change ships.
+# validate.sh — every check that must pass before a redline change ships.
 #
 # Adopts Wayfinder's validate.sh spirit, adapted for this adapter:
 #  - Podman-aware: if no local `node`/`pnpm`, the workspace checks run inside a
 #    Node 20 container via scripts/podman-run.sh (see docs/guides/local-dev-and-validation.md).
-#  - Scoped to @procautomatr/* — the vendored Wayfinder tree is never checked.
+#  - Scoped to @redline/* — the vendored Wayfinder tree is never checked.
 #  - Static guards (purity, prefixes, focused tests, file size) run on the host
 #    with plain shell — no Node needed.
 #
@@ -55,42 +55,42 @@ if [ "$HAVE_LOCAL_NODE" = false ] && [ -z "$PODMAN_BIN" ]; then
 fi
 
 # ── 1. typecheck ─────────────────────────────────────────────────────────────
-section "1. pnpm typecheck (@procautomatr/*)"
+section "1. pnpm typecheck (@redline/*)"
 if [ "$WS_AVAILABLE" = false ]; then
   skip "typecheck — no local node and no podman available"
 elif run_ws "pnpm typecheck"; then pass "typecheck"; else fail "typecheck"; fi
 
 # ── 2. lint ──────────────────────────────────────────────────────────────────
-section "2. pnpm lint (@procautomatr/*)"
+section "2. pnpm lint (@redline/*)"
 if [ "$WS_AVAILABLE" = false ]; then
   skip "lint — no local node and no podman available"
 elif run_ws "pnpm lint"; then pass "lint"; else fail "lint"; fi
 
 # ── 3. tests ─────────────────────────────────────────────────────────────────
-section "3. pnpm test (@procautomatr/*)"
+section "3. pnpm test (@redline/*)"
 if [ "$WS_AVAILABLE" = false ]; then
   skip "tests — no local node and no podman available"
 elif run_ws "pnpm test"; then pass "tests"; else fail "tests"; fi
 
-# ── 4. proc-domain purity (zero external imports, relative only) ─────────────
-section "4. packages/proc-domain has no non-relative imports"
-DOMAIN_LEAKS=$(grep -rnE "from ['\"][^.]" packages/proc-domain/src \
+# ── 4. redline-domain purity (zero external imports, relative only) ─────────────
+section "4. packages/redline-domain has no non-relative imports"
+DOMAIN_LEAKS=$(grep -rnE "from ['\"][^.]" packages/redline-domain/src \
     --include="*.ts" --exclude="*.test.ts" 2>/dev/null \
   | grep -vE "from ['\"]\\." \
   | grep -vE "^[^:]+:[0-9]+:\s*//")
-if [ -z "$DOMAIN_LEAKS" ]; then pass "proc-domain purity"; else
-  fail "proc-domain purity — non-relative imports found:"; echo "$DOMAIN_LEAKS"
+if [ -z "$DOMAIN_LEAKS" ]; then pass "redline-domain purity"; else
+  fail "redline-domain purity — non-relative imports found:"; echo "$DOMAIN_LEAKS"
 fi
 
-# ── 5. proc-application purity ───────────────────────────────────────────────
-# May import only @procautomatr/proc-domain and @procautomatr/proc-shared.
-section "5. packages/proc-application imports only proc-domain and proc-shared"
-APP_LEAKS=$(grep -rnE "from ['\"][^.]" packages/proc-application/src \
+# ── 5. redline-application purity ───────────────────────────────────────────────
+# May import only @redline/redline-domain and @redline/redline-shared.
+section "5. packages/redline-application imports only redline-domain and redline-shared"
+APP_LEAKS=$(grep -rnE "from ['\"][^.]" packages/redline-application/src \
     --include="*.ts" --exclude="*.test.ts" 2>/dev/null \
-  | grep -vE "from ['\"]@procautomatr/(proc-domain|proc-shared)['\"/]" \
+  | grep -vE "from ['\"]@redline/(redline-domain|redline-shared)['\"/]" \
   | grep -vE "^[^:]+:[0-9]+:\s*//")
-if [ -z "$APP_LEAKS" ]; then pass "proc-application purity"; else
-  fail "proc-application purity — imports outside proc-domain/proc-shared:"; echo "$APP_LEAKS"
+if [ -z "$APP_LEAKS" ]; then pass "redline-application purity"; else
+  fail "redline-application purity — imports outside redline-domain/redline-shared:"; echo "$APP_LEAKS"
 fi
 
 # ── 6. Wayfinder tree untouched ──────────────────────────────────────────────
@@ -102,15 +102,15 @@ else
   pass "no committed Wayfinder source"
 fi
 
-# ── 7. DB table naming (proc_ prefix) ────────────────────────────────────────
-section "7. all Drizzle tables match ^proc_[a-z_]+\$"
-SCHEMA_GLOB="packages/proc-adapters/src"
+# ── 7. DB table naming (redline_ prefix) ────────────────────────────────────────
+section "7. all Drizzle tables match ^redline_[a-z_]+\$"
+SCHEMA_GLOB="packages/redline-adapters/src"
 if [ -d "$SCHEMA_GLOB" ]; then
   BAD_TABLES=$(grep -rhE "pgTable\(\"[^\"]+\"" "$SCHEMA_GLOB" 2>/dev/null \
     | sed -E 's/.*pgTable\("([^"]+)".*/\1/' \
-    | grep -vE "^proc_[a-z_]+$" || true)
+    | grep -vE "^redline_[a-z_]+$" || true)
   if [ -z "$BAD_TABLES" ]; then pass "table names (or none yet)"; else
-    fail "table names — must use the proc_ prefix:"; echo "$BAD_TABLES"
+    fail "table names — must use the redline_ prefix:"; echo "$BAD_TABLES"
   fi
 else
   skip "table names — no adapters schema yet"

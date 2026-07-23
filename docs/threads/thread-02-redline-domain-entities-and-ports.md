@@ -1,4 +1,4 @@
-# Thread 2 — `proc-domain` core entities & ports
+# Thread 2 — `redline-domain` core entities & ports
 
 **Status:** ✅ Complete · **Date:** 2026-07-23 · **Version intent:** MINOR (pre-1.0; new public surface)
 
@@ -7,7 +7,7 @@ Plan entry: [`docs/procurement-evaluation-plan.md` §7 · Track 0](../procuremen
 
 ## Goal
 
-Fill `@procautomatr/proc-domain` with the procurement-evaluation **entities** and
+Fill `@redline/redline-domain` with the procurement-evaluation **entities** and
 **port interfaces** the rest of the plan builds against — pure TypeScript, zero
 external dependencies, Result pattern at every boundary, tests-first.
 
@@ -62,7 +62,7 @@ All port methods return `Promise<Result<…>>` — no thrown exceptions cross th
 Run in `node:20-bookworm-slim` via Podman (`flatpak-spawn --host`), pnpm 9.12.0:
 
 ```
-proc-domain test → Test Files 6 passed (6) · Tests 39 passed (39)
+redline-domain test → Test Files 6 passed (6) · Tests 39 passed (39)
   entities/procurement-requirement.test.ts   (7)
   entities/evaluation-structure.test.ts      (13)
   entities/procurement-response.test.ts      (8)
@@ -73,7 +73,7 @@ proc-domain test → Test Files 6 passed (6) · Tests 39 passed (39)
 ./validate.sh → Passed: 9  Failed: 0  — All validations passed.
 ```
 
-Check #4 (proc-domain purity — zero non-relative imports) passes: entities and
+Check #4 (redline-domain purity — zero non-relative imports) passes: entities and
 ports import only via relative paths.
 
 ## Known limitations / follow-ups
@@ -83,5 +83,5 @@ ports import only via relative paths.
    internally and map down to these.
 2. `ProcurementRequirement` is defined but not yet wired to a
    requirement-catalogue; Thread 5 (Numbatch profile) consumes it.
-3. No zod schemas yet — `@procautomatr/proc-shared` stays a placeholder until a
+3. No zod schemas yet — `@redline/redline-shared` stays a placeholder until a
    UI/adapter boundary needs runtime validation (Thread 4+).

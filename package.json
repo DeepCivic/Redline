@@ -1,5 +1,5 @@
 {
-  "name": "procautomatr",
+  "name": "redline",
   "version": "0.0.0",
   "private": true,
   "description": "Procurement Evaluation Adapter — a Wayfinder plugin integrating womblex + Numbatch.",
@@ -10,11 +10,11 @@
   },
   "type": "module",
   "scripts": {
-    "build": "turbo run build --filter=@procautomatr/*",
-    "dev": "turbo run dev --filter=@procautomatr/*",
-    "lint": "turbo run lint --filter=@procautomatr/*",
-    "typecheck": "turbo run typecheck --filter=@procautomatr/*",
-    "test": "turbo run test --filter=@procautomatr/*",
+    "build": "turbo run build --filter=@redline/*",
+    "dev": "turbo run dev --filter=@redline/*",
+    "lint": "turbo run lint --filter=@redline/*",
+    "typecheck": "turbo run typecheck --filter=@redline/*",
+    "test": "turbo run test --filter=@redline/*",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\""
   },
   "devDependencies": {

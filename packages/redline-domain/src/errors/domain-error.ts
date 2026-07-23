@@ -1,6 +1,6 @@
 // Procurement-evaluation domain error taxonomy. Mirrors Wayfinder's DomainError
 // shape (ADR-001) so adapters can translate between the two without surprises,
-// but is defined locally to keep proc-domain zero-dependency.
+// but is defined locally to keep redline-domain zero-dependency.
 export type DomainErrorCode =
   | "NOT_FOUND"
   | "ALREADY_EXISTS"

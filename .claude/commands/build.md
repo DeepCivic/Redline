@@ -46,7 +46,7 @@ Every thread's exit test in the build plan is the acceptance gate. Satisfy it
 explicitly and paste the passing output:
 - Pure package threads → a passing vitest suite exercising the exit criterion.
 - Service threads (womblex/Numbatch) → a compose-up + real-request proof.
-- UI threads (from Thread 11) → a Playwright e2e test under `apps/proc-web/e2e/`.
+- UI threads (from Thread 11) → a Playwright e2e test under `apps/redline-web/e2e/`.
   (Add the `/e2e` skill at that point — see the deviations table in `CLAUDE.md`.)
 
 ### Step 4 — On completion

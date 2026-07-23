@@ -5,7 +5,7 @@
 
 ## Context
 
-We are building a **Procurement Evaluation Adapter** (`procautomatr`) that must
+We are building a **Procurement Evaluation Adapter** (`redline`) that must
 integrate two Python systems — **womblex** (document extraction) and **Numbatch**
 (no-code classification, extended here for financial table extraction) — and must
 present a tabular, sortable in-app review of procurement responses with Excel
@@ -26,12 +26,12 @@ Two constraints follow:
 
 ## Decision
 
-Build `procautomatr` as its **own repository and an adapter**, never a Wayfinder
+Build `redline` as its **own repository and an adapter**, never a Wayfinder
 fork. Wayfinder is touched only through runtime seams:
 
 - HTTP/MCP to the Python sidecars,
 - shared object storage (MinIO/S3),
-- a **separate `proc_`-prefixed Postgres schema/DB**.
+- a **separate `redline_`-prefixed Postgres schema/DB**.
 
 We never reach into Wayfinder's internals; we depend only on its **ports** and
 its **read-only typed helpers**.
@@ -50,8 +50,8 @@ be severed to a standalone workspace in Thread 16.
 
 ### Layering
 
-`proc-domain` (zero deps, Result pattern) ← `proc-application` (use-cases) ←
-`proc-adapters` (port implementations) ← `apps/proc-web`. `proc-shared` holds zod
+`redline-domain` (zero deps, Result pattern) ← `redline-application` (use-cases) ←
+`redline-adapters` (port implementations) ← `apps/redline-web`. `redline-shared` holds zod
 schemas. This mirrors Wayfinder ADR-001/ADR-003.
 
 ## Consequences
@@ -68,17 +68,17 @@ schemas. This mirrors Wayfinder ADR-001/ADR-003.
 
 - Contributors must initialise the submodule (`git submodule update --init`)
   before `pnpm install`, or `@rbrasier/domain` will not resolve.
-- Two package scopes coexist in one workspace (`@procautomatr/*` and
+- Two package scopes coexist in one workspace (`@redline/*` and
   `@rbrasier/*`); tooling must ignore `vendor/**` for lint/format.
 
 ## Enforcement
 
 - `pnpm-workspace.yaml` includes `vendor/wayfinder/packages/*` so `@rbrasier/*`
   resolves as a workspace dependency.
-- ESLint restricts `packages/proc-domain/src/**` to relative imports only
+- ESLint restricts `packages/redline-domain/src/**` to relative imports only
   (domain stays framework-free), mirroring Wayfinder's ADR-001 enforcement.
 - ESLint ignores `vendor/**` — we never lint or reformat Wayfinder's tree.
-- **Thread 1 exit test** (`packages/proc-domain/src/wayfinder-spike.test.ts`)
+- **Thread 1 exit test** (`packages/redline-domain/src/wayfinder-spike.test.ts`)
   imports and runs `typedDisplayCell` from `@rbrasier/domain`, proving Strategy A
   end to end.
 

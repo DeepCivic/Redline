@@ -7,7 +7,7 @@ Plan entry: [`docs/procurement-evaluation-plan.md` §7 · Track 0](../procuremen
 
 ## Goal
 
-Stand up the `procautomatr` pnpm monorepo mirroring Wayfinder's toolchain, and
+Stand up the `redline` pnpm monorepo mirroring Wayfinder's toolchain, and
 prove **Strategy A** — that we can import and run a typed helper from Wayfinder's
 unpublished `@rbrasier/domain` package.
 
@@ -16,21 +16,21 @@ unpublished `@rbrasier/domain` package.
 ## What was built
 
 ### Workspace
-- `package.json` — turbo scripts scoped `--filter=@procautomatr/*` so vendored
+- `package.json` — turbo scripts scoped `--filter=@redline/*` so vendored
   Wayfinder packages are never built/linted/tested by us.
 - `pnpm-workspace.yaml` — `apps/*`, `packages/*`, and the seam `vendor/wayfinder/packages/*`.
 - `turbo.json`, `tsconfig.base.json`, `tsconfig.json`, `.prettierrc`, `.gitignore`,
   `.gitmodules` (Wayfinder submodule → DeepCivic remote).
-- `eslint.config.mjs` — flat config; `proc-domain` non-test source restricted to
+- `eslint.config.mjs` — flat config; `redline-domain` non-test source restricted to
   relative imports; `vendor/**` ignored.
 
 ### Packages
 | Package | Thread 1 contents |
 |---|---|
-| `@procautomatr/proc-domain` | Zero-dep `Result`/`DomainError` primitives; `index.ts`; the **consumption spike** `wayfinder-spike.test.ts`. |
-| `@procautomatr/proc-shared` | Placeholder `index.ts` (zod schemas land Thread 2+). |
-| `@procautomatr/proc-application` | Placeholder `index.ts` (use-cases land Thread 10). |
-| `@procautomatr/proc-adapters` | Placeholder `index.ts`; declares `@rbrasier/domain` dep. |
+| `@redline/redline-domain` | Zero-dep `Result`/`DomainError` primitives; `index.ts`; the **consumption spike** `wayfinder-spike.test.ts`. |
+| `@redline/redline-shared` | Placeholder `index.ts` (zod schemas land Thread 2+). |
+| `@redline/redline-application` | Placeholder `index.ts` (use-cases land Thread 10). |
+| `@redline/redline-adapters` | Placeholder `index.ts`; declares `@rbrasier/domain` dep. |
 
 ### Tooling & docs
 - `scripts/podman-run.sh` — Node-20-in-Podman harness (host has no local Node).
@@ -54,7 +54,7 @@ Run in `node:20-bookworm-slim` via Podman, pnpm 9.12.0:
 ```
 pnpm build     → Tasks: 4 successful, 4 total
 pnpm test      → Tasks: 7 successful, 7 total
-                 proc-domain: wayfinder-spike.test.ts (3 tests) — 3 passed
+                 redline-domain: wayfinder-spike.test.ts (3 tests) — 3 passed
 pnpm typecheck → Tasks: 7 successful, 7 total
 ./validate.sh  → Passed: 9  Failed: 0  — All validations passed.
 ```
@@ -64,7 +64,7 @@ imported from `@rbrasier/domain`.
 
 ## Known limitations / follow-ups
 
-1. `procautomatr` is not yet a git repo. `git init` + add the DeepCivic remote.
+1. `redline` is not yet a git repo. `git init` + add the DeepCivic remote.
 2. `vendor/wayfinder` is wired only for the Podman path. For local (non-Podman)
    dev, add the submodule (`git submodule add git@github.com:DeepCivic/wayfinder.git vendor/wayfinder`)
    or symlink a sibling checkout.

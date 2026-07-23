@@ -11,7 +11,7 @@ Ask all of these via `AskUserQuestion` before proceeding:
 
 1. What's changing, and why?
 2. Which entities, ports, or use cases are affected? Which thread(s) do they belong to?
-3. Are DB changes needed? (Confirm `proc_` prefix.)
+3. Are DB changes needed? (Confirm `redline_` prefix.)
 4. Does it change a runtime seam (Wayfinder / womblex / Numbatch)?
 5. Is this a MINOR or PATCH bump? If it's really new scope, stop and route to
    `/new-thread` instead.

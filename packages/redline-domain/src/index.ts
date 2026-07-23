@@ -1,4 +1,4 @@
-// @procautomatr/proc-domain — public surface.
+// @redline/redline-domain — public surface.
 //
 // Primitives (Thread 1) plus the core entities and port interfaces (Thread 2).
 export * from "./result";

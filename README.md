@@ -1,40 +1,40 @@
-# procautomatr
+# Redline
 
 > **Procurement Evaluation Adapter** — a Wayfinder plugin/adapter (its own repo) for
 > procurement response evaluation. Integrates **womblex** (document extraction) and
 > **Numbatch** (no-code classification, extended with configurable financial table
 > extraction), and reuses Wayfinder's typed tabular/XLSX helpers read-only.
 
-_Placeholder repo name — rename freely._
+Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
 ## Status
 
 Under construction. See the living build plan and progress log at
 [`docs/procurement-evaluation-plan.md`](./docs/procurement-evaluation-plan.md).
 
-Current thread: **Thread 2 — proc-domain core entities & ports.**
+Current thread: **Thread 2 — redline-domain core entities & ports.**
 (Thread 1 — scaffold & Wayfinder consumption spike — is ✅ complete and verified.)
 
 ## Architecture
 
 A true **adapter**, not a Wayfinder fork. Wayfinder is consumed at runtime seams
-(HTTP/MCP + object storage + a separate `proc_`-prefixed DB schema) and its typed
+(HTTP/MCP + object storage + a separate `redline_`-prefixed DB schema) and its typed
 domain helpers are reused read-only. See [ADR-0001](./docs/adr/0001-adapter-over-wayfinder.adr.md).
 
 Publishing target: the **DeepCivic** org.
 
 ```
-procautomatr/
+redline/
 ├── docs/
 │   ├── adr/                     # architecture decision records (Wayfinder ADR model)
 │   └── procurement-evaluation-plan.md
 ├── packages/
-│   ├── proc-domain/             # entities + ports (zero deps, Result pattern)
-│   ├── proc-application/        # use-cases
-│   ├── proc-adapters/           # Parquet/JSON reader, Numbatch client, repositories
-│   └── proc-shared/             # zod schemas shared with the UI
+│   ├── redline-domain/             # entities + ports (zero deps, Result pattern)
+│   ├── redline-application/        # use-cases
+│   ├── redline-adapters/           # Parquet/JSON reader, Numbatch client, repositories
+│   └── redline-shared/             # zod schemas shared with the UI
 ├── apps/
-│   └── proc-web/                # specialist control surface + review grid
+│   └── redline-web/                # specialist control surface + review grid
 ├── services/                    # womblex-ingest, numbatch (added in later threads)
 └── vendor/
     └── wayfinder/               # git submodule (strategy A) — typed reuse only
@@ -54,7 +54,7 @@ Prettier, ESLint 9.
 
 ```bash
 pnpm install
-pnpm build      # turbo run build across @procautomatr/* packages
+pnpm build      # turbo run build across @redline/* packages
 pnpm test       # vitest — includes the Wayfinder consumption spike
 pnpm typecheck
 pnpm lint

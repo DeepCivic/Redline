@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the procautomatr workspace in a Node 20 container via Podman.
+# Run the redline workspace in a Node 20 container via Podman.
 #
 # Why: some hosts have no local Node/pnpm. This gives a reproducible runtime and
 # keeps the Wayfinder dependency clearly delineated — Wayfinder's SOURCE (domain
@@ -31,7 +31,7 @@ CMD="${1:-pnpm install && pnpm build && pnpm test}"
 # When podman runs on the host (e.g. via flatpak-spawn), the scratch dir must be
 # on a path the host can see. Default to a sibling of the repo, which is on the
 # same host-visible volume, rather than the sandbox-local /tmp.
-SCRATCH_BASE="${SCRATCH_BASE:-$REPO_ROOT/../.procautomatr-scratch}"
+SCRATCH_BASE="${SCRATCH_BASE:-$REPO_ROOT/../.redline-scratch}"
 mkdir -p "$SCRATCH_BASE"
 
 if [ ! -d "$WAYFINDER_DIR/packages/domain" ]; then
@@ -42,7 +42,7 @@ fi
 
 # Scratch workspace so container writes (node_modules, vendored source) never
 # touch the committed tree or the real Wayfinder.
-SCRATCH="$(mktemp -d "$SCRATCH_BASE/procautomatr-podman.XXXXXX")"
+SCRATCH="$(mktemp -d "$SCRATCH_BASE/redline-podman.XXXXXX")"
 trap 'rm -rf "$SCRATCH"' EXIT
 cp -a "$REPO_ROOT/." "$SCRATCH/"
 rm -rf "$SCRATCH/node_modules" "$SCRATCH"/packages/*/node_modules

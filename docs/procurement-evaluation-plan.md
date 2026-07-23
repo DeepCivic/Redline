@@ -4,7 +4,7 @@
 > **womblex** (document extraction) and **Numbatch** (no-code classification, extended
 > with configurable financial table extraction).
 
-_Placeholder repo name:_ **`procautomatr`** — rename freely.
+_Repository:_ **`DeepCivic/Redline`**.
 
 ---
 
@@ -67,22 +67,22 @@ plugin only depends on Wayfinder's ports — a true adapter, not a fork.
 ## 4. Target repo layout
 
 ```
-procautomatr/
+redline/
 ├── services/
 │   ├── womblex-ingest/          # womblex sidecar; Isaacus optional (flag)
 │   └── numbatch/                # Numbatch stack, FORKED + EXTENDED (financial extraction)
 ├── packages/
-│   ├── proc-domain/             # entities + ports (zero deps, Result pattern)
-│   ├── proc-application/        # use-cases (imports proc-domain + @rbrasier/domain types)
-│   ├── proc-adapters/           # Parquet/JSON reader, Numbatch client, repositories
-│   └── proc-shared/             # zod schemas shared with the UI
+│   ├── redline-domain/             # entities + ports (zero deps, Result pattern)
+│   ├── redline-application/        # use-cases (imports redline-domain + @rbrasier/domain types)
+│   ├── redline-adapters/           # Parquet/JSON reader, Numbatch client, repositories
+│   └── redline-shared/             # zod schemas shared with the UI
 ├── apps/
-│   └── proc-web/                # specialist control surface + review grid
+│   └── redline-web/                # specialist control surface + review grid
 └── infra/
     └── docker-compose.yml       # womblex + numbatch + postgres + minio (compose profiles)
 ```
 
-- All new tables use a **`proc_` prefix** in a **separate Postgres schema/DB**.
+- All new tables use a **`redline_` prefix** in a **separate Postgres schema/DB**.
 - Result pattern at all boundaries; tests-first; mirror Wayfinder's code-writing rules.
 
 ---
@@ -90,7 +90,7 @@ procautomatr/
 ## 5. Core data model
 
 ```typescript
-// proc-domain/src/entities/procurement-response.ts
+// redline-domain/src/entities/procurement-response.ts
 export interface ProcurementResponse {
   evaluationId: string;
   vendorName: string;                        // "brand"
@@ -120,7 +120,7 @@ Relationships are many-to-many: 1 vendor→N docs→1 response; N vendors→1 re
 1 vendor→N responses (multiple offerings).
 
 ```typescript
-// proc-domain/src/entities/evaluation-structure.ts
+// redline-domain/src/entities/evaluation-structure.ts
 export interface Vendor {
   id: string;
   displayName: string;
@@ -178,11 +178,11 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
   eslint mirroring Wayfinder). Wayfinder as submodule; prove one typed import compiles + runs.
   _Exit: `pnpm build` green; test importing `typedDisplayCell` passes._
   — docs: [thread-01](./threads/thread-01-scaffold-and-spike.md)
-- **Thread 2 — `proc-domain` core entities & ports.** `Vendor`, `ResponseGroup`, `IntakeStage`,
+- **Thread 2 — `redline-domain` core entities & ports.** `Vendor`, `ResponseGroup`, `IntakeStage`,
   `ProcurementResponse`, `ProcurementRequirement` (fixed 1–6 + user-defined categories); ports:
   `IProcurementExtractionReader`, `IProcurementClassifier`, `IFinancialExtractor`, `IEvaluationRepository`.
   Zero deps, Result pattern, tests-first. _Exit: domain builds; entity invariants covered._
-  — docs: [thread-02](./threads/thread-02-proc-domain-entities-and-ports.md)
+  — docs: [thread-02](./threads/thread-02-redline-domain-entities-and-ports.md)
 
 ### Track 1 — Ingestion (womblex)
 - **Thread 3 — womblex sidecar service.** `services/womblex-ingest`: Dockerfile installing womblex
@@ -206,20 +206,20 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
   table cells for matched chunks; extracts currency-normalised figures or description fallback;
   writes `financial_extractions` with provenance.
   _Exit: synthetic tender workbook → figures + provenance in DB; unit + integration tests._
-- **Thread 8 — `IFinancialExtractor` adapter.** `proc-adapters` client pulling `financial_extractions`
+- **Thread 8 — `IFinancialExtractor` adapter.** `redline-adapters` client pulling `financial_extractions`
   into `ProcurementResponse.costing` (`estimateAud: number | null` + `description`).
   _Exit: contract test; currency numeric via `typedDisplayCell`._
 
 ### Track 3 — Persistence & orchestration
-- **Thread 9 — `proc_` persistence layer.** Drizzle schema + repositories (evaluations, vendors,
+- **Thread 9 — `redline_` persistence layer.** Drizzle schema + repositories (evaluations, vendors,
   response groups, responses); separate Postgres DB/schema; migrations.
   _Exit: repositories round-trip; migration idempotent._
-- **Thread 10 — Orchestration use-cases (`proc-application`).** `IngestDocuments`,
+- **Thread 10 — Orchestration use-cases (`redline-application`).** `IngestDocuments`,
   `AssignDocumentsToGroups`, `ClassifyResponseGroup`, `ExtractFinancials`, `BuildEvaluationTable`.
   One-paragraph AI summary via an `ILanguageModel`-shaped port.
   _Exit: use-case tests with mocked ports produce a full `ProcurementResponse[]`._
 
-### Track 4 — Control surface & review (apps/proc-web)
+### Track 4 — Control surface & review (apps/redline-web)
 - **Thread 11 — Workflow manager UI (specialist control surface).** Drag docs → response groups;
   mark consortium; split multi-bid vendors; drive `IntakeStage`; trigger (re)classification per group.
   _Exit: specialist can compose the three relationship shapes and advance stages._
@@ -276,14 +276,14 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | Thread | Status | Notes |
 |---|---|---|
 | 1 — Repo scaffold & Wayfinder consumption spike | ✅ **done** | Exit test **passing**: `pnpm build` green (4/4), spike importing `typedDisplayCell` from `@rbrasier/domain` passes (3/3), `./validate.sh` 9/9. Verified in a Node 20 container via Podman. Docs: [thread-01](./threads/thread-01-scaffold-and-spike.md). Also adopted: `.claude/` skills + `CLAUDE.md`, Podman-aware `validate.sh`, `docs/guides/local-dev-and-validation.md`. |
-| 2 — proc-domain core entities & ports | ✅ **done** | Exit test **passing**: `proc-domain` builds; 36 new invariant tests (entities + port conformance) green, Thread 1 spike still 3/3 → 39/39; `./validate.sh` 9/9 incl. purity check #4. Entities: `Evaluation`, `Vendor`, `ResponseGroup`, `IntakeStage`, `ProcurementRequirement`, `ProcurementResponse` (smart constructors). Ports: `IProcurementExtractionReader`, `IProcurementClassifier`, `IFinancialExtractor`, `IEvaluationRepository`. Docs: [thread-02](./threads/thread-02-proc-domain-entities-and-ports.md). |
+| 2 — redline-domain core entities & ports | ✅ **done** | Exit test **passing**: `redline-domain` builds; 36 new invariant tests (entities + port conformance) green, Thread 1 spike still 3/3 → 39/39; `./validate.sh` 9/9 incl. purity check #4. Entities: `Evaluation`, `Vendor`, `ResponseGroup`, `IntakeStage`, `ProcurementRequirement`, `ProcurementResponse` (smart constructors). Ports: `IProcurementExtractionReader`, `IProcurementClassifier`, `IFinancialExtractor`, `IEvaluationRepository`. Docs: [thread-02](./threads/thread-02-redline-domain-entities-and-ports.md). |
 | 3 — womblex sidecar service | 🟡 next | |
 | 4 — Extraction reader adapter | ⚪ not started | |
 | 5 — Numbatch as-is integration | ⚪ not started | |
 | 6 — Numbatch financial_profile schema & API | ⚪ not started | |
 | 7 — Numbatch financial extraction worker | ⚪ not started | |
 | 8 — IFinancialExtractor adapter | ⚪ not started | |
-| 9 — proc_ persistence layer | ⚪ not started | |
+| 9 — redline_ persistence layer | ⚪ not started | |
 | 10 — Orchestration use-cases | ⚪ not started | |
 | 11 — Workflow manager UI | ⚪ not started | |
 | 12 — In-app review grid | ⚪ not started | |
@@ -298,15 +298,15 @@ _This section is the living "current state" tracker. Update it at the end of eve
 and never written to disk. Recovered verbatim from the Continue session history
 (`~/.continue/sessions/ac21e544-…json`, idx 48) and persisted here.
 
-**Scaffolded** (`procautomatr/`):
-- Root: `package.json` (turbo scripts scoped `--filter=@procautomatr/*`), `pnpm-workspace.yaml`
+**Scaffolded** (`redline/`):
+- Root: `package.json` (turbo scripts scoped `--filter=@redline/*`), `pnpm-workspace.yaml`
   (incl. `vendor/wayfinder/packages/*`), `turbo.json`, `tsconfig.base.json`, `tsconfig.json`,
   `.prettierrc`, `eslint.config.mjs` (domain = relative-imports-only; `vendor/**` ignored),
   `.gitignore`, `.gitmodules`, `README.md`.
-- `packages/proc-domain/` — zero-dep `Result`/`DomainError` primitives, `index.ts`, and the
+- `packages/redline-domain/` — zero-dep `Result`/`DomainError` primitives, `index.ts`, and the
   **consumption spike test** `src/wayfinder-spike.test.ts` importing `typedDisplayCell` /
   `typedCellValue` from `@rbrasier/domain`.
-- `packages/proc-shared`, `packages/proc-application`, `packages/proc-adapters` — package.json
+- `packages/redline-shared`, `packages/redline-application`, `packages/redline-adapters` — package.json
   (`test` = `vitest run --passWithNoTests`) + tsconfig + placeholder `index.ts`.
 - `apps/README.md`, `services/README.md` — placeholders for later threads.
 - `docs/adr/README.md` + `docs/adr/0001-adapter-over-wayfinder.adr.md` — **Wayfinder ADR model adopted.**
@@ -316,14 +316,14 @@ and never written to disk. Recovered verbatim from the Continue session history
 (`flatpak-spawn --host`), pnpm 9.12.0:
 - `pnpm install` → clean (168 pkgs; `@rbrasier/domain` resolved as a workspace dep).
 - `pnpm build` → **4 successful / 4 total**.
-- `pnpm test` → **7 successful / 7 total**; `proc-domain` spike **3/3 passed**
+- `pnpm test` → **7 successful / 7 total**; `redline-domain` spike **3/3 passed**
   (`typedDisplayCell("currency", "1200.50")` → `{ value: 1200.5, isNumeric: true }`).
 - `pnpm typecheck` → **7 successful / 7 total**.
 
 **Delineation approach (decision #2 of this session).** Instead of an on-disk submodule/symlink,
 Wayfinder's **source is vendored into a throwaway scratch copy** at `vendor/wayfinder` *only inside
 the container* by `scripts/podman-run.sh` — currently just `packages/domain` (zero-dep). The
-committed `procautomatr` tree never contains Wayfinder, and the real Wayfinder tree is never
+committed `redline` tree never contains Wayfinder, and the real Wayfinder tree is never
 written to. This keeps a hard boundary while `@rbrasier/*` still resolves as workspace packages.
 `WAYFINDER_PACKAGES` env var widens the vendored set when later threads need `shared`/`adapters`.
 
@@ -331,13 +331,13 @@ written to. This keeps a hard boundary while `@rbrasier/*` still resolves as wor
 (not johntooth). `.gitmodules` url points at DeepCivic; set the actual git remote at `git init` time.
 
 **Remaining setup (not blocking Thread 1's exit test, needed for real git workflow):**
-1. `git init` `procautomatr` and add the DeepCivic remote.
+1. `git init` `redline` and add the DeepCivic remote.
 2. Wire `vendor/wayfinder` for local (non-Podman) dev — submodule against the DeepCivic Wayfinder
    mirror, or a symlink to a sibling checkout.
 
 ### Thread 2 log (2026-07-23) — ✅ COMPLETE
 
-**Built** `@procautomatr/proc-domain` entities and ports (zero deps, Result pattern, tests-first).
+**Built** `@redline/redline-domain` entities and ports (zero deps, Result pattern, tests-first).
 
 - **Entities** (`src/entities/`): `procurement-requirement.ts` (fixed `REQUIREMENT_NUMBERS`
   1–6, `ProcurementRequirement` + `makeProcurementRequirement`), `evaluation-structure.ts`
@@ -358,10 +358,10 @@ to persist; a minimal `{ id, name, stage }` gap-fill within the plan's model (no
 
 **Exit test — PASSED.** Run in `node:20-bookworm-slim` via Podman (`flatpak-spawn --host`),
 pnpm 9.12.0:
-- `proc-domain` test → **6 files, 39/39** (36 new invariant + port-conformance tests; the
+- `redline-domain` test → **6 files, 39/39** (36 new invariant + port-conformance tests; the
   Thread 1 spike still 3/3).
-- `./validate.sh` → **9/9**, including check #4 (proc-domain purity: zero non-relative imports).
+- `./validate.sh` → **9/9**, including check #4 (redline-domain purity: zero non-relative imports).
 
 **Version bump intent:** MINOR — new public surface, no breaking changes (pre-1.0).
 
-**Docs:** [thread-02](./threads/thread-02-proc-domain-entities-and-ports.md).
+**Docs:** [thread-02](./threads/thread-02-redline-domain-entities-and-ports.md).
