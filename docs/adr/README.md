@@ -30,3 +30,4 @@ Each ADR is a file named `NNN-short-title.adr.md` and follows:
 |---|---|---|
 | [0001](./0001-adapter-over-wayfinder.adr.md) | Adapter over Wayfinder (not a fork) + Strategy A consumption | Accepted |
 | [0002](./0002-own-minio-and-postgres.adr.md) | redline owns its MinIO bucket and Postgres, not Wayfinder's | Accepted |
+| [0003](./0003-parquet-to-json-boundary.adr.md) | The womblex extraction boundary is JSON (sidecar reads Parquet, serves JSON) | Accepted |

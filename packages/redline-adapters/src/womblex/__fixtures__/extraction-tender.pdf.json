@@ -1,0 +1,35 @@
+{
+  "documentId": "82f9355e89800a00",
+  "elements": [
+    {
+      "documentId": "82f9355e89800a00",
+      "elementOrder": 0,
+      "page": 1,
+      "text": "tender.pdf: heading"
+    },
+    {
+      "documentId": "82f9355e89800a00",
+      "elementOrder": 1,
+      "page": 1,
+      "text": "tender.pdf: body paragraph"
+    }
+  ],
+  "chunks": [
+    {
+      "chunkId": "82f9355e89800a00:0",
+      "documentId": "82f9355e89800a00",
+      "text": "tender.pdf: chunk 0"
+    }
+  ],
+  "tableCells": [
+    {
+      "documentId": "82f9355e89800a00",
+      "elementOrder": 2,
+      "page": 1,
+      "rowIndex": 0,
+      "columnIndex": 1,
+      "rawValue": "80000",
+      "isCurrency": true
+    }
+  ]
+}

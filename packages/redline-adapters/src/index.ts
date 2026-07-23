@@ -1,5 +1,11 @@
 // @redline/redline-adapters — port implementations against real systems.
-// womblex extraction reader (Thread 4), Numbatch client (Thread 5), IFinancialExtractor
-// (Thread 8), and redline_ repositories (Thread 9) land in later threads.
-// Placeholder keeps the build graph coherent.
-export const PROC_ADAPTERS_PLACEHOLDER = true;
+//
+// Thread 4: WomblexExtractionReader implements IProcurementExtractionReader over
+// the womblex-ingest sidecar's Parquet→JSON read seam. Numbatch client (Thread 5),
+// IFinancialExtractor (Thread 8), and redline_ repositories (Thread 9) land later.
+export {
+  WomblexExtractionReader,
+  type HttpClient,
+  type HttpResponse,
+  type WomblexExtractionReaderOptions,
+} from "./womblex/womblex-extraction-reader";

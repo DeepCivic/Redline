@@ -40,3 +40,28 @@ def test_stub_shards_are_non_empty() -> None:
     result = extractor.extract("eval-1", ["one.pdf"])
 
     assert all(len(shard.body) > 0 for shard in result.shards)
+
+
+def test_stub_emits_a_json_read_model_per_document() -> None:
+    extractor = StubWomblexExtractor()
+
+    result = extractor.extract("eval-1", ["one.pdf", "two.pdf"])
+
+    assert len(result.documents) == 2
+    for document in result.documents:
+        # documentId is a womblex-style source_hash, and chunk ids are derived
+        # from it ("{source_hash}:{chunk_index}").
+        assert document.documentId
+        assert document.chunks[0].chunkId == f"{document.documentId}:0"
+        assert document.chunks[0].documentId == document.documentId
+        assert all(e.documentId == document.documentId for e in document.elements)
+        assert document.tableCells[0].isCurrency is True
+
+
+def test_stub_read_model_is_deterministic() -> None:
+    extractor = StubWomblexExtractor()
+
+    first = extractor.extract("eval-1", ["one.pdf"])
+    second = extractor.extract("eval-1", ["one.pdf"])
+
+    assert first.documents[0].to_json() == second.documents[0].to_json()

@@ -194,6 +194,7 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
   sidecar emits **JSON** (recommended — keeps TS free of Parquet) or a Parquet-reading TS adapter.
   Implement `IProcurementExtractionReader` (elements/table-cells/chunks + provenance).
   _Exit: adapter reads a real run into typed objects; contract test against fixture._
+  — docs: [thread-04](./threads/thread-04-extraction-reader-adapter.md)
 
 ### Track 2 — Classification & financials (Numbatch)
 - **Thread 5 — Numbatch as-is integration.** `services/numbatch` in compose; `NumbatchClassifier`
@@ -248,14 +249,14 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
 1. **Consumption strategy** — **LOCKED: A** (submodule + typed reuse), designed as if C.
    Recorded in [ADR-0001](./adr/0001-adapter-over-wayfinder.adr.md). Wayfinder resolves via
    `pnpm-workspace.yaml` entry `vendor/wayfinder/packages/*`.
-2. **Parquet boundary (Thread 4)** — _open_ — womblex sidecar emits **JSON** (recommended) vs a Parquet-reading TS adapter. Decide in Thread 4.
+2. **Parquet boundary (Thread 4)** — **LOCKED: JSON** — the `womblex-ingest` sidecar reads its own Parquet shards and serves a typed JSON read model (`GET /extractions/{evaluationId}/{documentId}`); the TypeScript adapter never links a Parquet reader. Recorded in [ADR-0003](./adr/0003-parquet-to-json-boundary.adr.md).
 3. **Numbatch coupling** — _open, fork implied_ — fork into `services/numbatch` (required for the financial extension, Threads 6–7)
    vs run upstream + thin extension service. Confirm before Thread 5.
 4. **Shared vs separate MinIO/Postgres** — **LOCKED: own** — redline stands up its own MinIO (bucket `redline`, shards under `proc/{evaluationId}/`) and its own Postgres (`redline_` prefix); the seam stays plain S3/Postgres so a deployment can still collapse to a shared instance by config. Recorded in [ADR-0002](./adr/0002-own-minio-and-postgres.adr.md).
 5. **Auth/roles** — _open_ — does the review surface reuse Wayfinder auth/roles, or its own? Decide before Thread 11.
 
 > **ADR model adopted.** This repo now follows Wayfinder's ADR format under
-> [`docs/adr/`](./adr/README.md). Decisions 2–5 will each get their own ADR when locked.
+> [`docs/adr/`](./adr/README.md). Decisions 3 & 5 will each get their own ADR when locked.
 
 ---
 
@@ -278,7 +279,7 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | 1 — Repo scaffold & Wayfinder consumption spike | ✅ **done** | Exit test **passing**: `pnpm build` green (4/4), spike importing `typedDisplayCell` from `@rbrasier/domain` passes (3/3), `./validate.sh` 9/9. Verified in a Node 20 container via Podman. Docs: [thread-01](./threads/thread-01-scaffold-and-spike.md). Also adopted: `.claude/` skills + `CLAUDE.md`, Podman-aware `validate.sh`, `docs/guides/local-dev-and-validation.md`. |
 | 2 — redline-domain core entities & ports | ✅ **done** | Exit test **passing**: `redline-domain` builds; 36 new invariant tests (entities + port conformance) green, Thread 1 spike still 3/3 → 39/39; `./validate.sh` 9/9 incl. purity check #4. Entities: `Evaluation`, `Vendor`, `ResponseGroup`, `IntakeStage`, `ProcurementRequirement`, `ProcurementResponse` (smart constructors). Ports: `IProcurementExtractionReader`, `IProcurementClassifier`, `IFinancialExtractor`, `IEvaluationRepository`. Docs: [thread-02](./threads/thread-02-redline-domain-entities-and-ports.md). |
 | 3 — womblex sidecar service | ✅ **done** | Exit test **PASSED** against real MinIO via `podman compose` (`ingest` profile): `POST /ingest` → `202 succeeded`, three shards land under `proc/{eval}/` (`_manifest` + per-doc `*.elements.parquet`), `GET /status` reports succeeded, unknown run → 404. `services/womblex-ingest` = FastAPI sidecar (`/health`, `POST /ingest`, `GET /status/{run_id}`), boto3 S3 writer, deterministic stub extractor default (`WOMBLEX_MODE=stub`; real womblex + Isaacus opt-in build args, finalised Thread 4). 12 pytest + `./validate.sh` **10/10** (new check #10). Decision #4 **LOCKED** ([ADR-0002](./adr/0002-own-minio-and-postgres.adr.md): own MinIO/Postgres). Docs: [thread-03](./threads/thread-03-womblex-sidecar-service.md). |
-| 4 — Extraction reader adapter | 🟡 next | |
+| 4 — Extraction reader adapter | ✅ **done** | Exit test **PASSED**: `WomblexExtractionReader` (`redline-adapters`) reads a real sidecar run into typed `ExtractionElement`/`ExtractionChunk`/`ExtractionTableCell` provenance; 8 contract tests against a captured fixture (`__fixtures__/extraction-tender.pdf.json`) cover the happy path + error taxonomy (NOT_FOUND / INFRA_FAILURE / EXTRACTION_FAILED). Decision #2 **LOCKED: JSON** ([ADR-0003](./adr/0003-parquet-to-json-boundary.adr.md)) — sidecar reads its own Parquet and serves JSON at `GET /extractions/{eval}/{doc}` (stored beside the shards for restart durability); TS never links a Parquet reader. Sidecar grew a JSON read model (`records.py`) + read endpoint; pytest **17/17** (was 12), workspace **7/7**, `./validate.sh` **10/10**. Docs: [thread-04](./threads/thread-04-extraction-reader-adapter.md). |
 | 5 — Numbatch as-is integration | ⚪ not started | |
 | 6 — Numbatch financial_profile schema & API | ⚪ not started | |
 | 7 — Numbatch financial extraction worker | ⚪ not started | |
@@ -403,3 +404,54 @@ Thread 4 concern. (3) *Result-shaped HTTP errors* map cleanly into the Thread 4 
 **Version bump intent:** MINOR — new service + ADR-0002; no breaking changes (pre-1.0).
 
 **Docs:** [thread-03](./threads/thread-03-womblex-sidecar-service.md).
+
+### Thread 4 log (2026-07-25) — ✅ COMPLETE
+
+**Locked** build-plan §8 decision #2 — the womblex extraction boundary is **JSON**
+([ADR-0003](./adr/0003-parquet-to-json-boundary.adr.md)). The `womblex-ingest`
+sidecar reads its own Parquet shards and serves a typed JSON read model; the
+TypeScript workspace never links a Parquet reader.
+
+**Sidecar (Python) — the Parquet→JSON boundary, server side:**
+- New `records.py`: the canonical wire dataclasses (`ElementRecord` / `ChunkRecord` /
+  `TableCellRecord` / `DocumentExtraction`), camelCase to mirror the domain DTOs; the
+  one place womblex's `source_hash`/`elem_order`/`chunk_id`/currency-cell vocabulary
+  is normalised.
+- `ExtractionResult` now carries a `documents` read model alongside the Parquet
+  `shards`. `POST /ingest` persists each document's JSON as
+  `proc/{evaluationId}/{documentId}.extraction.json` beside the shards (durable across
+  restart — MinIO is the record, ADR-0002).
+- New `GET /extractions/{evaluationId}/{documentId}` read seam (404 `NOT_FOUND` when
+  absent). `storage.py` grew `get_object` + `ObjectNotFound`; the stub extractor now
+  emits the JSON read model too, so the whole seam is provable offline.
+- `real_extractor.py` docstring now pins the Parquet→JSON mapping it must honour;
+  still fails loudly until the concrete womblex call surface lands.
+
+**Adapter (TypeScript) — `packages/redline-adapters`:**
+- `WomblexExtractionReader implements IProcurementExtractionReader` over an injected
+  `HttpClient` (a `fetch`-shaped seam — no global fetch, no Parquet/S3 client). All
+  three methods read one document-scoped payload and slice it, sharing provenance.
+- `wire.ts` narrows the untrusted JSON (`parseDocumentExtraction`) and maps the
+  sidecar's Result-shaped errors (`parseErrorBody`): `NOT_FOUND` passes through, other
+  read failures → `EXTRACTION_FAILED`, transport/parse failures → `INFRA_FAILURE` /
+  `EXTRACTION_FAILED`. Nothing throws across the port edge.
+
+**Exit test — PASSED.** Contract test reads a **captured** sidecar payload
+(`src/womblex/__fixtures__/extraction-tender.pdf.json`, regenerated via the stub) into
+typed `ExtractionElement`/`ExtractionChunk`/`ExtractionTableCell`; 8 tests cover the
+happy path (incl. URL-encoding + chunkId provenance) and the full error taxonomy.
+- Adapter typecheck + lint + **8/8** tests (Node 20 via Podman).
+- Sidecar pytest **17/17** (was 12; +5 for the JSON read seam).
+- `./validate.sh` → **10/10** (workspace 7/7 incl. adapters; check #10 pytest).
+
+**Design decisions.** (1) *JSON boundary, server-side Parquet* — keeps the TS surface
+Parquet-free and confines womblex-schema knowledge to one module, honouring ADR-0001's
+"design as if C". (2) *JSON materialised beside the shards* — durable read seam across
+a sidecar restart for the price of a small extra object. (3) *Injected `HttpClient`* —
+the adapter is unit-testable against a fixture with zero external deps; the fixture is
+a real capture so the contract is pinned on both sides.
+
+**Version bump intent:** MINOR — new adapter surface + sidecar read endpoint + ADR-0003;
+no breaking changes (pre-1.0).
+
+**Docs:** [thread-04](./threads/thread-04-extraction-reader-adapter.md).

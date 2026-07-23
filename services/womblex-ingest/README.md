@@ -7,8 +7,19 @@ object storage under `proc/{evaluationId}/`.
 
 Like Wayfinder's `services/australian-writing-mcp`, this is a **foreign-runtime
 sidecar** composed over runtime seams (HTTP + object storage). It is never
-imported into the TypeScript packages; the Thread 4 adapter consumes its output
-over those seams.
+imported into the TypeScript packages; the Thread 4 adapter
+(`WomblexExtractionReader`) consumes its output over those seams as **JSON**.
+
+## The Parquet→JSON boundary (Thread 4)
+
+Build-plan §8 decision #2 is locked in favour of a **JSON seam**
+([ADR-0003](../../docs/adr/0003-parquet-to-json-boundary.adr.md)): this sidecar
+owns the heavy womblex/Parquet stack, reads its own shards, and serves a typed
+JSON read model. The TypeScript adapter never links a Parquet reader. The one
+place that understands womblex's schema is here (`records.py` +
+`real_extractor.py`), where `source_hash` / `elem_order` / `chunk_id` / currency
+cells are normalised into the camelCase wire shape the domain's
+`IProcurementExtractionReader` DTOs mirror.
 
 ## HTTP surface
 
@@ -17,13 +28,18 @@ over those seams.
 | `GET /health`        | —                                              | `{ "status": "ok", "bucket": "redline" }` |
 | `POST /ingest`       | `{ "evaluationId": string, "documentNames": string[] }` | `202 { runId, status, documentCount, shardKeys }` |
 | `GET /status/{run_id}` | —                                            | `200 { runId, evaluationId, status, documentCount, shardKeys, error }` |
+| `GET /extractions/{evaluationId}/{documentId}` | —                          | `200 { documentId, elements[], chunks[], tableCells[] }` |
 
 Errors cross the boundary Result-shaped — `{ "error": { "code", "message" } }` —
 so the Thread 4 adapter maps them straight into a redline `DomainError`. Codes:
-`INVALID_REQUEST` (422), `RUN_NOT_FOUND` (404), `EXTRACTION_FAILED` (502).
+`INVALID_REQUEST` (422), `RUN_NOT_FOUND` (404), `NOT_FOUND` (404, unknown
+extraction), `EXTRACTION_FAILED` (502).
 
 Shards land under `proc/{evaluationId}/` in the `REDLINE_BUCKET` bucket, e.g.
-`proc/eval-42/_manifest.parquet`, `proc/eval-42/tender.pdf.elements.parquet`.
+`proc/eval-42/_manifest.parquet`, `proc/eval-42/tender.pdf.elements.parquet`. The
+JSON read model is stored beside them as
+`proc/{evaluationId}/{documentId}.extraction.json`, so `GET /extractions/...`
+survives a sidecar restart (MinIO is the durable record, per ADR-0002).
 
 ## Extraction modes
 
@@ -32,13 +48,14 @@ Shards land under `proc/{evaluationId}/` in the `REDLINE_BUCKET` bucket, e.g.
 - **`stub`** (default) — deterministic, dependency-free shards. No womblex, no
   Isaacus. This is what the Thread 3 exit test and air-gapped runs use, and it
   keeps the image lightweight. It emits the shard *layout* womblex produces (a
-  `_manifest` plus per-document shards); the real Parquet *schema* is pinned in
-  Thread 4.
+  `_manifest` plus per-document shards) **and** the JSON read model the
+  Parquet→JSON seam serves, so the Thread 4 adapter contract is provable offline.
 - **`real`** — invokes the actual womblex pipeline. Requires an image built with
   `--build-arg INSTALL_WOMBLEX=1`. Isaacus enrichment is a further opt-in
   (`--build-arg ISAACUS=1` + `ISAACUS_API_KEY` at runtime); womblex also has
-  non-Isaacus (edge/offline) modes. The concrete womblex call surface is finished
-  alongside the Thread 4 Parquet boundary — until then `real` fails loudly.
+  non-Isaacus (edge/offline) modes. The Parquet→JSON mapping it must honour is
+  pinned in `records.py`; the concrete womblex call surface is still pending, so
+  `real` fails loudly until then.
 
 ## Configuration
 
@@ -70,7 +87,7 @@ podman compose -f ../../infra/docker-compose.yml --profile ingest down -v
 ```sh
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[dev]'
-python -m pytest -q            # 12 tests: HTTP surface, run lifecycle, stub extractor
+python -m pytest -q            # 17 tests: HTTP surface, run lifecycle, JSON read seam, stub extractor
 ```
 
 Tests use in-memory fakes for both seams (object storage + womblex), so no MinIO

@@ -8,13 +8,25 @@
 - `RealWomblexExtractor` — invokes the actual womblex pipeline. Imported lazily
   (inside `build_extractor`) so the heavy dependency is only required when
   `WOMBLEX_MODE=real`.
+
+Every `ExtractionResult` carries both the durable Parquet `shards` and a JSON
+`documents` read model (see `records.py`). Thread 4 locks build-plan §8 decision
+#2 on the side of a JSON seam: this service reads its own Parquet and serves JSON,
+so the TypeScript adapter (`redline-adapters`) never links a Parquet reader.
 """
 
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Protocol
+
+from womblex_ingest.records import (
+    ChunkRecord,
+    DocumentExtraction,
+    ElementRecord,
+    TableCellRecord,
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +46,10 @@ class Shard:
 class ExtractionResult:
     document_count: int
     shards: List[Shard]
+    # The JSON read model, keyed by documentId. This is what the Parquet→JSON
+    # boundary serves to the TS adapter (Thread 4 decision #2); the Parquet
+    # `shards` remain the durable MinIO record.
+    documents: List[DocumentExtraction] = field(default_factory=list)
 
 
 class Extractor(Protocol):
@@ -43,9 +59,10 @@ class Extractor(Protocol):
 class StubWomblexExtractor:
     """Deterministic stand-in producing the shard *shape* womblex emits.
 
-    We do not fake the full Parquet schema here — Thread 4 owns the real
-    Parquet/JSON boundary. The stub exists so the sidecar's HTTP + storage
-    behaviour is provable end-to-end without the heavy womblex/Isaacus stack.
+    Emits the Parquet shard layout plus the JSON read model the Parquet→JSON
+    boundary serves, without the heavy womblex/Isaacus stack — so the sidecar's
+    HTTP + storage behaviour and the Thread 4 adapter contract are both provable
+    end-to-end offline.
     """
 
     def extract(self, evaluation_id: str, document_names: List[str]) -> ExtractionResult:
@@ -55,6 +72,7 @@ class StubWomblexExtractor:
                 body=self._deterministic_body("manifest", evaluation_id, document_names),
             )
         ]
+        documents: List[DocumentExtraction] = []
         for name in document_names:
             shards.append(
                 Shard(
@@ -62,7 +80,63 @@ class StubWomblexExtractor:
                     body=self._deterministic_body("elements", evaluation_id, [name]),
                 )
             )
-        return ExtractionResult(document_count=len(document_names), shards=shards)
+            documents.append(self._document(evaluation_id, name))
+        return ExtractionResult(
+            document_count=len(document_names),
+            shards=shards,
+            documents=documents,
+        )
+
+    def _document(self, evaluation_id: str, name: str) -> DocumentExtraction:
+        """A deterministic read model whose documentId is a stable `source_hash`.
+
+        The stub does not run womblex; it emits the *shape* the JSON seam serves
+        so the Thread 4 adapter's contract test has a real run to read.
+        """
+        document_id = self._source_hash(evaluation_id, name)
+        elements = [
+            ElementRecord(
+                documentId=document_id,
+                elementOrder=0,
+                page=1,
+                text=f"{name}: heading",
+            ),
+            ElementRecord(
+                documentId=document_id,
+                elementOrder=1,
+                page=1,
+                text=f"{name}: body paragraph",
+            ),
+        ]
+        chunks = [
+            ChunkRecord(
+                chunkId=f"{document_id}:0",
+                documentId=document_id,
+                text=f"{name}: chunk 0",
+            )
+        ]
+        table_cells = [
+            TableCellRecord(
+                documentId=document_id,
+                elementOrder=2,
+                page=1,
+                rowIndex=0,
+                columnIndex=1,
+                rawValue="80000",
+                isCurrency=True,
+            )
+        ]
+        return DocumentExtraction(
+            documentId=document_id,
+            elements=elements,
+            chunks=chunks,
+            tableCells=table_cells,
+        )
+
+    @staticmethod
+    def _source_hash(evaluation_id: str, name: str) -> str:
+        seed = "|".join(["source_hash", evaluation_id, name]).encode()
+        return hashlib.sha256(seed).hexdigest()[:16]
 
     @staticmethod
     def _deterministic_body(kind: str, evaluation_id: str, names: List[str]) -> bytes:

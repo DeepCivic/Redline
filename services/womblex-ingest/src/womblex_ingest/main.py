@@ -1,13 +1,15 @@
 """FastAPI surface for the womblex-ingest sidecar.
 
-Two routes: `POST /ingest` (run extraction, write shards, return a run id) and
-`GET /status/{run_id}`. Errors cross the HTTP boundary as a Result-shaped body
-`{"error": {"code", "message"}}`, mirroring redline's domain Result pattern so the
-Thread 4 adapter maps them into `DomainError` cleanly.
+Routes: `POST /ingest` (run extraction, write shards + JSON, return a run id),
+`GET /status/{run_id}`, and `GET /extractions/{evaluation_id}/{document_id}` — the
+Parquet→JSON read seam the Thread 4 adapter consumes. Errors cross the HTTP
+boundary as a Result-shaped body `{"error": {"code", "message"}}`, mirroring
+redline's domain Result pattern so the adapter maps them into `DomainError` cleanly.
 """
 
 from __future__ import annotations
 
+import json
 from typing import List, Optional
 
 from fastapi import FastAPI
@@ -16,7 +18,12 @@ from pydantic import BaseModel
 
 from womblex_ingest.extraction import Extractor
 from womblex_ingest.runs import Run, RunRegistry
-from womblex_ingest.storage import ObjectStorage
+from womblex_ingest.storage import ObjectNotFound, ObjectStorage
+
+
+def extraction_key(evaluation_id: str, document_id: str) -> str:
+    """Object key for a document's JSON read model, beside its Parquet shards."""
+    return f"proc/{evaluation_id}/{document_id}.extraction.json"
 
 
 class IngestRequest(BaseModel):
@@ -73,6 +80,16 @@ def build_app(*, storage: ObjectStorage, extractor: Extractor, bucket: str) -> F
             storage.put_object(key, shard.body, shard.content_type)
             shard_keys.append(key)
 
+        # The JSON read model lives beside the Parquet shards (the Parquet→JSON
+        # boundary). Storing it in MinIO keeps the read seam durable across a
+        # sidecar restart — the in-memory run registry is not the record.
+        for document in result.documents:
+            storage.put_object(
+                extraction_key(evaluation_id, document.documentId),
+                json.dumps(document.to_json()).encode("utf-8"),
+                "application/json",
+            )
+
         registry.mark_succeeded(run.run_id, result.document_count, shard_keys)
         return JSONResponse(
             status_code=202,
@@ -90,6 +107,23 @@ def build_app(*, storage: ObjectStorage, extractor: Extractor, bucket: str) -> F
         if run is None:
             return _error(404, "RUN_NOT_FOUND", f"no run with id {run_id}")
         return JSONResponse(status_code=200, content=_run_view(run))
+
+    @app.get("/extractions/{evaluation_id}/{document_id}")
+    def read_extraction(evaluation_id: str, document_id: str) -> JSONResponse:
+        """Serve one document's JSON read model — the Parquet→JSON seam.
+
+        The TS adapter (`IProcurementExtractionReader`) reads elements / chunks /
+        table cells from this single document-scoped payload.
+        """
+        try:
+            body = storage.get_object(extraction_key(evaluation_id, document_id))
+        except ObjectNotFound:
+            return _error(
+                404,
+                "NOT_FOUND",
+                f"no extraction for document {document_id} in evaluation {evaluation_id}",
+            )
+        return JSONResponse(status_code=200, content=json.loads(body))
 
     return app
 
