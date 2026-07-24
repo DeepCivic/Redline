@@ -1,11 +1,15 @@
-# /build — Build a Thread from the Build Plan
+# /build — Build a Thread from the Design Doc
 
-Use this skill when the build plan's next thread is ready to implement and the
+Use this skill when the design doc's next thread is ready to implement and the
 user confirms, or when the user explicitly asks to implement a specific thread.
 
 **Pre-flight:** Read the target thread in
-[`docs/procurement-evaluation-plan.md`](../../docs/procurement-evaluation-plan.md)
+[`docs/comprehension-lens-design.md`](../../docs/comprehension-lens-design.md)
+(§6 Delivery for scope + exit test, §10 Build state for status)
 in full, plus any ADR(s) it references and any thread doc under `docs/threads/`.
+Check §7's decision register first — threads in Track L may rest on decisions
+(D1/D2/D3) still marked **assumed**; if the thread depends on one, confirm it
+with the user before building.
 Confirm the thread's **exit test** before writing a line of code. Read the
 relevant `@rbrasier/*` source in `vendor/wayfinder/packages/*` for any Wayfinder
 helper you intend to reuse — do not trust training data for its shape.
@@ -56,11 +60,13 @@ explicitly and paste the passing output:
   built, files created/modified, migrations, the exit-test evidence, known
   limitations, and any decision that should become an ADR.
 - If the thread made an architectural decision, add an ADR in `docs/adr/`
-  (`NNNN-<decision>.adr.md`) and lock the matching row in §8 of the build plan.
-- **Update the build plan** (`docs/procurement-evaluation-plan.md`):
-  - Flip the thread's row in §10 to ✅ and append a dated thread log.
-  - Append the thread doc link to the thread's §7 entry, in the form
+  (`NNNN-<decision>.adr.md`) and update the matching row in §7 of the design doc's
+  decision register (flipping an **assumed** decision to settled).
+- **Update the design doc** (`docs/comprehension-lens-design.md`):
+  - Flip the thread's row in §10 Build state to ✅ with a one-line note.
+  - Append the thread doc link to the thread's §6 entry, in the form
     `— docs: [thread-<NN>](./threads/thread-<NN>-<slug>.md)`.
+  - Never write to `docs/procurement-evaluation-plan.md` — deprecated and frozen.
 - State the version bump intent (MAJOR / MINOR / PATCH).
 - Run `./validate.sh` one final time — fix all failures before declaring done.
 - Commit all changes. Open a PR against the DeepCivic remote's default branch via

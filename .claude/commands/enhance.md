@@ -37,7 +37,7 @@ look right?" Wait for confirmation before starting.
    specific behaviour changed). For UI threads, update/add the Playwright e2e.
 5. On completion:
    - Refresh the thread doc and, if a decision changed, add/supersede an ADR.
-   - Update `docs/procurement-evaluation-plan.md` (§10 log entry noting the revision).
+   - Update `docs/comprehension-lens-design.md` (§6 track entry noting the revision).
    - State the version bump intent.
    - Run `./validate.sh`.
    - Commit; open a PR against the DeepCivic remote's default branch via

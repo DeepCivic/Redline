@@ -8,7 +8,7 @@ building, or when a thread spec exists in `docs/threads/` and the user says
 
 ## Workflow
 
-1. Read the target thread in `docs/procurement-evaluation-plan.md`, its thread
+1. Read the target thread in `docs/comprehension-lens-design.md` (§6), its thread
    spec in `docs/threads/`, and any referenced ADR(s) in full.
 2. Extract the key elements that would be implemented (entities, ports, DB
    changes, runtime seams, service work, UI changes). Output this as a bulleted

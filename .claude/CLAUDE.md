@@ -34,11 +34,18 @@ run `./validate.sh` and fix all failures before declaring done.
 
 ## Project Identity
 
-This repo implements **redline**, a procurement-evaluation adapter for
-**Wayfinder**. Our own packages live under `@redline/*` in `packages/`.
-Wayfinder is consumed read-only under `@rbrasier/*` (see ADR-0001). The living
-delivery plan is [`docs/procurement-evaluation-plan.md`](../docs/procurement-evaluation-plan.md);
-each thread there links to its own technical doc/README on completion.
+This repo implements **redline**, a **corpus-comprehension lens** built on
+**Wayfinder**, whose first vertical is procurement evaluation. Our own packages
+live under `@redline/*` in `packages/`. Wayfinder is consumed read-only under
+`@rbrasier/*` (see ADR-0001). The living delivery document is
+[`docs/comprehension-lens-design.md`](../docs/comprehension-lens-design.md);
+each thread links to its own technical doc/README on completion.
+[`docs/procurement-evaluation-plan.md`](../docs/procurement-evaluation-plan.md)
+is **deprecated** — retained as the delivery history for Threads 1–11.
+
+> The lens identity rests on decision **D1** in the design doc, taken as a
+> working assumption pending an ADR. If D1 is flipped, this section reverts to
+> "a procurement-evaluation adapter".
 
 Publishing target: the **DeepCivic** org (not johntooth).
 

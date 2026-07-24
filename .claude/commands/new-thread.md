@@ -30,7 +30,10 @@ Wait for confirmation before starting the workflow.
 
 ## Workflow
 
-1. Add (or refine) the thread in `docs/procurement-evaluation-plan.md`:
+1. Add (or refine) the thread in `docs/comprehension-lens-design.md`
+   (§6 Delivery — pick the right track: L lens / P procurement / H shell &
+   hardening). `docs/procurement-evaluation-plan.md` is **deprecated and frozen**
+   — never add threads there:
    - Insert it into the right track in §7 with a one-line description **and its
      explicit exit test** (`_Exit: …_`).
    - Add its row to the §10 progress log as ⚪ not started.
@@ -43,7 +46,7 @@ Wait for confirmation before starting the workflow.
 
 ## Output
 
-- Updated `docs/procurement-evaluation-plan.md` (§7 entry + §10 row)
+- Updated `docs/comprehension-lens-design.md` (§6 track entry with its exit test)
 - ADR file(s): `docs/adr/<NNNN>-<decision>.adr.md` (if needed)
 - Thread spec: `docs/threads/thread-<NN>-<slug>.md`
 

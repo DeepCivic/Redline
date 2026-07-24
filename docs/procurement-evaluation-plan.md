@@ -1,6 +1,28 @@
 # Procurement Evaluation Adapter — Build Plan
 
-> A Wayfinder plugin/adapter (its own repo) for procurement evaluation, integrating
+> ## ⚠️ DEPRECATED — superseded by [`comprehension-lens-design.md`](./comprehension-lens-design.md)
+>
+> **This plan is no longer the living delivery document.** It is retained as the
+> **delivery history for Threads 1–11** (all ✅ complete) — the thread logs in §10
+> remain the authoritative record of what was built and how it was proven.
+>
+> **Do not add new threads here.** §7 (phased plan) and §10 (progress table) are
+> frozen. Outstanding scope — Threads 12–16 and the Next.js shell follow-up — has
+> been carried into the design doc under Tracks P and H, alongside the new
+> comprehension-lens track (Threads 17–24).
+>
+> **Why superseded.** Reading the upstream engines showed requirements were
+> modelled one tier too shallow (Numbatch's durable topic library was flattened
+> into an evaluation-scoped `RequirementSet`), that the retrieval leg we need
+> already exists in womblex rather than Numbatch, and that Numbatch's
+> `MIN_SAMPLES_PER_TOPIC = 10` training floor conflicts with a definition-only
+> first pass. §1 of the design doc sets out all three.
+>
+> **Still current in this file:** the §8 cross-cutting decisions and their ADRs
+> (ADR-0001…0006) remain in force except where the design doc's decision register
+> amends them; §2 (upstream tools) and §9 (reused Wayfinder blocks) remain accurate.
+
+A Wayfinder plugin/adapter (its own repo) for procurement evaluation, integrating
 > **womblex** (document extraction) and **Numbatch** (no-code classification of
 > **user-defined requirements/criteria**, extended with financial figures mapped to
 > those requirements).

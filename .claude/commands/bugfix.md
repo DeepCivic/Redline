@@ -53,7 +53,7 @@ For UI bugs (from Thread 11), add a Playwright e2e covering the exact repro.
 ### Step 6 — On completion
 
 - Record root cause, fix, and regression test in the relevant thread doc.
-- Note the fix in the §10 log of `docs/procurement-evaluation-plan.md` if it
+- Note the fix in §6 of `docs/comprehension-lens-design.md` if it
   affected a completed thread's exit criteria.
 - Apply a PATCH bump intent.
 - Run `./validate.sh` one final time.

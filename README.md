@@ -1,9 +1,12 @@
 # Redline
 
-> **Procurement Evaluation Adapter** — a Wayfinder plugin/adapter (its own repo) for
-> procurement response evaluation. Integrates **womblex** (document extraction) and
-> **Numbatch** (no-code classification, extended with configurable financial table
-> extraction), and reuses Wayfinder's typed tabular/XLSX helpers read-only.
+> **Corpus Comprehension Lens** — a Wayfinder plugin/adapter (its own repo) that
+> sorts a document corpus against user-defined topics, surfaces only genuine
+> collisions, and remembers the resolutions as a reusable lens. Its first vertical
+> is **procurement response evaluation**. Integrates **womblex** (document
+> extraction + embeddings) and **Numbatch** (no-code classification, extended with
+> configurable financial table extraction), and reuses Wayfinder's typed
+> tabular/XLSX helpers read-only.
 
 Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
@@ -11,14 +14,17 @@ Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
 ## Status
 
-Under construction. See the living build plan and progress log at
-[`docs/procurement-evaluation-plan.md`](./docs/procurement-evaluation-plan.md).
+Under construction. See the living design doc and build state at
+[`docs/comprehension-lens-design.md`](./docs/comprehension-lens-design.md).
+The former build plan is **deprecated**, retained as delivery history for
+Threads 1–11.
 
-Threads 1–7 (+ 2a) are ✅ complete: scaffold, `redline-domain` (user-defined
+Threads 1–11 (+ 2a) are ✅ complete: scaffold, `redline-domain` (user-defined
 requirements), the `womblex-ingest` sidecar, the extraction reader adapter, the
-Numbatch classifier + service scaffold, and the financial extension (schema + config
-API + the extraction worker stage). Current thread: **Thread 8 — `IFinancialExtractor`
-adapter.**
+Numbatch classifier + service scaffold, the financial extension (schema + config
+API + extraction worker + adapter), the `redline_` persistence layer, the
+orchestration use-cases, and the workflow-manager control surface. Current
+thread: **Thread 17 — lens domain (`Topic`, `Lens`, `HardRule`)**.
 
 ## Architecture
 
@@ -32,7 +38,9 @@ Publishing target: the **DeepCivic** org.
 redline/
 ├── docs/
 │   ├── adr/                     # architecture decision records (Wayfinder ADR model)
-│   └── procurement-evaluation-plan.md
+│   ├── threads/                 # per-thread technical docs
+│   ├── comprehension-lens-design.md   # the living design doc + build state
+│   └── procurement-evaluation-plan.md # deprecated; Threads 1–11 delivery history
 ├── packages/
 │   ├── redline-domain/             # entities + ports (zero deps, Result pattern)
 │   ├── redline-application/        # use-cases
