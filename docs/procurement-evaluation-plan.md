@@ -274,6 +274,7 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
   (per document + `requirementId`) into `ProcurementResponse.costing` (`estimateAud: number | null`
   + `description`).
   _Exit: contract test; currency numeric via `typedDisplayCell`._
+  — docs: [thread-08](./threads/thread-08-financial-extractor-adapter.md)
 
 ### Track 3 — Persistence & orchestration
 - **Thread 9 — `redline_` persistence layer.** Drizzle schema + repositories (evaluations, vendors,
@@ -353,8 +354,8 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | 5 — Numbatch integration (fork; run all-but-frontend) | ✅ **done** | Exit test **PASSED**: `NumbatchClassifier` (`redline-adapters`) triggers a batch run → polls to success → reads the per-document roll-up → maps Numbatch `topic_id` → `requirementId` into `RequirementClassification[]`; 9 contract tests against a **captured Numbatch payload** (`__fixtures__/batch-rollup.json`) pin the mapping + full error taxonomy (adapters **17/17**). Service scaffold: `services/numbatch/` (README + idempotent `bootstrap-profile.py`) + `numbatch` compose profile (postgres/redis/minio/backend/worker/inference, **no frontend**). Decision #3 **LOCKED** ([ADR-0005](./adr/0005-numbatch-fork-all-but-frontend.adr.md)). `./validate.sh` **10/10**. Docs: [thread-05](./threads/thread-05-numbatch-integration.md). |
 | 6 — Numbatch financial_profile schema & API | ✅ **done** | Exit test **PASSED**: `POST /financial-profiles` creates a profile for a topic → `201` with the persisted body (idempotent by `topic_id` → re-`POST` `200`); the Alembic revision applies through a real `Operations` context — both tables created, `(source_doc_id, topic_id)` uniqueness enforced, `downgrade` reverses. Additive overlay `services/numbatch/financial_extension/` (SQLAlchemy 2.0 models `FinancialProfile`/`FinancialExtraction`, Pydantic v2 schemas, `FinancialProfileRepository`, config router, migration) written to graft onto the fork unchanged (Thread 16); provable standalone against SQLite — no GPU/fork on disk (ADR-0005). **11/11** pytest; `./validate.sh` **11/11** (new check #11). Docs: [thread-06](./threads/thread-06-numbatch-financial-schema-and-api.md). |
 | 7 — Numbatch financial extraction worker | ✅ **done** | Exit test **PASSED**: a synthetic tender workbook (womblex currency cells for a matched topic) → the worker writes one `financial_extractions` row per (document, requirement) with figure + `elem_order` provenance (`$1,200.50` + `$300.00` → `1500.50 AUD`, `source_elem_order 7`); no-currency topic → description fallback (`amount NULL`); double-run proves the `(source_doc_id, topic_id)` no-duplication invariant; unconfigured topics skipped. Additive to the Thread 6 overlay: `extractor.py` (pure figure logic — bundle sum vs line-item first, currency normalisation), `extraction_repository.py` (`upsert` enforcing no-duplication in code), `womblex_source.py` (`WomblexSource` protocol + in-memory fake), `worker.py` (`extract_financials_for_document` + the `financial_extraction_task` Arq entrypoint — no `arq` runtime dep; wired in the fork at Thread 16). **24/24** pytest (was 11; +13); `./validate.sh` **11/11**. Provable standalone against SQLite — no GPU/fork on disk (ADR-0005). Docs: [thread-07](./threads/thread-07-numbatch-financial-extraction-worker.md). |
-| 8 — IFinancialExtractor adapter | 🔵 **next** | Reads `financial_extractions` per (document, `requirementId`) into `ProcurementResponse.costing`; currency numeric via `typedDisplayCell`. |
-| 9 — redline_ persistence layer | ⚪ not started | |
+| 8 — IFinancialExtractor adapter | ✅ **done** | Exit test **PASSED**: `NumbatchFinancialExtractor` (`redline-adapters`) reads `financial_extractions` per (document, `requirementId`) into `ProcurementResponse.costing` (`estimateAud: number \| null` + `description` + `elementOrder`), mapping Numbatch `topic_id` → `requirementId`; the currency figure is a real number and the contract test proves it numeric via Wayfinder's `typedDisplayCell("currency", …)` → `{ value: 1500.5, isNumeric: true }`. 9 contract tests against a **captured read-seam payload** (`__fixtures__/document-extractions.json`) cover the happy path, description fallback (null estimate), multi-doc concat, unmapped-topic drop, empty-document, and the error taxonomy (INFRA_FAILURE / EXTRACTION_FAILED). Additive read seam added to the Thread 6/7 overlay: `GET /financial-extractions/{source_doc_id}` (`DocumentExtractionsRead`; empty-not-404). adapters **26/26** (was 17; +9); financial extension pytest **28** (was 24; +4); `./validate.sh` **11/11**. Docs: [thread-08](./threads/thread-08-financial-extractor-adapter.md). |
+| 9 — redline_ persistence layer | 🔵 **next** | |
 | 10 — Orchestration use-cases | ⚪ not started | |
 | 11 — Workflow manager UI | ⚪ not started | |
 | 12 — In-app review grid | ⚪ not started | |
@@ -731,3 +732,55 @@ the vendored fork (Thread 16), documented in the overlay README.
 changes (pre-1.0).
 
 **Docs:** [thread-07](./threads/thread-07-numbatch-financial-extraction-worker.md).
+
+### Thread 8 log (2026-07-29) — ✅ COMPLETE
+
+**Built** `NumbatchFinancialExtractor` (`packages/redline-adapters`) — the
+`IFinancialExtractor` implementation that pulls the Thread 7 worker's
+`financial_extractions` into `ProcurementResponse.costing`, and added the additive
+HTTP **read seam** the adapter reads from.
+
+**Read seam (Python overlay, `services/numbatch/financial_extension/`):** Thread 7
+*wrote* rows but exposed no read endpoint. Added `GET
+/financial-extractions/{source_doc_id}` (`build_extractions_router` in `api.py`,
+mounted alongside the config router) returning `DocumentExtractionsRead`
+(`schemas.py`). An unknown document is a **200 + empty list**, not a 404 — "no
+figures yet" is a valid empty costing set. Reuses `list_for_doc`; +4 pytest
+(`test_extraction_read_api.py`).
+
+**Adapter (`packages/redline-adapters/src/numbatch/`):**
+`numbatch-financial-extractor.ts` (GET-only `HttpClient`; reads each document in
+the group; maps `topic_id → requirementId` via a narrowed `NumbatchProfileBinding`;
+drops unmapped topics) + `financial-wire.ts` (narrows the read seam's wire in one
+place — Pydantic serialises the `Numeric` `amount` as a **decimal string**, parsed
+to a JS number here; malformed → `EXTRACTION_FAILED`) + a captured fixture
+(`__fixtures__/document-extractions.json`).
+
+**Design decisions.** (1) *Currency stays numeric* — the wire parses the decimal
+string so `estimateAud` is a real `number | null`; the exit test feeds it through
+`typedDisplayCell("currency", …)` and asserts `isNumeric: true`, the property
+Threads 13–14 need. (2) *`topic_id → requirementId` only in the adapter* (ADR-0005),
+via the same binding as the Thread 5 classifier. (3) *Empty-not-404* — a document
+with no extractions yields `[]`, so a partially-processed group reads cleanly.
+(4) *`elementOrder` defaults to `0` for a description fallback* — `estimateAud:
+null` is the load-bearing fallback signal. (5) *GET-only `HttpClient`* — the read
+seam takes no body, reusing the womblex reader's seam shape.
+
+**Exit test — PASSED.** Contract test against a **captured read-seam payload**:
+`t-data-residency` → `req-data-residency`, `estimateAud 1500.5`, `elementOrder 7`;
+the exit criterion `typedDisplayCell("currency", "1500.5")` → `{ value: 1500.5,
+isNumeric: true }`; description fallback keeps `estimateAud: null`; multi-doc
+concat; unmapped-topic drop; empty-document → `[]`; full error taxonomy. adapters
+**26/26** (was 17; +9), financial extension pytest **28** (was 24; +4),
+`./validate.sh` **11/11**.
+
+**Known limitation.** No live Numbatch compose-up here (no GPU; fork not on disk —
+ADR-0005); the read endpoint is proven standalone against SQLite and the adapter
+against the captured payload. Grafting the read router onto the fork
+(`include_router`) is the Thread 16 mechanical step, alongside the Thread 6/7
+overlay.
+
+**Version bump intent:** MINOR — new adapter surface + additive read endpoint; no
+breaking changes (pre-1.0).
+
+**Docs:** [thread-08](./threads/thread-08-financial-extractor-adapter.md).

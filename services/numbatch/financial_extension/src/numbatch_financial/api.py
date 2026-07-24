@@ -1,15 +1,19 @@
 """The financial-profile config API — an additive FastAPI router for the fork.
 
 Mounted onto the forked Numbatch backend's app (``app.include_router`` in the
-fork; ``build_app`` here for standalone tests). Thread 6 is *schema + config API*:
+fork; ``build_app`` here for standalone tests). Two routers:
 
-    POST /financial-profiles           create one profile for a topic (idempotent)
-    GET  /financial-profiles           list all profiles
-    GET  /financial-profiles/{id}      read one profile
+    POST /financial-profiles              create one profile for a topic (idempotent)
+    GET  /financial-profiles              list all profiles
+    GET  /financial-profiles/{id}         read one profile
+    GET  /financial-extractions/{doc_id}  read a document's extracted figures
 
-Idempotent by ``topic_id`` (a topic = a redline requirement): re-creating for a
-topic that already has a live profile returns the existing one (200), never a
-duplicate — matching the bootstrap's "safe to re-run" contract (ADR-0005).
+The config endpoints (Thread 6) are idempotent by ``topic_id`` (a topic = a
+redline requirement): re-creating for a topic that already has a live profile
+returns the existing one (200), never a duplicate — matching the bootstrap's
+"safe to re-run" contract (ADR-0005). The extraction read endpoint (Thread 8)
+serves the figures the Thread 7 worker wrote so the ``NumbatchFinancialExtractor``
+adapter can fill ``ProcurementResponse.costing``.
 
 Errors are Result-shaped (``{"error": {"code", "message"}}``) to mirror the
 womblex sidecar and map cleanly into the Thread 8 adapter's ``DomainError``.
@@ -23,8 +27,14 @@ from fastapi import APIRouter, Depends, FastAPI, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .extraction_repository import FinancialExtractionRepository
 from .repository import FinancialProfileRepository
-from .schemas import FinancialProfileCreate, FinancialProfileRead
+from .schemas import (
+    DocumentExtractionsRead,
+    FinancialExtractionRead,
+    FinancialProfileCreate,
+    FinancialProfileRead,
+)
 
 SessionFactory = Callable[[], AsyncIterator[AsyncSession]]
 
@@ -87,14 +97,41 @@ def build_router(get_session: SessionFactory) -> APIRouter:
     return router
 
 
-def build_app(get_session: SessionFactory) -> FastAPI:
-    """Standalone app mounting only this router — used by the overlay's tests.
+def build_extractions_router(get_session: SessionFactory) -> APIRouter:
+    router = APIRouter(prefix="/financial-extractions", tags=["financial-extractions"])
 
-    In the fork, ``build_router`` is included on Numbatch's own app instead; this
-    stands the router up in isolation so Thread 6's exit test needs neither the
+    async def session_dependency() -> AsyncIterator[AsyncSession]:
+        async for session in get_session():
+            yield session
+
+    @router.get("/{source_doc_id}", response_model=DocumentExtractionsRead)
+    async def read_document_extractions(
+        source_doc_id: str,
+        session: AsyncSession = Depends(session_dependency),
+    ):
+        repository = FinancialExtractionRepository(session)
+        rows = await repository.list_for_doc(source_doc_id)
+        # A document with no extractions is a valid empty result, not a 404 — the
+        # adapter reads "no figures yet" as an empty costing set, not a failure.
+        return DocumentExtractionsRead(
+            source_doc_id=source_doc_id,
+            extractions=[
+                FinancialExtractionRead.model_validate(row) for row in rows
+            ],
+        )
+
+    return router
+
+
+def build_app(get_session: SessionFactory) -> FastAPI:
+    """Standalone app mounting both routers — used by the overlay's tests.
+
+    In the fork, the routers are included on Numbatch's own app instead; this
+    stands them up in isolation so the overlay's exit tests need neither the
     GPU-bearing inference service nor the rest of the backend.
     """
 
     app = FastAPI(title="numbatch-financial (overlay)")
     app.include_router(build_router(get_session))
+    app.include_router(build_extractions_router(get_session))
     return app

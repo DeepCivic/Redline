@@ -1,0 +1,19 @@
+{
+  "source_doc_id": "82f9355e",
+  "extractions": [
+    {
+      "topic_id": "t-data-residency",
+      "amount": "1500.50",
+      "currency": "AUD",
+      "description": "Sovereign hosting — annual",
+      "source_elem_order": 7
+    },
+    {
+      "topic_id": "t-support-sla",
+      "amount": null,
+      "currency": null,
+      "description": "Priced on application; see section 4.",
+      "source_elem_order": null
+    }
+  ]
+}
