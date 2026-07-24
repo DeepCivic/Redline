@@ -280,6 +280,7 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
 - **Thread 9 — `redline_` persistence layer.** Drizzle schema + repositories (evaluations, vendors,
   response groups, responses); separate Postgres DB/schema; migrations.
   _Exit: repositories round-trip; migration idempotent._
+  — docs: [thread-09](./threads/thread-09-redline-persistence-layer.md)
 - **Thread 10 — Orchestration use-cases (`redline-application`).** `IngestDocuments`,
   `AssignDocumentsToGroups`, `ClassifyResponseGroup`, `ExtractFinancials`, `BuildEvaluationTable`.
   One-paragraph AI summary via an `ILanguageModel`-shaped port.
@@ -355,8 +356,8 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | 6 — Numbatch financial_profile schema & API | ✅ **done** | Exit test **PASSED**: `POST /financial-profiles` creates a profile for a topic → `201` with the persisted body (idempotent by `topic_id` → re-`POST` `200`); the Alembic revision applies through a real `Operations` context — both tables created, `(source_doc_id, topic_id)` uniqueness enforced, `downgrade` reverses. Additive overlay `services/numbatch/financial_extension/` (SQLAlchemy 2.0 models `FinancialProfile`/`FinancialExtraction`, Pydantic v2 schemas, `FinancialProfileRepository`, config router, migration) written to graft onto the fork unchanged (Thread 16); provable standalone against SQLite — no GPU/fork on disk (ADR-0005). **11/11** pytest; `./validate.sh` **11/11** (new check #11). Docs: [thread-06](./threads/thread-06-numbatch-financial-schema-and-api.md). |
 | 7 — Numbatch financial extraction worker | ✅ **done** | Exit test **PASSED**: a synthetic tender workbook (womblex currency cells for a matched topic) → the worker writes one `financial_extractions` row per (document, requirement) with figure + `elem_order` provenance (`$1,200.50` + `$300.00` → `1500.50 AUD`, `source_elem_order 7`); no-currency topic → description fallback (`amount NULL`); double-run proves the `(source_doc_id, topic_id)` no-duplication invariant; unconfigured topics skipped. Additive to the Thread 6 overlay: `extractor.py` (pure figure logic — bundle sum vs line-item first, currency normalisation), `extraction_repository.py` (`upsert` enforcing no-duplication in code), `womblex_source.py` (`WomblexSource` protocol + in-memory fake), `worker.py` (`extract_financials_for_document` + the `financial_extraction_task` Arq entrypoint — no `arq` runtime dep; wired in the fork at Thread 16). **24/24** pytest (was 11; +13); `./validate.sh` **11/11**. Provable standalone against SQLite — no GPU/fork on disk (ADR-0005). Docs: [thread-07](./threads/thread-07-numbatch-financial-extraction-worker.md). |
 | 8 — IFinancialExtractor adapter | ✅ **done** | Exit test **PASSED**: `NumbatchFinancialExtractor` (`redline-adapters`) reads `financial_extractions` per (document, `requirementId`) into `ProcurementResponse.costing` (`estimateAud: number \| null` + `description` + `elementOrder`), mapping Numbatch `topic_id` → `requirementId`; the currency figure is a real number and the contract test proves it numeric via Wayfinder's `typedDisplayCell("currency", …)` → `{ value: 1500.5, isNumeric: true }`. 9 contract tests against a **captured read-seam payload** (`__fixtures__/document-extractions.json`) cover the happy path, description fallback (null estimate), multi-doc concat, unmapped-topic drop, empty-document, and the error taxonomy (INFRA_FAILURE / EXTRACTION_FAILED). Additive read seam added to the Thread 6/7 overlay: `GET /financial-extractions/{source_doc_id}` (`DocumentExtractionsRead`; empty-not-404). adapters **26/26** (was 17; +9); financial extension pytest **28** (was 24; +4); `./validate.sh` **11/11**. Docs: [thread-08](./threads/thread-08-financial-extractor-adapter.md). |
-| 9 — redline_ persistence layer | 🔵 **next** | |
-| 10 — Orchestration use-cases | ⚪ not started | |
+| 9 — redline_ persistence layer | ✅ **done** | Exit test **PASSED**: `DrizzleEvaluationRepository` (`redline-adapters`) round-trips the evaluation aggregate (evaluations/vendors/response-groups/responses) against a **real in-process Postgres** (PGlite = Postgres-in-WASM, no external service); currency round-trips as a real `number` (`numeric(18,2)` ↔ decimal string ↔ `number \| null`), consortium members + id arrays preserved, `NOT_FOUND` on miss, upsert-on-save. The initial `redline_` migration (`0000_redline_initial.sql`, hand-authored to mirror `schema.ts`) is **idempotent** — the exit test re-applies it as a no-op and the schema still works. 15 tests (7 pure row-mapping + 8 round-trip/idempotency) → adapters **41/41** (was 26; +15). Four `redline_`-prefixed tables (check #7 green), `db.ts`/`migrate.ts`/`apply-migrations.ts` + `drizzle.config.ts`; `redline` compose profile (`redline-postgres`). Enacts [ADR-0002](./adr/0002-own-minio-and-postgres.adr.md). `./validate.sh` **11/11**. Docs: [thread-09](./threads/thread-09-redline-persistence-layer.md). |
+| 10 — Orchestration use-cases | 🔵 **next** | |
 | 11 — Workflow manager UI | ⚪ not started | |
 | 12 — In-app review grid | ⚪ not started | |
 | 13 — Pricing pivots | ⚪ not started | |
@@ -784,3 +785,51 @@ overlay.
 breaking changes (pre-1.0).
 
 **Docs:** [thread-08](./threads/thread-08-financial-extractor-adapter.md).
+
+### Thread 9 log (2026-07-30) — ✅ COMPLETE
+
+**Built** the `redline_` persistence layer (`packages/redline-adapters/src/persistence/`):
+Drizzle schema + `DrizzleEvaluationRepository` (`IEvaluationRepository`) over a
+redline-owned Postgres (ADR-0002).
+
+**Schema (`schema.ts`).** Four `redline_`-prefixed tables — `redline_evaluations`,
+`redline_vendors`, `redline_response_groups`, `redline_responses` — snake_case,
+`id`/`created_at`/`updated_at` on each; currency `numeric(18,2)`; id sets as
+`text[]`; FKs cascade from the evaluation. `row-mapping.ts` is the pure domain ↔
+row layer (the numeric decimal-string ↔ `number | null` conversion lives here).
+
+**Repository (`drizzle-evaluation-repository.ts`).** Result at every boundary
+(driver errors → `INFRA_FAILURE`, missing → `NOT_FOUND`); saves are upserts so a
+re-run of a stage is idempotent; the drizzle handle is injected structurally so
+postgres-js (prod) and PGlite (test) both satisfy it. `db.ts`
+(`createRedlinePostgres`), `migrate.ts` (`db:migrate` against `DATABASE_URL`),
+`apply-migrations.ts` (driver-agnostic), `drizzle.config.ts`, and the initial
+migration `0000_redline_initial.sql` (idempotent, `IF NOT EXISTS`).
+
+**Design decisions.** (1) *PGlite for the exit test* — no local Node/Postgres, but
+"round-trip" needs real Postgres, so [PGlite](https://pglite.dev) (Postgres-in-WASM)
+runs in-process under vitest via `drizzle-orm/pglite`; arrays, `numeric` decimal
+strings and FKs behave for real with zero external services (same standalone
+posture as Threads 5–7). (2) *One migration SQL for tests and prod* —
+`applyMigrations` runs against PGlite in the test and `DATABASE_URL` in `migrate.ts`;
+the idempotency test literally re-runs it. (3) *Upsert-on-save* — matches the
+re-classify / advance-stage flows Thread 10 drives. (4) *Currency numeric end to
+end* — consistent with the Thread 8 adapter and the review grid / pivots to come.
+
+**Exit test — PASSED.** adapters **41/41** (was 26; +15: 7 pure row-mapping + 8
+round-trip/idempotency against PGlite). Round-trips the whole aggregate, reads
+currency back as `1500.5`, preserves consortium members + id arrays, `NOT_FOUND`
+on miss, scopes by evaluation; the final test re-applies the migration as a no-op
+and confirms the schema still works. `./validate.sh` **11/11** (incl. #7 `redline_`
+prefix).
+
+**Known limitation.** No live Postgres `db:migrate` run here (no local Node/DB);
+the migration is proven idempotent against real Postgres semantics via PGlite, and
+the `redline` compose profile + `migrate.ts` are wired for a real run when Node is
+present (Thread 10/11 or Thread 16). `0000_redline_initial.sql` is hand-authored
+(mirrors `schema.ts`); regenerate via `db:generate` on the next schema change.
+
+**Version bump intent:** MINOR — new persistence surface + own Postgres; no
+breaking changes (pre-1.0).
+
+**Docs:** [thread-09](./threads/thread-09-redline-persistence-layer.md).
