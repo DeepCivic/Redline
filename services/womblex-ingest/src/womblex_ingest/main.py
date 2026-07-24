@@ -58,13 +58,29 @@ def _run_view(run: Run) -> dict:
     }
 
 
-def build_app(*, storage: ObjectStorage, extractor: Extractor, bucket: str) -> FastAPI:
+def build_app(
+    *,
+    storage: ObjectStorage,
+    extractor: Extractor,
+    bucket: str,
+    womblex_mode: str = "stub",
+    enrichment_mode: str = "offline",
+) -> FastAPI:
     app = FastAPI(title="womblex-ingest", version="0.1.0")
     registry = RunRegistry()
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "bucket": bucket}
+        # Surfaces the live extraction + enrichment path (Thread 15) so a
+        # deployment or the UI config toggle can read whether Isaacus is engaged
+        # or the sidecar is running fully offline (air-gapped).
+        return {
+            "status": "ok",
+            "bucket": bucket,
+            "womblexMode": womblex_mode,
+            "enrichmentMode": enrichment_mode,
+            "isaacusEnabled": enrichment_mode == "isaacus",
+        }
 
     @app.post("/ingest")
     def ingest(request: IngestRequest) -> JSONResponse:
@@ -179,4 +195,10 @@ def build_app_from_env() -> FastAPI:
         bucket=settings.bucket,
     )
     extractor = build_extractor(settings.womblex_mode)
-    return build_app(storage=storage, extractor=extractor, bucket=settings.bucket)
+    return build_app(
+        storage=storage,
+        extractor=extractor,
+        bucket=settings.bucket,
+        womblex_mode=settings.womblex_mode,
+        enrichment_mode=settings.enrichment_mode.value,
+    )
