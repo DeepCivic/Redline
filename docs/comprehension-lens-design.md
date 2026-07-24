@@ -437,9 +437,9 @@ grid itself.
 
 | # | Decision | Status | Proposed ADR |
 |---|---|---|---|
-| D1 | Procurement is the purpose; the lens is the composable means | ✅ **settled** 2026-07-24 | scope ADR |
-| D2 | Trained adapter is an optional overlay; first pass needs no samples | ✅ **settled** 2026-07-24 | cold-start ADR |
-| D3 | Numbatch's library is the system of record | ✅ **settled** 2026-07-24 (implied by D1+D2) | system-of-record ADR |
+| D1 | Procurement is the purpose; the lens is the composable means | ✅ **settled** 2026-07-24 | [ADR-0007](./adr/0007-procurement-purpose-lens-means.adr.md) ✅ |
+| D2 | Trained adapter is an optional overlay; first pass needs no samples | ✅ **settled** 2026-07-24 | [ADR-0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md) ✅ |
+| D3 | Numbatch's library is the system of record | ✅ **settled** 2026-07-24 (implied by D1+D2) | [ADR-0009](./adr/0009-numbatch-library-is-system-of-record.adr.md) ✅ |
 | D4 | Lens operations are independent functions over joinable sidecars | adopted from womblex | composition ADR |
 | D5 | Retrieval is womblex's; redline builds no vector store | settled by Finding 2 | retrieval ADR |
 | D6 | Boundary decisions are content-addressed | adopted from womblex | addressing ADR |
@@ -456,10 +456,17 @@ procurement is explicitly not a goal. Threads 17–34 may now be built against a
 three without re-confirmation. D4–D10 are adopted from upstream and recorded
 rather than debated.
 
+D1–D3 are now recorded as **track-level ADRs** ([0007](./adr/0007-procurement-purpose-lens-means.adr.md),
+[0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md),
+[0009](./adr/0009-numbatch-library-is-system-of-record.adr.md)) — written once
+because they gate Threads 17–34 and belong to no single thread. Every remaining
+decision follows the just-in-time model: drafted with the thread that needs it,
+reviewed, approved, then built.
+
 Amendments the above force on existing ADRs:
 
-- **ADR-0004** — supersede. "User-defined, ≤10" survives; the evaluation-scoped
-  lifetime of `RequirementSet` does not.
+- **ADR-0004** — **amended by ADR-0009** (done). "User-defined, ≤10" survives;
+  the evaluation-scoped lifetime of `RequirementSet` does not.
 - **ADR-0003** — amend to carry embeddings across the JSON boundary.
 - **ADR-0005** — reaffirmed by D2 (additive-only posture preserved); amend only
   if D2 is flipped to relaxing the training floor.
