@@ -38,7 +38,18 @@ The live (real MinIO + HTTP) counterpart to the offline pytest, mirroring
 `thread-03-smoke.sh`: brings up the `ingest` profile **with `ISAACUS_API_KEY`
 unset**, asserts `/health` reports `enrichmentMode: offline` / `isaacusEnabled:
 false`, `POST /ingest` succeeds, shards land in MinIO, and the Parquet→JSON read
-seam serves the document. Self-contained (safe local S3 defaults).
+seam serves the document. Self-contained (safe local S3 defaults). **This ran live
+under Podman 5.8 in this environment — see the evidence below.**
+
+### Compose fix — profiles are now self-contained
+
+Running the live proof surfaced a real defect: `infra/docker-compose.yml` guarded
+the numbatch/redline DB passwords with `${VAR:?...}`, and compose interpolates the
+**whole file regardless of `--profile`**, so `--profile ingest` refused to start
+unless unrelated profiles' secrets were also set. Fixed by giving all credentials
+overridable **dev defaults** (`minioadmin`, `*-dev` passwords) so any single profile
+comes up standalone; production overrides them via `infra/.env`. The header comment
+spells out that the dev defaults must never ship.
 
 ### UI config toggle — `apps/redline-web`
 
@@ -84,23 +95,39 @@ turbo typecheck / lint / test / build → all green across the @redline/* packag
 ```
 
 The exit criterion — *full pipeline runs with `ISAACUS_API_KEY` unset* — is proven
-by `test_airgap_pipeline.py::test_full_pipeline_runs_air_gapped`: with the key
-deleted from the environment and `/health` reporting `enrichmentMode: offline`,
-`POST /ingest` → `202 succeeded`, `_manifest` + per-document element shards land
-under `proc/airgap-1/`, and `GET /extractions/airgap-1/{sourceHash}` serves the
-JSON read model (elements + `chunkId "{sourceHash}:0"`) — all offline.
+both offline (pytest) and **live under Podman**.
+
+**Live run** (`scripts/thread-15-airgap.sh`, Podman 5.8, real MinIO, `ISAACUS_API_KEY`
+unset, `ingest` profile brought up standalone):
+
+```
+>> waiting for /health
+   -> {"status":"ok","bucket":"redline","womblexMode":"stub","enrichmentMode":"offline","isaacusEnabled":false}
+>> POST /ingest (evaluationId=airgap-…)
+   -> {"runId":"538ccb28-…","status":"succeeded","documentCount":1,
+       "shardKeys":["proc/airgap-…/_manifest.parquet","proc/airgap-…/tender.pdf.elements.parquet"]}
+>> MinIO listing (proc/airgap-…/):
+     _manifest.parquet · c8dfc1c3abaa911d.extraction.json · tender.pdf.elements.parquet
+>> GET /extractions/airgap-…/c8dfc1c3abaa911d
+   -> {"documentId":"c8dfc1c3abaa911d","elements":[…]}
+THREAD 15 EXIT TEST: PASSED — full pipeline ran with ISAACUS_API_KEY unset (offline enrichment).
+```
+
+**Offline run** (gates in CI without a container):
+`test_airgap_pipeline.py::test_full_pipeline_runs_air_gapped` builds the app the way
+the process does at startup with the key deleted and `/health` reporting
+`enrichmentMode: offline`, then `POST /ingest` → `202 succeeded`, shards land under
+`proc/airgap-1/`, and `GET /extractions/airgap-1/{sourceHash}` serves the JSON read
+model (elements + `chunkId "{sourceHash}:0"`).
 
 ## Known limitations / follow-ups
 
-1. **Real womblex still not wired.** The offline path is fully proven; `real`
-   mode raises `NotImplementedError` until the concrete womblex call surface lands
-   (carried from Threads 3–4). The Isaacus-disabled *real* path (womblex's
-   edge/offline mode) is therefore proven only at the wiring/health layer, not by
-   running real womblex.
-2. **No live compose run here** (no container runtime in this environment) — the
-   exit criterion is proven offline in pytest; `scripts/thread-15-airgap.sh` is the
-   live proof to run where Podman/Docker is available.
-3. **No Next.js shell yet** — the config view is complete and tested; the settings
+1. **Real womblex still not wired.** The offline path is fully proven (live under
+   Podman + offline in pytest); `real` mode raises `NotImplementedError` until the
+   concrete womblex call surface lands (carried from Threads 3–4). The
+   Isaacus-disabled *real* path (womblex's edge/offline mode) is therefore proven
+   only at the wiring/health layer, not by running real womblex.
+2. **No Next.js shell yet** — the config view is complete and tested; the settings
    route + the Playwright run are the Track 4 shell follow-up (shared with Threads
    11–14). `e2e/ingest-config.e2e.ts` pins the `/evaluations/:id/settings/ingest`
    DOM contract.
