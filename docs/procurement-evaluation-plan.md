@@ -326,10 +326,10 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
    — vendor, run all-but-frontend, bootstrap via API, `topic_id ⇔ requirementId` only in the
    adapter — are recorded in [ADR-0005](./adr/0005-numbatch-fork-all-but-frontend.adr.md).
 4. **Shared vs separate MinIO/Postgres** — **LOCKED: own** — redline stands up its own MinIO (bucket `redline`, shards under `proc/{evaluationId}/`) and its own Postgres (`redline_` prefix); the seam stays plain S3/Postgres so a deployment can still collapse to a shared instance by config. Recorded in [ADR-0002](./adr/0002-own-minio-and-postgres.adr.md).
-5. **Auth/roles** — _open_ — does the review surface reuse Wayfinder auth/roles, or its own? Decide before Thread 11.
+5. **Auth/roles** — **LOCKED: inherit Wayfinder's** — redline reuses Wayfinder's identity (Better Auth / Entra ID) and its `Role`/`PermissionKey` model rather than building its own; the current-user/principal is an injected **port** consumed at the `redline-application` / `apps/redline-web` edge (wired in `lib/container.ts`), so `redline-domain` stays identity-free. Procurement actions map onto Wayfinder permissions; genuinely new keys go **upstream**, not forked. Numbatch's UI is not an auth reference (ADR-0005). Recorded in [ADR-0006](./adr/0006-inherit-wayfinder-auth-roles.adr.md).
 
 > **ADR model adopted.** This repo now follows Wayfinder's ADR format under
-> [`docs/adr/`](./adr/README.md). Decision 5 will get its own ADR when locked.
+> [`docs/adr/`](./adr/README.md).
 
 ---
 
