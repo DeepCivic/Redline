@@ -14,6 +14,34 @@ pnpm test
 
 `validate.sh` detects local `node`/`pnpm` and runs the workspace checks directly.
 
+## Dependency policy — the lockfile is committed
+
+`pnpm-lock.yaml` **is committed**, and the CI cache keys on it. Every direct
+dependency in this workspace is a caret range (`typescript: ^5.6.0`,
+`vitest: ^4.1.0`, …), so without a lockfile every install re-resolves and a
+green build can go red with no commit in between — a real cost when threads are
+built one-per-agent and gated on `./validate.sh`.
+
+Consequences to know:
+
+- **Commit the lockfile with any dependency change.** A `package.json` edit that
+  leaves `pnpm-lock.yaml` unstaged is an incomplete commit.
+- **CI installs with `--prefer-frozen-lockfile`, not `--frozen-lockfile`** (which
+  pnpm enables by default when `CI=true`). The lockfile contains an importer for
+  `vendor/wayfinder/packages/domain`, materialised from Wayfinder at
+  `WAYFINDER_REF` (default `main`). A dependency bump in *Wayfinder's* repo would
+  staleness-fail a strict install and turn our CI red for someone else's commit.
+  The tolerant flag re-resolves in that case instead of failing.
+- **Upgrade to `--frozen-lockfile` when `WAYFINDER_REF` is pinned to a SHA.** That
+  makes the vendored tree deterministic, at which point strictness costs nothing.
+
+Regenerate after changing dependencies:
+
+```bash
+pnpm install           # updates pnpm-lock.yaml
+git add pnpm-lock.yaml
+```
+
 ## B. No local Node — run in Podman
 
 The host may have no Node (that's how this repo was bootstrapped). `validate.sh`
