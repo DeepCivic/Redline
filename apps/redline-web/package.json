@@ -1,0 +1,32 @@
+{
+  "name": "@redline/redline-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Specialist control surface (workflow manager) and review grid. Wires the application use-cases to the real adapters.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@redline/redline-adapters": "workspace:*",
+    "@redline/redline-application": "workspace:*",
+    "@redline/redline-domain": "workspace:*",
+    "@redline/redline-shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0",
+    "vitest": "^4.1.0"
+  }
+}
