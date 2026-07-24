@@ -69,6 +69,19 @@ explicitly and paste the passing output:
   - Never write to `docs/procurement-evaluation-plan.md` — deprecated and frozen.
 - State the version bump intent (MAJOR / MINOR / PATCH).
 - Run `./validate.sh` one final time — fix all failures before declaring done.
-- Commit all changes. Open a PR against the DeepCivic remote's default branch via
-  `mcp__github__create_pull_request` when the remote exists; otherwise state that
-  the repo is not yet wired to a remote and stop.
+- **One thread = one commit.** Commit all the thread's changes together.
+- **Do NOT open a PR.** A PR is opened only when the user explicitly asks for
+  one. Offer it; do not act on the offer unasked.
+
+---
+
+## Scope discipline
+
+A thread is **one build step including its test** (see the thread contract in
+`/new-thread`). If, mid-build, the thread turns out to be larger than that:
+
+- Build the part that satisfies the stated exit test, and stop.
+- Report what you left out and why, and propose the follow-up thread(s).
+
+Do not widen a thread mid-flight. An overrunning thread is a planning defect to
+be fixed in the design doc, not absorbed into the current context.

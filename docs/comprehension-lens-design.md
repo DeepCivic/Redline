@@ -253,69 +253,124 @@ tenancy mapping needs a decision before the lens is shared between users.
 
 ## 6. Delivery
 
-Threads continue the existing monotonic numbering. Each is independently
-buildable, testable, and carries an explicit exit test.
+### The thread contract (non-negotiable)
+
+A **thread is one build step**, sized to fit a single agent's context:
+
+- **One build step, including its test.** If the exit test needs two unrelated
+  things built first, it is two threads.
+- **One agent, one context.** A thread must be completable without the agent
+  re-reading half the repo. If planning it requires spanning packages *and*
+  languages *and* a new seam, split it.
+- **One commit.** A PR is opened **only on explicit user request**.
+- **Tests-first.** The test file is written before the implementation file.
+- **One package where possible.** A thread crossing a package boundary needs a
+  reason; a thread crossing three does not exist — it is three threads.
+
+This is the guard against token bloat spanning build tasks. Threads below are
+sliced to it, which is why there are more of them and each is smaller.
+
+Threads continue the existing monotonic numbering. Each carries an explicit exit
+test.
 
 ### Track L — Comprehension lens (new)
 
-- **Thread 17 — Lens domain: `Topic`, `Lens`, `HardRule`.** Pure `redline-domain`
-  entities, zero deps, tests-first. `Lens` is durable and evaluation-independent;
-  `RequirementSet` becomes a projection of a lens bound to an evaluation. Hard
-  rules are pattern → topic, evaluated before any model.
-  _Exit: lens/topic/hard-rule invariants covered; a lens round-trips independent
-  of any evaluation; `RequirementSet` still satisfies its ≤10 cap; `./validate.sh`
-  green incl. purity check #4._
+**Lens domain (pure `redline-domain`, zero deps)**
 
-- **Thread 18 — Embeddings read seam.** The womblex sidecar exposes
-  `*.embeddings.parquet` across the JSON boundary (extends ADR-0003); a
-  `redline-adapters` reader implements a new `IEmbeddingReader` port. Decide the
-  vector wire representation — JSON float arrays are the naive option and may not
-  survive corpus scale.
-  _Exit: contract test reads real vectors from a captured sidecar payload,
-  joinable on `(source_hash, chunk_index)`; TS still links no Parquet reader._
+- **Thread 17 — `Topic` + `Lens` entities.** Durable and
+  evaluation-independent; `RequirementSet` becomes a projection of a lens bound
+  to an evaluation.
+  _Exit: lens/topic invariants covered; a lens constructs with no `evaluationId`;
+  `RequirementSet` still satisfies its ≤10 cap; purity check #4 green._
 
-- **Thread 19 — First-pass classification.** Hard rules → retrieval
-  nearest-neighbour → LLM adjudication, composed as independent functions (no
-  orchestrator). Produces `RequirementClassification[]` plus a one-sentence
-  rationale per assignment.
-  _Exit: a fixture corpus classifies end-to-end with **no trained adapter and no
-  curated samples**; hard-rule hits never reach the model; every assignment
-  carries a rationale._
+- **Thread 18 — `HardRule` entity + pure evaluation.** Pattern → topic,
+  match semantics, precedence when two rules hit.
+  _Exit: rule-match invariants covered incl. precedence and no-match; pure, no I/O._
 
-- **Thread 20 — Clear/Ambiguous + Document Map.** A pure derivation over
-  classifications into Clear/Ambiguous buckets, driven by a named, statused
-  signal register; the Document Map is a derived read model (never stored state),
-  reusing Wayfinder's `computePivot`.
-  _Exit: map percentages match hand-computed totals on a fixture; no confidence
-  score reaches the view model; the map is recomputed, never persisted._
+**Retrieval seam**
 
-- **Thread 21 — Collisions & boundary decisions.** Deterministic selection,
-  ordering and capping of the ambiguous set (≤20); resolution as
-  primary/secondary/split; decisions persisted **content-addressed** and applied
-  as full-label replacement with global/profile scope and an append-only audit
-  (adopting upstream ADR-0020).
-  _Exit: a corpus yields a bounded, deterministically-ordered collision set;
-  re-resolving is idempotent; a decision made in one evaluation re-attaches to the
-  same document content in another._
+- **Thread 19 — Sidecar embeddings read endpoint** (Python, `womblex-ingest`).
+  Serves `*.embeddings.parquet` over the JSON boundary; settles the vector wire
+  representation (open question #1).
+  _Exit: pytest reads real vectors for a document, joinable on
+  `(source_hash, chunk_index)`; absent shard → `NOT_FOUND`._
 
-- **Thread 22 — Lens persistence & portability.** Save/load a lens across
-  evaluations; bindings to Numbatch topics; the lens survives the corpus.
-  _Exit: a lens saved in one evaluation is applied to a different corpus and its
-  boundary decisions still bite._
+- **Thread 20 — `IEmbeddingReader` port + adapter** (TS).
+  _Exit: contract test against a captured sidecar payload; error taxonomy covered;
+  TS still links no Parquet reader._
 
-- **Thread 23 — Lens workflow surface.** Its own stage machine (define → map →
-  resolve → save), **not** new `IntakeStage` members — `nextIntakeStage` /
-  `canAdvanceIntakeStage` are strictly linear and forcing this in would break
-  Thread 11. Framework-free core + collision UI, matching the Thread 11 pattern.
-  _Exit: the four-step workflow drives to a saved lens in the pure core; Thread
-  11's control surface still passes unchanged._
+**First-pass classification** (each stage an independent function — no orchestrator)
 
-- **Thread 24 — Overlay engagement & retrain policy.** When accumulated
-  decisions cross `MIN_SAMPLES_PER_TOPIC`, train and activate the Numbatch
-  adapter (upstream ADR-0021's train → compare → activate); decide who triggers
-  it and whether the user ever waits.
-  _Exit: a lens crossing the floor trains and engages; subsequent runs use the
-  adapter; the first-pass path remains available and interchangeable at the port._
+- **Thread 21 — Hard-rule pre-pass.** Rules resolve before any model; claimed
+  documents never reach the classifier.
+  _Exit: rule-claimed documents produce classifications with the model port
+  unused (fake asserts zero calls)._
+
+- **Thread 22 — Retrieval classification.** Nearest-neighbour of chunk vectors
+  against topic definitions.
+  _Exit: a fixture corpus classifies with no trained adapter and no samples._
+
+- **Thread 23 — LLM adjudication + rationale.** Only for what retrieval left
+  unclear; emits the one-sentence rationale. Adds the adjudication seam
+  (open question #2).
+  _Exit: adjudicated assignments carry a rationale; the seam is a port, exercised
+  with a fake._
+
+**Comprehension read models (pure)**
+
+- **Thread 24 — Ambiguity signal register + Clear/Ambiguous derivation.**
+  Named, statused signals in womblex's `heuristics_disambiguation.md` shape.
+  _Exit: bucketing covered per signal; no confidence value escapes to the view model._
+
+- **Thread 25 — Document Map read model.** Derived, never stored; reuses
+  `computePivot`.
+  _Exit: percentages match hand-computed totals on a fixture; recomputed, not persisted._
+
+**Collisions & boundary decisions**
+
+- **Thread 26 — Collision selection, ordering and capping.** Bounded ≤20,
+  deterministic.
+  _Exit: same corpus yields the same bounded, ordered set; cap holds._
+
+- **Thread 27 — `BoundaryDecision` entity.** Content-addressed;
+  primary/secondary/split (net-new modelling — Numbatch has no primary/secondary).
+  _Exit: decision invariants covered; the same document content yields the same key._
+
+- **Thread 28 — Boundary decision persistence + corrections push.** Full-label
+  replacement with scope and append-only audit (upstream ADR-0020).
+  _Exit: re-resolving is idempotent; a decision re-attaches to the same content in
+  another evaluation._
+
+**Lens lifecycle**
+
+- **Thread 29 — Lens persistence.** `redline_` tables for the lens + its
+  Numbatch bindings (per D3, references not copies).
+  _Exit: a lens round-trips; migration idempotent._
+
+- **Thread 30 — Lens portability.** Apply a saved lens to a different corpus.
+  _Exit: a lens saved in one evaluation classifies another and its boundary
+  decisions still bite._
+
+- **Thread 31 — Lens stage machine** (pure). Define → map → resolve → save, its
+  own machine — **not** new `IntakeStage` members.
+  _Exit: the four steps drive to a saved lens; Thread 11's control surface passes
+  unchanged._
+
+- **Thread 32 — Collision resolution surface.** View model + controller in the
+  Thread 11 framework-free pattern.
+  _Exit: a collision set resolves through the pure core; view model carries no
+  confidence._
+
+**Overlay engagement**
+
+- **Thread 33 — Sample accrual.** Boundary decisions become Numbatch topic
+  samples with provenance.
+  _Exit: decisions land as samples; upstream dedupe makes re-push a no-op._
+
+- **Thread 34 — Train/activate policy.** Crossing `MIN_SAMPLES_PER_TOPIC`
+  triggers train → activate (upstream ADR-0021); the user never blocks on it.
+  _Exit: a lens crossing the floor engages the adapter; the first-pass path stays
+  interchangeable at the port._
 
 ### Track P — Procurement vertical (outstanding, carried from the old plan)
 
@@ -334,7 +389,7 @@ buildable, testable, and carries an explicit exit test.
 
 ### Track H — Shell & hardening
 
-- **Thread 25 — Next.js shell** (was the Track 4 follow-up). React/Next shell
+- **Thread 35 — Next.js shell** (was the Track 4 follow-up). React/Next shell
   matching Wayfinder's `apps/web` (ADR-0006) serving
   `/evaluations/:id/grouping` and the lens routes; wires the existing Playwright
   spec (`apps/redline-web/e2e/`) into CI as the executable gate, closing the
@@ -427,23 +482,33 @@ _Update at the end of every thread. Threads 1–11 are complete — their logs r
 in the [deprecated plan](./procurement-evaluation-plan.md) §10 and are not
 duplicated here._
 
-| Thread | Track | Status | Notes |
-|---|---|---|---|
-| 1–11 | — | ✅ **done** | See the deprecated plan's §10 logs (scaffold → workflow manager UI). |
-| 17 — Lens domain (`Topic`, `Lens`, `HardRule`) | L | 🔵 **next** | Critical path. Pure domain, tests-first. |
-| 18 — Embeddings read seam | L | ⚪ not started | Extends ADR-0003; vector wire format is open question #1. |
-| 19 — First-pass classification | L | ⚪ not started | Where the workflow becomes demonstrable with no trained model. |
-| 20 — Clear/Ambiguous + Document Map | L | ⚪ not started | Pure derivation; signal register needs initial thresholds. |
-| 21 — Collisions & boundary decisions | L | ⚪ not started | Content-addressed; adopts upstream ADR-0020. |
-| 22 — Lens persistence & portability | L | ⚪ not started | Depends on D3. |
-| 23 — Lens workflow surface | L | ⚪ not started | Own stage machine; must not disturb Thread 11. |
-| 24 — Overlay engagement & retrain policy | L | ⚪ not started | Engages Numbatch once the sample floor is crossed. |
-| 12 — In-app review grid | P | ⚪ not started | Priority 1 of the procurement vertical; independent of Track L. |
-| 13 — Pricing pivots | P | ⚪ not started | |
-| 14 — Excel export | P | ⚪ not started | Priority 2. |
-| 25 — Next.js shell | H | ⚪ not started | Closes the `/e2e` deviation in `CLAUDE.md`. |
-| 15 — Isaacus-optional & air-gap validation | H | ⚪ not started | Now also covers the lens's first-pass network posture. |
-| 16 — Workspace extraction & release prep | H | ⚪ not started | Grafts the Threads 6–8 financial overlay onto the vendored fork. |
+| Thread | Track | Package(s) | Status | Notes |
+|---|---|---|---|---|
+| 1–11 | — | — | ✅ **done** | See the deprecated plan's §10 logs (scaffold → workflow manager UI). |
+| 17 — `Topic` + `Lens` entities | L | domain | 🔵 **next** | Critical path. Depends on D1/D3. |
+| 18 — `HardRule` + evaluation | L | domain | ⚪ not started | Pure; no dependency on 17. |
+| 19 — Sidecar embeddings endpoint | L | womblex-ingest | ⚪ not started | Settles open question #1. |
+| 20 — `IEmbeddingReader` + adapter | L | domain, adapters | ⚪ not started | Needs 19's wire format. |
+| 21 — Hard-rule pre-pass | L | application | ⚪ not started | Needs 18. |
+| 22 — Retrieval classification | L | application, adapters | ⚪ not started | Needs 20. First demo point. |
+| 23 — LLM adjudication + rationale | L | domain, application | ⚪ not started | Open question #2. |
+| 24 — Ambiguity signals + buckets | L | domain | ⚪ not started | Thresholds unmeasured (open question #5). |
+| 25 — Document Map read model | L | application | ⚪ not started | Reuses `computePivot`. |
+| 26 — Collision selection & capping | L | domain | ⚪ not started | |
+| 27 — `BoundaryDecision` entity | L | domain | ⚪ not started | Net-new modelling (open question #4). |
+| 28 — Decision persistence + corrections | L | adapters | ⚪ not started | Upstream ADR-0020. |
+| 29 — Lens persistence | L | adapters | ⚪ not started | Depends on D3. |
+| 30 — Lens portability | L | application | ⚪ not started | The compounding proof. |
+| 31 — Lens stage machine | L | redline-web | ⚪ not started | Must not disturb Thread 11. |
+| 32 — Collision resolution surface | L | redline-web | ⚪ not started | |
+| 33 — Sample accrual | L | adapters | ⚪ not started | |
+| 34 — Train/activate policy | L | adapters | ⚪ not started | Engages the overlay. |
+| 12 — In-app review grid | P | redline-web | ⚪ not started | Priority 1; independent of Track L. |
+| 13 — Pricing pivots | P | application | ⚪ not started | |
+| 14 — Excel export | P | adapters | ⚪ not started | Priority 2. |
+| 35 — Next.js shell | H | redline-web | ⚪ not started | Closes the `/e2e` deviation. |
+| 15 — Isaacus-optional & air-gap | H | womblex-ingest | ⚪ not started | Now covers the lens's network posture. |
+| 16 — Workspace extraction & release | H | workspace | ⚪ not started | Grafts the Threads 6–8 overlay onto the fork. |
 
 ---
 
