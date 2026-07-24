@@ -20,6 +20,9 @@ import {
   ClassifyResponseGroup,
 } from "@redline/redline-application";
 import { WorkflowManager } from "./workflow-manager";
+import { ReviewGrid } from "./review-grid";
+import { PricingPivot } from "./pricing-pivot";
+import { buildEvaluationWorkbook, type EvaluationWorkbook } from "./excel-export";
 
 // Container / WorkflowController — the app's wiring (CLAUDE.md: "wiring lives in
 // lib/container.ts"). Apps import only @redline/redline-application (use-cases)
@@ -93,6 +96,46 @@ export class WorkflowController {
 
   buildTable(input: { evaluationId: string }): Promise<Result<readonly ProcurementResponse[]>> {
     return this.buildEvaluationTable.execute(input);
+  }
+
+  // Opens the in-app review grid (Thread 12) for an evaluation that has reached
+  // the review stage: reads the persisted ProcurementResponse[] (built by
+  // BuildEvaluationTable) and wraps them in a ReviewGrid the shell renders. Read
+  // side only — the grid never mutates, so this returns the grid, not a stage
+  // transition.
+  async openReviewGrid(input: { evaluationId: string }): Promise<Result<ReviewGrid>> {
+    const responses = await this.container.repository.listResponses(input.evaluationId);
+    if (isErr(responses)) return responses;
+    return ok(new ReviewGrid(responses.data));
+  }
+
+  // Opens the pricing pivots (Thread 13) over the persisted ProcurementResponse[]:
+  // reads the same built responses the review grid does and wraps them in a
+  // PricingPivot the shell rolls up per brand / per requirement / brand×requirement.
+  // Read side only — pivots never mutate.
+  async openPricingPivot(input: { evaluationId: string }): Promise<Result<PricingPivot>> {
+    const responses = await this.container.repository.listResponses(input.evaluationId);
+    if (isErr(responses)) return responses;
+    return ok(new PricingPivot(responses.data));
+  }
+
+  // Builds the Excel export workbook (Thread 14) for an evaluation at the review
+  // stage: reads the persisted ProcurementResponse[] once and shapes them into
+  // one review sheet plus one sheet per pivot, all with numeric currency cells
+  // and source deep-link hyperlinks. Read side only — export never mutates. The
+  // shell hands this to exportEvaluationXlsx (the lazy browser writer) to trigger
+  // the download; returning the workbook keeps the write side testable without a
+  // browser.
+  async buildWorkbook(input: { evaluationId: string }): Promise<Result<EvaluationWorkbook>> {
+    const responses = await this.container.repository.listResponses(input.evaluationId);
+    if (isErr(responses)) return responses;
+    return ok(
+      buildEvaluationWorkbook({
+        evaluationId: input.evaluationId,
+        grid: new ReviewGrid(responses.data),
+        pivot: new PricingPivot(responses.data),
+      }),
+    );
   }
 }
 

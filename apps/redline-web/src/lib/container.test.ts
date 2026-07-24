@@ -214,3 +214,125 @@ describe("WorkflowController — classifying", () => {
     expect(evaluation.data.stage).toBe("review");
   });
 });
+
+describe("WorkflowController — review", () => {
+  it("opens a review grid over the persisted responses (currency stays numeric)", async () => {
+    const { controller, repository } = controllerAt("review");
+    await repository.saveResponses([
+      {
+        evaluationId: "eval-1",
+        responseGroupId: "g-acme",
+        vendorName: "Acme",
+        productName: "Platform",
+        requirementId: "req-1",
+        confidence: 0.9,
+        productSummary: "A concise summary.",
+        costing: { estimateAud: 1500.5, description: "" },
+        source: { documentId: "doc-1", elementOrder: 7, page: 3, chunkId: "doc-1:2" },
+      },
+    ]);
+
+    const opened = await controller.openReviewGrid({ evaluationId: "eval-1" });
+    expect(isOk(opened)).toBe(true);
+    if (!isOk(opened)) return;
+
+    const rows = opened.data.all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cells.vendorName.display).toBe("Acme");
+    expect(rows[0].cells.estimateAud.isNumeric).toBe(true);
+    expect(rows[0].cells.estimateAud.sortValue).toBe(1500.5);
+    expect(rows[0].source.documentId).toBe("doc-1");
+  });
+
+  it("opens an empty review grid when no responses were built yet", async () => {
+    const { controller } = controllerAt("review");
+    const opened = await controller.openReviewGrid({ evaluationId: "eval-1" });
+    expect(isOk(opened)).toBe(true);
+    if (!isOk(opened)) return;
+    expect(opened.data.all()).toEqual([]);
+  });
+
+  it("opens a pricing pivot over the persisted responses and rolls up per brand", async () => {
+    const { controller, repository } = controllerAt("review");
+    await repository.saveResponses([
+      {
+        evaluationId: "eval-1",
+        responseGroupId: "g-acme",
+        vendorName: "Acme",
+        productName: "Platform",
+        requirementId: "req-1",
+        confidence: 0.9,
+        productSummary: "A concise summary.",
+        costing: { estimateAud: 1000, description: "" },
+        source: { documentId: "doc-1", elementOrder: 7, page: 3, chunkId: "doc-1:2" },
+      },
+      {
+        evaluationId: "eval-1",
+        responseGroupId: "g-acme",
+        vendorName: "Acme",
+        productName: "Platform",
+        requirementId: "req-2",
+        confidence: 0.8,
+        productSummary: "A concise summary.",
+        costing: { estimateAud: 500, description: "" },
+        source: { documentId: "doc-1", elementOrder: 9, page: 4, chunkId: "doc-1:3" },
+      },
+    ]);
+
+    const opened = await controller.openPricingPivot({ evaluationId: "eval-1" });
+    expect(isOk(opened)).toBe(true);
+    if (!isOk(opened)) return;
+
+    const result = opened.data.compute({ axis: "brand", measure: "sum" });
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].key).toBe("Acme");
+    expect(result.rows[0].total.value).toBe(1500);
+    expect(result.grandTotal.value).toBe(1500);
+  });
+
+  it("builds the export workbook over the persisted responses (numeric currency + source links)", async () => {
+    const { controller, repository } = controllerAt("review");
+    await repository.saveResponses([
+      {
+        evaluationId: "eval-1",
+        responseGroupId: "g-acme",
+        vendorName: "Acme",
+        productName: "Platform",
+        requirementId: "req-1",
+        confidence: 0.9,
+        productSummary: "A concise summary.",
+        costing: { estimateAud: 1500.5, description: "" },
+        source: { documentId: "doc-1", elementOrder: 7, page: 3, chunkId: "doc-1:2" },
+      },
+    ]);
+
+    const built = await controller.buildWorkbook({ evaluationId: "eval-1" });
+    expect(isOk(built)).toBe(true);
+    if (!isOk(built)) return;
+
+    // One review sheet + one per pivot.
+    expect(built.data.sheetNames).toEqual([
+      "Review",
+      "Pricing by Vendor",
+      "Pricing by Requirement",
+      "Vendor × Requirement",
+    ]);
+
+    // The review sheet's first body row: numeric estimate + a source hyperlink.
+    const reviewBody = built.data.sheets[0][1]!;
+    expect(reviewBody[5]).toEqual({ value: 1500.5, type: Number });
+    expect(reviewBody[7]).toMatchObject({
+      hyperlink: "/evaluations/eval-1/documents/doc-1?element=7&page=3&chunk=doc-1%3A2",
+    });
+  });
+
+  it("builds an empty workbook when no responses were built yet", async () => {
+    const { controller } = controllerAt("review");
+    const built = await controller.buildWorkbook({ evaluationId: "eval-1" });
+    expect(isOk(built)).toBe(true);
+    if (!isOk(built)) return;
+    // Every sheet still carries its header row.
+    expect(built.data.sheets[0]).toHaveLength(1);
+    expect(built.data.sheets[0][0][0]).toEqual({ value: "Vendor", type: String, fontWeight: "bold" });
+  });
+});
