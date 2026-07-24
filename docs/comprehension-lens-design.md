@@ -102,15 +102,21 @@ The lens is the durable asset. Everything else is disposable infrastructure.
 
 ### Relationship to procurement
 
-Procurement evaluation becomes the **first vertical over the lens**, not a
-separate machine. A procurement *requirement* is a lens *topic*; a
-`RequirementSet` is a lens bound to an evaluation. The review grid, pricing
-pivots, and Excel export (Threads 12–14) sit on top unchanged.
+**Procurement evaluation remains the purpose.** The lens is the *means*: a more
+composable design that puts a usable solution in a specialist's hands sooner,
+because the sorting loop works before any classifier is trained, before costing,
+and before the grid.
 
-> **Decision D1 — scope.** redline is a corpus-comprehension lens that serves
-> procurement, not a procurement-only adapter. *Consequence:* `CLAUDE.md`'s
-> "Procurement Evaluation Adapter" identity is updated. *To flip:* keep the lens
-> internal to the evaluation flow and drop the general-corpus use case.
+A procurement *requirement* is a lens *topic*; a `RequirementSet` is a lens bound
+to an evaluation. The review grid, pricing pivots, and Excel export (Threads
+12–14) sit on top unchanged.
+
+> **Decision D1 — scope. SETTLED (2026-07-24).** redline is built in service of
+> procurement evaluation; the comprehension lens is the composable architecture
+> that delivers it sooner, not a separate product goal. Generalising the lens
+> beyond procurement is **not a goal** — it is a property the design happens to
+> have, and it is not to be pursued at procurement's expense. *Consequence:* the
+> repo identity stays procurement-first; the lens describes how it is built.
 
 ---
 
@@ -203,14 +209,20 @@ pipeline. This is by design."*
 
 ## 4. The cold-start resolution
 
-> **Decision D2 — cold start.** The trained Numbatch adapter is an **optional
-> overlay**. The lens's first pass runs hard rules → retrieval → LLM
-> adjudication, with no trained adapter and no curated samples. As boundary
-> decisions accumulate into topic samples and a topic crosses
+> **Decision D2 — cold start. SETTLED (2026-07-24).** The trained Numbatch
+> adapter is an **optional overlay**. The lens's first pass runs hard rules →
+> retrieval → LLM adjudication, with no trained adapter and no curated samples.
+> As boundary decisions accumulate into topic samples and a topic crosses
 > `MIN_SAMPLES_PER_TOPIC`, the adapter is trained and engages for subsequent
-> runs. *To flip:* relax the floor in the fork (a **non-additive** fork change,
-> contradicting ADR-0005), or require ~10 examples up front and drop the
-> zero-example promise.
+> runs.
+>
+> *Rationale of record:* Numbatch and womblex are resources to be leveraged **to
+> their maximum capacity** in service of the intent. This decision does exactly
+> that — it uses womblex's embeddings (built, currently unread by redline) and
+> Numbatch's trained classification (built, currently reachable only after a
+> training floor we cannot clear on day one), rather than weakening either
+> engine to fit. No upstream constraint is relaxed and ADR-0005's additive-only
+> fork posture is preserved.
 
 Why this is the right call rather than a workaround:
 
@@ -231,10 +243,16 @@ the first-pass path both produce it.
 
 ## 5. Where the lens lives
 
-> **Decision D3 — system of record.** Numbatch's org-scoped library
-> (`topics`, `topic_samples`, `feedback_corrections`) is canonical. redline
-> persists lens **references and bindings** only, not copies. *To flip:* mirror
-> into `redline_` tables and accept a two-way sync.
+> **Decision D3 — system of record. SETTLED (2026-07-24), by implication of D1
+> and D2.** Numbatch's org-scoped library (`topics`, `topic_samples`,
+> `feedback_corrections`) is canonical. redline persists lens **references and
+> bindings** only, not copies.
+>
+> *Reasoning:* D2 commits to leveraging Numbatch to its maximum capacity, and D1
+> keeps procurement — not lens infrastructure — as the purpose. Mirroring the
+> library into `redline_` tables would rebuild machinery Numbatch already
+> provides, add a two-way sync, and spend procurement delivery time on it. The
+> library stays where it is already correct.
 
 Rationale: it honours ADR-0005's "bootstrap via API, no DB seeds", avoids a
 duplicate source of truth, and inherits upstream's dedupe guarantees
@@ -419,9 +437,9 @@ grid itself.
 
 | # | Decision | Status | Proposed ADR |
 |---|---|---|---|
-| D1 | redline is a comprehension lens serving procurement | **assumed** — flip-able | scope ADR |
-| D2 | Trained adapter is an optional overlay; first pass needs no samples | **assumed** — flip-able | cold-start ADR |
-| D3 | Numbatch's library is the system of record | **assumed** — flip-able | system-of-record ADR |
+| D1 | Procurement is the purpose; the lens is the composable means | ✅ **settled** 2026-07-24 | scope ADR |
+| D2 | Trained adapter is an optional overlay; first pass needs no samples | ✅ **settled** 2026-07-24 | cold-start ADR |
+| D3 | Numbatch's library is the system of record | ✅ **settled** 2026-07-24 (implied by D1+D2) | system-of-record ADR |
 | D4 | Lens operations are independent functions over joinable sidecars | adopted from womblex | composition ADR |
 | D5 | Retrieval is womblex's; redline builds no vector store | settled by Finding 2 | retrieval ADR |
 | D6 | Boundary decisions are content-addressed | adopted from womblex | addressing ADR |
@@ -430,9 +448,13 @@ grid itself.
 | D9 | Boundary decisions are corrections-as-sample-membership | adopted from Numbatch ADR-0020 | corrections ADR |
 | D10 | Preconditions ride the type boundary; only misuse errors | adopted from womblex | error-semantics ADR |
 
-**D1, D2 and D3 are assumptions, not settled decisions.** They were taken to
-unblock this document. Each is stated with its flip condition; flipping D2 or D3
-materially changes Threads 19–24.
+**D1, D2 and D3 were settled by the project owner on 2026-07-24** and are no
+longer assumptions. D1 was settled with a correction to how it had been drafted:
+procurement is the purpose and the lens is the means, not the reverse — so the
+repo's identity stays procurement-first, and generalising the lens beyond
+procurement is explicitly not a goal. Threads 17–34 may now be built against all
+three without re-confirmation. D4–D10 are adopted from upstream and recorded
+rather than debated.
 
 Amendments the above force on existing ADRs:
 

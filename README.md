@@ -1,12 +1,13 @@
 # Redline
 
-> **Corpus Comprehension Lens** — a Wayfinder plugin/adapter (its own repo) that
-> sorts a document corpus against user-defined topics, surfaces only genuine
-> collisions, and remembers the resolutions as a reusable lens. Its first vertical
-> is **procurement response evaluation**. Integrates **womblex** (document
-> extraction + embeddings) and **Numbatch** (no-code classification, extended with
-> configurable financial table extraction), and reuses Wayfinder's typed
-> tabular/XLSX helpers read-only.
+> **Procurement Evaluation Adapter** — a Wayfinder plugin/adapter (its own repo)
+> for procurement response evaluation, built as a composable **comprehension
+> lens**: it sorts a document corpus against user-defined criteria, surfaces only
+> genuine collisions for a specialist to resolve, and remembers those resolutions
+> as reusable boundary logic — so the evaluation is useful before any classifier
+> is trained. Integrates **womblex** (document extraction + embeddings) and
+> **Numbatch** (no-code classification, extended with configurable financial table
+> extraction), and reuses Wayfinder's typed tabular/XLSX helpers read-only.
 
 Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
