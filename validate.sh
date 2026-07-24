@@ -8,7 +8,11 @@
 #  - Static guards (purity, prefixes, focused tests, file size) run on the host
 #    with plain shell — no Node needed.
 #
-# Exits non-zero on any failure. Each check prints PASS / FAIL / SKIP.
+# Each check prints PASS / FAIL / SKIP. Exit codes:
+#   0 — everything ran and passed
+#   1 — a check failed
+#   2 — no hard failures, but the Node workspace checks (typecheck/lint/test)
+#       were SKIPPED for lack of a runner, so the change is NOT proven shippable
 
 set -uo pipefail
 
@@ -16,12 +20,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[0;33m'; NC='\033[0m'
-PASS=0; FAIL=0; FAILED_CHECKS=()
+PASS=0; FAIL=0; FAILED_CHECKS=(); SKIPPED_CHECKS=()
 pass() { echo -e "${GREEN}PASS${NC} — $1"; PASS=$((PASS + 1)); }
 fail() { echo -e "${RED}FAIL${NC} — $1"; FAIL=$((FAIL + 1)); FAILED_CHECKS+=("$1"); }
-skip() { echo -e "${YELLOW}SKIP${NC} — $1"; }
+skip() { echo -e "${YELLOW}SKIP${NC} — $1"; SKIPPED_CHECKS+=("$1"); }
 warn() { echo -e "${YELLOW}WARN${NC} — $1"; }
 section() { echo; echo -e "${YELLOW}── $1 ──${NC}"; }
+
+# Track whether any of the *Node workspace* checks (typecheck/lint/test) were
+# skipped. A run that skips these must NOT report a clean green — those checks
+# are the ones that actually compile and exercise the code. See summary below.
+WS_SKIPPED=false
 
 # ── Choose a runner: local pnpm, or Podman-backed ────────────────────────────
 # run_ws "<pnpm command>" executes a workspace command either locally (if pnpm +
@@ -30,14 +39,25 @@ HAVE_LOCAL_NODE=false
 if command -v node >/dev/null 2>&1 && command -v pnpm >/dev/null 2>&1; then
   HAVE_LOCAL_NODE=true
 fi
+# Podman detection order (only needed when there's no local Node):
+#   1. a working bare `podman` on PATH;
+#   2. host podman reached through `flatpak-spawn --host` (editor terminals run
+#      inside a flatpak sandbox that has no podman of its own).
+# We probe `podman info` (not just `--version`) so a podman that exists but
+# can't actually run containers is not mistaken for a usable runner.
 PODMAN_BIN=""
 if [ "$HAVE_LOCAL_NODE" = false ]; then
-  if command -v podman >/dev/null 2>&1; then PODMAN_BIN="podman";
-  elif command -v flatpak-spawn >/dev/null 2>&1 && flatpak-spawn --host podman --version >/dev/null 2>&1; then
+  if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
+    PODMAN_BIN="podman";
+  elif command -v flatpak-spawn >/dev/null 2>&1 && flatpak-spawn --host podman info >/dev/null 2>&1; then
     PODMAN_BIN="flatpak-spawn --host podman";
   fi
 fi
 
+# run_ws returns:
+#   0   — the workspace command ran and passed
+#   127 — no runner available (infrastructure missing), caller should SKIP
+#   *   — the command ran and failed (a real check failure)
 run_ws() {
   local cmd="$1"
   if [ "$HAVE_LOCAL_NODE" = true ]; then
@@ -49,28 +69,38 @@ run_ws() {
   fi
 }
 
-WS_AVAILABLE=true
-if [ "$HAVE_LOCAL_NODE" = false ] && [ -z "$PODMAN_BIN" ]; then
-  WS_AVAILABLE=false
+# One-line note about how the Node checks will run, so a green result is never
+# ambiguous about *what* actually executed.
+if [ "$HAVE_LOCAL_NODE" = true ]; then
+  echo -e "${YELLOW}runner:${NC} local node + pnpm"
+elif [ -n "$PODMAN_BIN" ]; then
+  echo -e "${YELLOW}runner:${NC} Node 20 container via '${PODMAN_BIN}'"
+else
+  echo -e "${RED}runner:${NC} none — no local node and no usable podman; workspace checks (1-3) will SKIP"
 fi
+
+# Runs a Node workspace check, mapping run_ws's exit codes onto pass/fail/skip
+# and remembering when a workspace check was skipped for infra reasons.
+run_ws_check() {
+  local label="$1" cmd="$2"
+  run_ws "$cmd"
+  local rc=$?
+  if [ "$rc" -eq 0 ]; then pass "$label";
+  elif [ "$rc" -eq 127 ]; then WS_SKIPPED=true; skip "$label — no local node and no usable podman";
+  else fail "$label"; fi
+}
 
 # ── 1. typecheck ─────────────────────────────────────────────────────────────
 section "1. pnpm typecheck (@redline/*)"
-if [ "$WS_AVAILABLE" = false ]; then
-  skip "typecheck — no local node and no podman available"
-elif run_ws "pnpm typecheck"; then pass "typecheck"; else fail "typecheck"; fi
+run_ws_check "typecheck" "pnpm typecheck"
 
 # ── 2. lint ──────────────────────────────────────────────────────────────────
 section "2. pnpm lint (@redline/*)"
-if [ "$WS_AVAILABLE" = false ]; then
-  skip "lint — no local node and no podman available"
-elif run_ws "pnpm lint"; then pass "lint"; else fail "lint"; fi
+run_ws_check "lint" "pnpm lint"
 
 # ── 3. tests ─────────────────────────────────────────────────────────────────
 section "3. pnpm test (@redline/*)"
-if [ "$WS_AVAILABLE" = false ]; then
-  skip "tests — no local node and no podman available"
-elif run_ws "pnpm test"; then pass "tests"; else fail "tests"; fi
+run_ws_check "tests" "pnpm test"
 
 # ── 4. redline-domain purity (zero external imports, relative only) ─────────────
 section "4. packages/redline-domain has no non-relative imports"
@@ -195,8 +225,35 @@ fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo; echo "──────────────────────────────────────────"
-echo "Passed: $PASS"; echo "Failed: $FAIL"
-if [ $FAIL -eq 0 ]; then echo -e "${GREEN}All validations passed.${NC}"; exit 0; fi
-echo; echo -e "${RED}Failed checks:${NC}"
-for c in "${FAILED_CHECKS[@]}"; do echo "  - $c"; done
-echo; echo -e "${RED}Validation failed.${NC}"; exit 1
+echo "Passed:  $PASS"; echo "Failed:  $FAIL"; echo "Skipped: ${#SKIPPED_CHECKS[@]}"
+
+if [ "$FAIL" -gt 0 ]; then
+  echo; echo -e "${RED}Failed checks:${NC}"
+  for c in "${FAILED_CHECKS[@]}"; do echo "  - $c"; done
+  echo; echo -e "${RED}Validation failed.${NC}"; exit 1
+fi
+
+# No hard failures — but a run that skipped the Node workspace checks
+# (typecheck/lint/test) has NOT proven the code compiles or passes tests. Treat
+# that as "not shippable from here" rather than a green tick, so this can never
+# masquerade as a clean pass on a host without Node or Podman.
+if [ "$WS_SKIPPED" = true ]; then
+  echo
+  echo -e "${YELLOW}Static + Python checks passed, but the Node workspace checks"
+  echo -e "(typecheck / lint / test) were SKIPPED — no local Node and no usable"
+  echo -e "Podman on this host.${NC}"
+  echo
+  echo "To run them locally, EITHER install Node >= 20 + pnpm, OR make Podman"
+  echo "reachable. From the editor's flatpak terminal, host Podman is used"
+  echo "automatically once 'flatpak-spawn --host podman info' works."
+  echo
+  echo -e "${RED}NOT shippable: run the workspace checks green (locally or in CI) first.${NC}"
+  exit 2
+fi
+
+if [ "${#SKIPPED_CHECKS[@]}" -gt 0 ]; then
+  echo; echo -e "${YELLOW}Skipped (non-blocking) checks:${NC}"
+  for c in "${SKIPPED_CHECKS[@]}"; do echo "  - $c"; done
+fi
+
+echo; echo -e "${GREEN}All validations passed.${NC}"; exit 0
