@@ -6,7 +6,8 @@
 // Numbatch batch-inference API (topic_id → requirementId).
 // Thread 8: NumbatchFinancialExtractor implements IFinancialExtractor over the
 // financial extension's read seam (topic_id → requirementId; currency numeric).
-// redline_ repositories (Thread 9) land later.
+// Thread 9: DrizzleEvaluationRepository implements IEvaluationRepository over the
+// redline_ Postgres schema (ADR-0002).
 export {
   WomblexExtractionReader,
   type HttpClient,
@@ -28,3 +29,13 @@ export {
   type NumbatchFinancialExtractorOptions,
   type NumbatchProfileBinding as NumbatchFinancialProfileBinding,
 } from "./numbatch/numbatch-financial-extractor";
+export {
+  DrizzleEvaluationRepository,
+} from "./persistence/drizzle-evaluation-repository";
+export {
+  createRedlinePostgres,
+  schema as redlineSchema,
+  type RedlinePostgresDatabase,
+  type RedlinePostgresOptions,
+} from "./persistence/db";
+export { applyMigrations, MIGRATION_FILES } from "./persistence/apply-migrations";
