@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderWorkflowView } from "./view";
 import { WorkflowManager } from "./workflow-manager";
 
-// The view is a pure snapshot → view-model transform: the SvelteKit/HTML layer
+// The view is a pure snapshot → view-model transform: the Next.js/React layer
 // binds to this, so the presentation logic (labels, the advance affordance, the
 // document tray) is unit-testable without a browser. The Playwright e2e proves
 // the DOM wiring; this proves the model the DOM binds to.

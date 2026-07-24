@@ -9,7 +9,7 @@ Build-plan §8 decision #5 was left open: *does the review surface reuse Wayfind
 auth/roles, or its own?* — to be decided before the control surface (Thread 11)
 grew a real user-facing route. Thread 11 landed the control-surface *logic* as a
 framework-free core with no identity layer yet, so this is the moment to lock the
-decision before the SvelteKit shell that serves it is built.
+decision before the Next.js shell that serves it is built.
 
 redline is an **adapter for Wayfinder** ([ADR-0001](./0001-adapter-over-wayfinder.adr.md)),
 not a standalone product. Wayfinder already has a complete, hexagonal auth/roles
@@ -86,7 +86,7 @@ like part of Wayfinder rather than a bolted-on second app.
 - Genuinely procurement-specific permissions require an upstream Wayfinder change
   (a deliberate cost to preserve a single source of truth).
 - The exact Better-Auth session-read wiring is a real integration point that only
-  fully resolves when the SvelteKit shell + Wayfinder are running together
+  fully resolves when the Next.js shell + Wayfinder are running together
   (Thread 16 / deployment).
 
 ## Alternatives considered
@@ -104,6 +104,6 @@ like part of Wayfinder rather than a bolted-on second app.
 - The auth/principal seam is a **port** consumed by `redline-application` /
   `apps/redline-web` and wired in `lib/container.ts`; `redline-domain` imports nothing
   identity-related (purity check #4 already forbids external imports there).
-- The control-surface routes (SvelteKit shell, Track 4 follow-up) resolve the current
+- The control-surface routes (Next.js shell, Track 4 follow-up) resolve the current
   Wayfinder user through that port and gate actions on Wayfinder permissions; a stub
   principal adapter covers dev/air-gap and the tests.

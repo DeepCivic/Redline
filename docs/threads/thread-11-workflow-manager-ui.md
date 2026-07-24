@@ -27,7 +27,7 @@ lives (CLAUDE.md architecture rule). Nothing in the app constructs an adapter.
 |---|---|
 | `src/lib/workflow-manager.ts` | The **brain** — a pure, in-memory model of "drag documents into response groups". `addVendor`, `createGroup`, `assignDocument` (a doc lives in exactly one group; dropping it on another *moves* it), `unassignDocument`, `markConsortium`, `toAssignmentInput()`, `canAdvance()`/`nextStage()`, `snapshot()`. Every mutation is checked through the same `redline-domain` smart constructors (`makeVendor`, `makeResponseGroup`) the use-case uses, so the UI can never compose a shape the application layer would reject. |
 | `src/lib/container.ts` | `WorkflowController` wires `AssignDocumentsToGroups`, `ClassifyResponseGroup`, `BuildEvaluationTable` from injected ports and drives the workflow (`openWorkflow`, `advance`, `reclassifyGroup`, `buildTable`). `buildContainer` is the production-wiring factory. |
-| `src/lib/view.ts` | Pure snapshot → view-model transform the HTML/SvelteKit shell binds to (stage label, document tray, per-group counts + consortium badge, the advance affordance). |
+| `src/lib/view.ts` | Pure snapshot → view-model transform the Next.js/React shell binds to (stage label, document tray, per-group counts + consortium badge, the advance affordance). |
 | `src/index.ts` | Public surface — manager, controller, container factory, view model. |
 | `e2e/workflow-manager.e2e.ts` | Playwright acceptance spec (three shapes + a stage advance). |
 | `package.json` / `tsconfig.json` / `vitest.config.ts` / `README.md` | App scaffold; `e2e/` excluded from tsc/lint/vitest scope. |
@@ -43,7 +43,8 @@ lives (CLAUDE.md architecture rule). Nothing in the app constructs an adapter.
 
 - **A framework-free, unit-tested core; a dumb DOM.** The workflow logic lives in
   `WorkflowManager` (state) + `view.ts` (presentation model), both pure and
-  vitest-tested. A SvelteKit/HTML shell binds to the view model and dispatches to
+  vitest-tested. A Next.js/React shell (matching Wayfinder's `apps/web` — ADR-0006)
+  binds to the view model and dispatches to
   the manager. This keeps the exit criterion provable without a browser and keeps
   the interesting logic out of untestable markup.
 - **The UI reuses the domain's smart constructors.** `createGroup`/`markConsortium`/
@@ -58,7 +59,7 @@ lives (CLAUDE.md architecture rule). Nothing in the app constructs an adapter.
   (deployment / Thread 16). The controller/manager are exercised in tests with
   in-memory fakes — the same standalone posture as Threads 5–10.
 - **`/e2e` deviation recorded.** The Playwright spec is authored now; its executable
-  gate is the vitest suite until a SvelteKit shell serves the routes. Noted in the
+  gate is the vitest suite until a Next.js shell serves the routes. Noted in the
   CLAUDE.md deviations table.
 
 ## Exit-test evidence
@@ -89,8 +90,8 @@ is proven by:
 
 ## Known limitations / follow-ups
 
-1. **No SvelteKit shell yet.** The control surface's logic is complete and tested;
-   the HTML/route layer that binds to the view model and runs the Playwright e2e is a
+1. **No Next.js shell yet.** The control surface's logic is complete and tested;
+   the route/DOM layer that binds to the view model and runs the Playwright e2e is a
    Track 4 follow-up. The e2e spec pins the DOM contract (`/evaluations/:id/grouping`,
    `data-testid` hooks) for when it lands.
 2. **One `productName` per evaluation.** Carried from Thread 10 — `buildTable` still

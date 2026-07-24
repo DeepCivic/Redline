@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 // Thread 11 exit test (UI) — the specialist can compose the three relationship
 // shapes and advance the stage. This Playwright spec is the acceptance artifact
-// for the control surface once the SvelteKit shell is served (see the app
+// for the control surface once the Next.js shell is served (see the app
 // README's "Running the e2e" note). In the current environment there is no
 // browser/app server, so the executable exit test is the vitest suite that
 // exercises the same WorkflowManager + WorkflowController the DOM binds to —

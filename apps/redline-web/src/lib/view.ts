@@ -2,8 +2,10 @@ import type { IntakeStage } from "@redline/redline-domain";
 import type { WorkflowSnapshot } from "./workflow-manager";
 
 // View model for the specialist control surface. A pure transform of a
-// WorkflowManager snapshot into presentation-ready shapes; the HTML/SvelteKit
+// WorkflowManager snapshot into presentation-ready shapes; the React (Next.js)
 // layer binds to this, keeping the DOM dumb and the labels/affordances tested.
+// Next.js/React matches Wayfinder's own apps/web so the adapter feels at home
+// there (ADR-0006).
 
 const STAGE_LABELS: Record<IntakeStage, string> = {
   documents_uploaded: "Documents uploaded",

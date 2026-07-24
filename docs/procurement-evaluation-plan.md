@@ -360,7 +360,7 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | 8 — IFinancialExtractor adapter | ✅ **done** | Exit test **PASSED**: `NumbatchFinancialExtractor` (`redline-adapters`) reads `financial_extractions` per (document, `requirementId`) into `ProcurementResponse.costing` (`estimateAud: number \| null` + `description` + `elementOrder`), mapping Numbatch `topic_id` → `requirementId`; the currency figure is a real number and the contract test proves it numeric via Wayfinder's `typedDisplayCell("currency", …)` → `{ value: 1500.5, isNumeric: true }`. 9 contract tests against a **captured read-seam payload** (`__fixtures__/document-extractions.json`) cover the happy path, description fallback (null estimate), multi-doc concat, unmapped-topic drop, empty-document, and the error taxonomy (INFRA_FAILURE / EXTRACTION_FAILED). Additive read seam added to the Thread 6/7 overlay: `GET /financial-extractions/{source_doc_id}` (`DocumentExtractionsRead`; empty-not-404). adapters **26/26** (was 17; +9); financial extension pytest **28** (was 24; +4); `./validate.sh` **11/11**. Docs: [thread-08](./threads/thread-08-financial-extractor-adapter.md). |
 | 9 — redline_ persistence layer | ✅ **done** | Exit test **PASSED**: `DrizzleEvaluationRepository` (`redline-adapters`) round-trips the evaluation aggregate (evaluations/vendors/response-groups/responses) against a **real in-process Postgres** (PGlite = Postgres-in-WASM, no external service); currency round-trips as a real `number` (`numeric(18,2)` ↔ decimal string ↔ `number \| null`), consortium members + id arrays preserved, `NOT_FOUND` on miss, upsert-on-save. The initial `redline_` migration (`0000_redline_initial.sql`, hand-authored to mirror `schema.ts`) is **idempotent** — the exit test re-applies it as a no-op and the schema still works. 15 tests (7 pure row-mapping + 8 round-trip/idempotency) → adapters **41/41** (was 26; +15). Four `redline_`-prefixed tables (check #7 green), `db.ts`/`migrate.ts`/`apply-migrations.ts` + `drizzle.config.ts`; `redline` compose profile (`redline-postgres`). Enacts [ADR-0002](./adr/0002-own-minio-and-postgres.adr.md). `./validate.sh` **11/11**. Docs: [thread-09](./threads/thread-09-redline-persistence-layer.md). |
 | 10 — Orchestration use-cases | ✅ **done** | Exit test **PASSED**: `BuildEvaluationTable` (`@redline/redline-application`) joins the classifier roll-ups + financial extractions + an `ILanguageModel` summary into a full `ProcurementResponse[]` (one row per (group, document, matched requirement)), persists them and advances the stage `classifying → review`; currency stays a real `number` (`estimateAud 1500.5`) with `elementOrder 7` / `chunkId` provenance. Five use-cases (`IngestDocuments`, `AssignDocumentsToGroups`, `ClassifyResponseGroup`, `ExtractFinancials`, `BuildEvaluationTable`) inject only `redline-domain` ports — no frameworks/ORM/AI SDK (check #5 green). New domain port `ILanguageModel` (the one-paragraph summary seam). application **16/16** (4 files), domain **43/43** (+1 port), `./validate.sh` **11/11**. Docs: [thread-10](./threads/thread-10-orchestration-use-cases.md). |
-| 11 — Workflow manager UI | ✅ **done** | Exit test **PASSED**: `apps/redline-web` — a framework-free control surface. `WorkflowManager` (pure state) composes the three relationship shapes (1 vendor→N docs→1 response; N vendors→1 consortium; 1 vendor→N responses), validating through the domain's `makeVendor`/`makeResponseGroup` so the UI can't compose a shape the app layer rejects; `WorkflowController` (`src/lib/container.ts`, injected ports only) drives `AssignDocumentsToGroups` (grouping→classifying), `ClassifyResponseGroup` (re-run per group), and `BuildEvaluationTable` (classifying→review); `view.ts` is the pure snapshot→view-model transform. redline-web **18/18** (3 files: manager 11, container 5, view 2); workspace typecheck/lint/test/build green across 5 `@redline/*` packages; `./validate.sh` **11/11**. Playwright spec authored (`e2e/`); executable gate is vitest until a SvelteKit shell serves the routes (CLAUDE.md `/e2e` deviation updated). Docs: [thread-11](./threads/thread-11-workflow-manager-ui.md). |
+| 11 — Workflow manager UI | ✅ **done** | Exit test **PASSED**: `apps/redline-web` — a framework-free control surface. `WorkflowManager` (pure state) composes the three relationship shapes (1 vendor→N docs→1 response; N vendors→1 consortium; 1 vendor→N responses), validating through the domain's `makeVendor`/`makeResponseGroup` so the UI can't compose a shape the app layer rejects; `WorkflowController` (`src/lib/container.ts`, injected ports only) drives `AssignDocumentsToGroups` (grouping→classifying), `ClassifyResponseGroup` (re-run per group), and `BuildEvaluationTable` (classifying→review); `view.ts` is the pure snapshot→view-model transform. redline-web **18/18** (3 files: manager 11, container 5, view 2); workspace typecheck/lint/test/build green across 5 `@redline/*` packages; `./validate.sh` **11/11**. Playwright spec authored (`e2e/`); executable gate is vitest until a Next.js shell serves the routes (CLAUDE.md `/e2e` deviation updated). Docs: [thread-11](./threads/thread-11-workflow-manager-ui.md). |
 | 12 — In-app review grid | 🔵 **next** | |
 | 13 — Pricing pivots | ⚪ not started | |
 | 14 — Excel export | ⚪ not started | |
@@ -907,7 +907,8 @@ domain port; no breaking changes (pre-1.0).
 
 **Built** the specialist **control surface** as the workspace's first app,
 `apps/redline-web` (build plan §5 / Track 4). Framework-free: the workflow logic
-lives in a pure, unit-tested core; a SvelteKit/HTML shell (a Track 4 follow-up)
+lives in a pure, unit-tested core; a Next.js/React shell (a Track 4 follow-up,
+matching Wayfinder's `apps/web` — ADR-0006)
 binds to it. The app imports only `@redline/redline-application` (use-cases) and
 `@redline/redline-domain` (ports/types); the concrete adapters are injected as
 ports through `src/lib/container.ts` — the one place wiring lives.
@@ -941,7 +942,7 @@ belongs to exactly one group* — `assignDocument` moves it. (4) *Wiring is one 
 + injected ports* — the controller/manager never see a concrete adapter, exercised
 with in-memory fakes (same standalone posture as Threads 5–10). (5) *`/e2e` deviation
 recorded* — the Playwright spec is authored now; its executable gate is the vitest
-suite until a SvelteKit shell serves the routes (CLAUDE.md deviations table updated).
+suite until a Next.js shell serves the routes (CLAUDE.md deviations table updated).
 
 **Exit test — PASSED.** redline-web **18/18** (3 files: `workflow-manager.test.ts` 11
 — the three shapes + move/unassign + validation + advance eligibility;
@@ -950,7 +951,7 @@ build table `classifying→review` with a real `estimateAud`; `view.test.ts` 2).
 workspace typecheck/lint/test/build green across 5 `@redline/*` packages;
 `./validate.sh` → **11/11**.
 
-**Known limitations.** (1) No SvelteKit shell yet — the logic is complete and tested;
+**Known limitations.** (1) No Next.js shell yet — the logic is complete and tested;
 the route/DOM layer + the Playwright run are a Track 4 follow-up (the e2e spec pins
 the DOM contract). (2) One `productName` per evaluation (carried from Thread 10).
 (3) No live end-to-end run (no Numbatch/DB/model/browser here). (4) Plan decision #5

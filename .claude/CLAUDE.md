@@ -94,14 +94,16 @@ reality demands it. These are decisions, not omissions:
 | Planning artefact | PRD + ADR + phase doc per feature | Single **build plan** with numbered **threads**; ADRs as needed | One-repo delivery already sequenced into threads (§7 of the plan) |
 | Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | Thread rows in the build plan flip to ✅ and link to a thread doc/README | Keeps the whole delivery legible in one file |
 | Validation | `validate.sh` assuming local Node + services | `validate.sh` runs via **Podman** when no local Node; services added per-thread | Host here has no local Node |
-| E2E | Playwright suite exists day one (`/e2e`) | Playwright spec authored with the control surface (Thread 11); its executable exit gate is the vitest suite over the framework-free workflow core until a SvelteKit shell serves the routes | UI logic lives in a pure, testable core; no browser/app server in this build environment yet |
+| E2E | Playwright suite exists day one (`/e2e`) | Playwright spec authored with the control surface (Thread 11); its executable exit gate is the vitest suite over the framework-free workflow core until a Next.js shell serves the routes | UI logic lives in a pure, testable core; no browser/app server in this build environment yet |
 | Release model | alpha branches, `VERSION` sync | Pre-1.0; no alpha branches yet. Version bumps tracked per thread | Not yet releasing |
 | Scope | `@rbrasier/*` | `@redline/*`, consuming `@rbrasier/*` read-only | This is an adapter, not the framework |
 
 When a deviation stops making sense, add the corresponding Wayfinder
 convention and update this table. Thread 11 landed the control surface with a
-Playwright spec (`apps/redline-web/e2e/`); wire it into CI once the SvelteKit
-shell serving `/evaluations/:id/grouping` lands (a Track 4 follow-up).
+Playwright spec (`apps/redline-web/e2e/`); wire it into CI once the Next.js
+shell serving `/evaluations/:id/grouping` lands (a Track 4 follow-up). The shell
+is Next.js/React to match Wayfinder's own `apps/web` (ADR-0006), not Numbatch's
+unused SvelteKit stack.
 
 ---
 

@@ -16,7 +16,7 @@ language model) are injected as ports through
 |---|---|
 | `src/lib/workflow-manager.ts` | The **brain**: a pure, in-memory model of "drag documents into response groups". Add vendors, create groups, assign/move/unassign documents, mark consortiums, split a vendor's multiple bids — the three relationship shapes (build plan §5). Every mutation is checked through the same `redline-domain` smart constructors the use-case uses, so the UI can never compose a shape the application layer would reject. Emits an `AssignDocumentsToGroupsInput` via `toAssignmentInput()`. |
 | `src/lib/container.ts` | `WorkflowController` wires the real use-cases (`AssignDocumentsToGroups`, `ClassifyResponseGroup`, `BuildEvaluationTable`) from injected ports and drives the workflow: open a manager for the grouping stage, `advance` (persist the composition + advance the stage), `reclassifyGroup`, `buildTable`. `buildContainer` is the production-wiring factory. |
-| `src/lib/view.ts` | Pure snapshot → view-model transform the HTML/SvelteKit shell binds to (stage label, document tray, per-group counts, the advance affordance). Keeps the DOM dumb and the presentation logic tested. |
+| `src/lib/view.ts` | Pure snapshot → view-model transform the Next.js/React shell binds to (stage label, document tray, per-group counts, the advance affordance). Keeps the DOM dumb and the presentation logic tested. |
 | `e2e/workflow-manager.e2e.ts` | Playwright acceptance spec for the three shapes + a stage advance. |
 
 ## The three relationship shapes
@@ -39,8 +39,11 @@ group can be (re)classified and the table built (`classifying → review`).
 ### Running the e2e
 
 `e2e/workflow-manager.e2e.ts` is the Playwright acceptance artifact. It runs once
-a SvelteKit shell serves the routes it drives (`/evaluations/:id/grouping`) — a
-follow-up within Track 4. In the current build environment there is no browser or
+a Next.js shell serves the routes it drives (`/evaluations/:id/grouping`) — a
+follow-up within Track 4. Next.js/React matches Wayfinder's own `apps/web`
+(ADR-0006), so the adapter's control surface feels at home in Wayfinder rather
+than borrowing Numbatch's (unused) SvelteKit stack. In the current build
+environment there is no browser or
 app server (the same standalone posture as the service threads' captured-payload
 contract tests), so the vitest suite above is the proven exit gate; the e2e spec
 pins the DOM contract for when the shell lands. This deviation is recorded in
