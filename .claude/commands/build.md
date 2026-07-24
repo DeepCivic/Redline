@@ -7,9 +7,17 @@ user confirms, or when the user explicitly asks to implement a specific thread.
 [`docs/comprehension-lens-design.md`](../../docs/comprehension-lens-design.md)
 (§6 Delivery for scope + exit test, §10 Build state for status)
 in full, plus any ADR(s) it references and any thread doc under `docs/threads/`.
-Check §7's decision register first — threads in Track L may rest on decisions
-(D1/D2/D3) still marked **assumed**; if the thread depends on one, confirm it
-with the user before building.
+**ADR gate — before writing any code.** Check §7's decision register. If the
+thread rests on a decision that is not yet settled, or requires a new
+architectural decision to proceed:
+
+1. Draft the ADR in `docs/adr/` (`NNNN-<decision>.adr.md`, status **Proposed**).
+2. Present it for review and **stop**.
+3. Build only once the user approves; flip the status to **Accepted** in the
+   thread's commit.
+
+Do not build past an unapproved precondition decision. A thread whose shape
+depends on an open question is not ready — its ADR is the gate.
 Confirm the thread's **exit test** before writing a line of code. Read the
 relevant `@rbrasier/*` source in `vendor/wayfinder/packages/*` for any Wayfinder
 helper you intend to reuse — do not trust training data for its shape.
@@ -59,9 +67,12 @@ explicitly and paste the passing output:
   `docs/threads/thread-<NN>-<slug>.md` (or a package README) covering: what was
   built, files created/modified, migrations, the exit-test evidence, known
   limitations, and any decision that should become an ADR.
-- If the thread made an architectural decision, add an ADR in `docs/adr/`
-  (`NNNN-<decision>.adr.md`) and update the matching row in §7 of the design doc's
-  decision register (flipping an **assumed** decision to settled).
+- **Discovered decisions** — if the build itself forced an architectural choice
+  that could not have been known at planning time (the seam turned out different,
+  a library constrained the shape), record it as an ADR now, in this thread's
+  commit, and update the matching row in §7 of the design doc's decision register.
+  This is the retrospective half of the ADR model; the gate above is the
+  precondition half. Precedent: ADR-0002 and ADR-0003 were both locked mid-build.
 - **Update the design doc** (`docs/comprehension-lens-design.md`):
   - Flip the thread's row in §10 Build state to ✅ with a one-line note.
   - Append the thread doc link to the thread's §6 entry, in the form

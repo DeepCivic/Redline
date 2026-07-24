@@ -65,8 +65,12 @@ before I generate the docs?" Wait for confirmation before starting the workflow.
    - Insert it into the right track in §7 with a one-line description **and its
      explicit exit test** (`_Exit: …_`).
    - Add its row to the §10 progress log as ⚪ not started.
-2. If architectural decisions are needed, generate ADR(s) in `docs/adr/`
-   following the Wayfinder ADR format (see `docs/adr/README.md`).
+2. If the thread rests on an architectural decision that is not already settled,
+   draft the ADR in `docs/adr/` at status **Proposed**, following the Wayfinder
+   ADR format (see `docs/adr/README.md`). The ADR is a **precondition** — it is
+   drafted here, reviewed via `/doc-review`, and approved before `/build` writes
+   code. Do not pre-write ADRs for decisions the build will discover; those are
+   recorded retrospectively in the thread's own commit.
 3. Write a thread spec at `docs/threads/thread-<NN>-<slug>.md`: scope, entities,
    ports, seams, DB changes, sub-component breakdown, and acceptance criteria.
 
