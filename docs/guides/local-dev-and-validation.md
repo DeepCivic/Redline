@@ -25,9 +25,18 @@ scripts/podman-run.sh                       # install + build + test
 scripts/podman-run.sh "pnpm typecheck"
 ./validate.sh                               # auto-detects podman
 
-# from inside a flatpak sandbox (e.g. the editor terminal), reach host podman:
+# from inside a flatpak sandbox (e.g. the editor terminal): validate.sh now
+# auto-detects host podman via `flatpak-spawn --host` — no prefix needed once
+# `flatpak-spawn --host podman info` works. You can still force it explicitly:
 PODMAN="flatpak-spawn --host podman" ./validate.sh
 ```
+
+> **No false greens.** `validate.sh` probes `podman info` (not just `--version`),
+> so a podman that can't actually run containers won't be mistaken for a working
+> one. If neither local Node nor a usable Podman is found, the Node checks (1-3)
+> `SKIP` and the script **exits 2 with a "NOT shippable" notice** rather than
+> printing "All validations passed". Exit codes: `0` all passed, `1` a check
+> failed, `2` workspace checks were skipped (not proven shippable).
 
 ### How the Wayfinder seam works in the container
 
@@ -70,13 +79,14 @@ checkout is never written to. Point `WAYFINDER_DIR` at your Wayfinder checkout
 | 10 | `services/womblex-ingest` pytest (isolated venv) | needs Python 3 |
 
 Static checks (4–9) always run on the host. If neither local Node nor Podman is
-available, the Node-dependent checks (1–3) `SKIP` rather than fail — but a change
-is not shippable until they have been run green somewhere.
+available, the Node-dependent checks (1–3) `SKIP` — and the run **exits 2**, not
+0, so a change is never mistaken as shippable until those checks have run green
+somewhere (locally or in CI).
 
 ## C. Continuous integration (GitHub Actions)
 
 `.github/workflows/ci.yml` runs the **same `./validate.sh` gate** on every push to
-`main` and every PR, on a real Node 20 runner (so nothing SKIPs). Because CI has
+`main` and every PR, on a real Node 22 runner (so nothing SKIPs). Because CI has
 local Node, it does not use Podman; instead it materialises the Wayfinder seam the
 non-Podman way:
 
@@ -99,10 +109,10 @@ pnpm install && ./validate.sh
 
 | Kind | Name | Default | Purpose |
 |---|---|---|---|
-| variable | `WAYFINDER_REPO` | `DeepCivic/wayfinder` | Wayfinder repo to check out |
+| variable | `WAYFINDER_REPO` | `johntooth/wayfinder` | Wayfinder repo to check out (public; set to `rbrasier/wayfinder` to track upstream) |
 | variable | `WAYFINDER_REF` | `main` | branch/tag/SHA to pin |
-| secret | `WAYFINDER_TOKEN` | `github.token` | PAT with read access if Wayfinder is private |
+| secret | `WAYFINDER_TOKEN` | `github.token` | PAT with read access if you point `WAYFINDER_REPO` at a private repo |
 
-If the Wayfinder mirror is public, no secret is needed. If it's private, add a
-`WAYFINDER_TOKEN` secret (a fine-grained PAT with `contents: read` on the Wayfinder
-repo) so the cross-repo checkout succeeds.
+The default `johntooth/wayfinder` is public, so no secret is needed. If you point
+`WAYFINDER_REPO` at a private repo, add a `WAYFINDER_TOKEN` secret (a fine-grained
+PAT with `contents: read` on that repo) so the cross-repo checkout succeeds.

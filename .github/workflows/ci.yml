@@ -7,11 +7,14 @@
 # counterpart of what scripts/podman-run.sh does locally.
 #
 # Wayfinder repo/ref are configurable via repository variables so this works
-# whether the mirror is DeepCivic/wayfinder (default) or another fork:
-#   vars.WAYFINDER_REPO (default DeepCivic/wayfinder)
+# whether we track a personal fork (default) or the canonical upstream:
+#   vars.WAYFINDER_REPO (default johntooth/wayfinder — public; matches the fork
+#                        local dev vendors from, keeping CI and local in sync.
+#                        Set to rbrasier/wayfinder to track upstream instead.)
 #   vars.WAYFINDER_REF  (default main)
-# If the Wayfinder repo is private, add a secret WAYFINDER_TOKEN (a PAT with read
-# access); otherwise the default GITHUB_TOKEN is used (works for public repos).
+# johntooth/wayfinder is public, so the default GITHUB_TOKEN suffices. If you
+# point WAYFINDER_REPO at a private repo, add a secret WAYFINDER_TOKEN (a PAT
+# with contents:read on that repo).
 
 name: CI
 
@@ -34,12 +37,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout redline
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout Wayfinder (read-only, for @rbrasier/* reuse)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
-          repository: ${{ vars.WAYFINDER_REPO || 'DeepCivic/wayfinder' }}
+          repository: ${{ vars.WAYFINDER_REPO || 'johntooth/wayfinder' }}
           ref: ${{ vars.WAYFINDER_REF || 'main' }}
           token: ${{ secrets.WAYFINDER_TOKEN || github.token }}
           path: .wayfinder-src
@@ -48,16 +51,23 @@ jobs:
         run: WAYFINDER_DIR="$GITHUB_WORKSPACE/.wayfinder-src" scripts/vendor-wayfinder.sh
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9.12.0
 
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
+      - name: Set up Node 22
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          # Node 22 (active LTS). The redline workspace targets Node >= 20; the
+          # Podman harness and local validate.sh use node:20, and both 20 and 22
+          # satisfy the toolchain. 22 keeps CI off the deprecated-on-runners 20.
+          node-version: 22
           # No pnpm cache yet: caching needs a committed lockfile to key on, and
-          # we don't commit one pre-1.0. Add `cache: pnpm` once a lockfile lands.
+          # we don't commit one pre-1.0. setup-node@v5 turns package-manager
+          # caching ON by default (v4 had it off), and with pnpm detected it
+          # fails hard when pnpm-lock.yaml is absent — so disable it explicitly.
+          # Flip to `cache: pnpm` once a lockfile lands.
+          package-manager-cache: false
 
       - name: Install workspace dependencies
         # No committed lockfile yet (pre-1.0; the vendored @rbrasier/domain link
@@ -66,7 +76,7 @@ jobs:
         run: pnpm install
 
       - name: Set up Python (womblex-ingest sidecar tests)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
