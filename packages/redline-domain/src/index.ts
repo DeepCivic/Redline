@@ -13,5 +13,6 @@ export * from "./entities/procurement-response";
 // Ports
 export * from "./ports/evaluation-repository";
 export * from "./ports/financial-extractor";
+export * from "./ports/language-model";
 export * from "./ports/procurement-classifier";
 export * from "./ports/procurement-extraction-reader";
