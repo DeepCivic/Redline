@@ -1,13 +1,15 @@
-"""Pydantic v2 request/response schemas for the financial-profile config API.
+"""Pydantic v2 request/response schemas for the financial extension's API.
 
 Numbatch's backend is FastAPI + Pydantic v2, so these mirror its DTO style. The
-config API (Thread 6) is *schema only* — create and read financial profiles; the
-worker that writes extractions is Thread 7.
+config API (Thread 6) creates and reads financial profiles; the extraction read
+API (Thread 8) serves the figures the Thread 7 worker wrote, so the
+``NumbatchFinancialExtractor`` adapter can fill ``ProcurementResponse.costing``.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,3 +42,28 @@ class FinancialProfileRead(BaseModel):
     granularity: LineItemGranularity
     created_at: datetime
     updated_at: datetime
+
+
+class FinancialExtractionRead(BaseModel):
+    """One extracted figure (or description fallback) for a (document, topic).
+
+    ``amount``/``currency`` are ``None`` when only a prose description of costs
+    was available ("dollar estimate OR a short description" — build plan §1).
+    ``topic_id`` is what the Thread 8 adapter maps back to a redline
+    ``requirementId``; ``source_elem_order`` is womblex provenance.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    topic_id: str
+    amount: Decimal | None
+    currency: str | None
+    description: str
+    source_elem_order: int | None
+
+
+class DocumentExtractionsRead(BaseModel):
+    """All financial extractions for one document, keyed by its womblex source_hash."""
+
+    source_doc_id: str
+    extractions: list[FinancialExtractionRead]
