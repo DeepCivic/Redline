@@ -132,10 +132,12 @@ class StubWomblexExtractor:
 
     @staticmethod
     def _deterministic_vector(chunk_id: str) -> List[float]:
-        digest = hashlib.sha256(f"embedding|{chunk_id}".encode()).digest()
-        return [
-            (byte - 127.5) / 127.5 for byte in digest[:STUB_EMBEDDING_DIMENSIONS]
-        ]
+        # Chunk and query vectors share one hashing scheme so they share a space
+        # (embedding.py). The chunk keys on its id, a query on its text; both go
+        # through `embedding|{key}`, so this reproduces the pre-20a bytes exactly.
+        from womblex_ingest.embedding import _deterministic_vector
+
+        return _deterministic_vector(chunk_id, STUB_EMBEDDING_DIMENSIONS)
 
     def _document(self, evaluation_id: str, name: str) -> DocumentExtraction:
         """A deterministic read model whose documentId is a stable `source_hash`.
