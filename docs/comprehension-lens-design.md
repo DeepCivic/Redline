@@ -331,6 +331,7 @@ test.
   20's** — 20 reads document vectors and needs nothing from this.
   _Exit: pytest embeds text and gets a vector whose `model` and `dimensions` match
   the document embeddings' declaration; the same text embeds identically twice._
+  — docs: [thread-20a](./threads/thread-20a-sidecar-text-embedding-endpoint.md)
 
 **First-pass classification** (each stage an independent function — no orchestrator)
 
@@ -568,9 +569,9 @@ duplicated here._
 | 18 — `HardRule` + evaluation | L | domain | ✅ **done** | Deterministic pre-model stage; a gap is an outcome, not an error. Locked [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md). [thread-18](./threads/thread-18-hard-rule-entity-and-evaluation.md) |
 | 19 — Sidecar embeddings endpoint | L | womblex-ingest | ✅ **done** | Vectors ship as JSON floats on a sibling resource, absent independently of the extraction. Locked [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) (precondition), closing open question #1. [thread-19](./threads/thread-19-sidecar-embeddings-endpoint.md) |
 | 20 — `IEmbeddingReader` + adapter | L | domain, adapters | ✅ **done** | Vectors reach TS as `Float32Array`, cached per `(evaluation, document)` — both binding per [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md); no new ADR. adapters **58** (+12), domain **97** (+2). [thread-20](./threads/thread-20-embedding-reader.md) |
-| 20a — Sidecar text-embedding endpoint | L | womblex-ingest | 🔵 **next** | Surfaced by ADR-0014; blocks 22, not 20. |
+| 20a — Sidecar text-embedding endpoint | L | womblex-ingest | ✅ **done** | Query vectors embed in the same space as chunk vectors (same `model`/`dimensions`, L2-normalised); implements the gap [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) named, no new ADR. Blocks 22, needs nothing from 20. [thread-20a](./threads/thread-20a-sidecar-text-embedding-endpoint.md) |
 | 21 — Hard-rule pre-pass | L | application | ⚪ not started | Needs 18. |
-| 22 — Retrieval classification | L | application, adapters | ⚪ not started | Needs 20 **and** 20a. First demo point. |
+| 22 — Retrieval classification | L | application, adapters | 🔵 **next** | Needs 20 **and** 20a — both now done. First demo point. |
 | 23 — LLM adjudication + rationale | L | domain, application | ⚪ not started | Open question #2. |
 | 24 — Ambiguity signals + buckets | L | domain | ⚪ not started | Thresholds unmeasured (open question #5). |
 | 25 — Document Map read model | L | application | ⚪ not started | Reuses `computePivot`. |

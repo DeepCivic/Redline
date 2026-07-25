@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from womblex_ingest.embedding import TextEmbedder
 from womblex_ingest.extraction import Extractor
 from womblex_ingest.runs import Run, RunRegistry
 from womblex_ingest.storage import ObjectNotFound, ObjectStorage
@@ -38,6 +39,10 @@ def embeddings_key(evaluation_id: str, document_id: str) -> str:
 class IngestRequest(BaseModel):
     evaluationId: str
     documentNames: List[str]
+
+
+class QueryEmbeddingRequest(BaseModel):
+    text: str
 
 
 def _error(status_code: int, code: str, message: str, run_id: Optional[str] = None) -> JSONResponse:
@@ -63,11 +68,18 @@ def build_app(
     storage: ObjectStorage,
     extractor: Extractor,
     bucket: str,
+    embedder: Optional[TextEmbedder] = None,
     womblex_mode: str = "stub",
     enrichment_mode: str = "offline",
 ) -> FastAPI:
     app = FastAPI(title="womblex-ingest", version="0.1.0")
     registry = RunRegistry()
+    # Default to the stub embedder so the app starts (and the exit test passes)
+    # without the heavy womblex dependency, mirroring the stub extractor default.
+    if embedder is None:
+        from womblex_ingest.embedding import StubTextEmbedder
+
+        embedder = StubTextEmbedder()
 
     @app.get("/health")
     def health() -> dict:
@@ -160,6 +172,20 @@ def build_app(
             )
         return JSONResponse(status_code=200, content=json.loads(body))
 
+    @app.post("/embeddings/query")
+    def embed_query(request: QueryEmbeddingRequest) -> JSONResponse:
+        """Embed arbitrary text for retrieval — the query seam (ADR-0014).
+
+        Returns a vector in the *same* space as the chunk vectors: same declared
+        `model`, same `dimensions`, L2-normalised, so Thread 22 can match a topic
+        definition against them with a dot product. Independent of any
+        evaluation's shards — a definition is embedded before a corpus is mapped.
+        """
+        if not request.text.strip():
+            return _error(422, "INVALID_REQUEST", "text must not be empty")
+        embedding = embedder.embed(request.text)
+        return JSONResponse(status_code=200, content=embedding.to_json())
+
     @app.get("/embeddings/{evaluation_id}/{document_id}")
     def read_embeddings(evaluation_id: str, document_id: str) -> JSONResponse:
         """Serve one document's vectors — the retrieval seam (ADR-0014).
@@ -184,6 +210,7 @@ def build_app(
 
 def build_app_from_env() -> FastAPI:
     from womblex_ingest.config import Settings
+    from womblex_ingest.embedding import build_text_embedder
     from womblex_ingest.extraction import build_extractor
     from womblex_ingest.storage import S3ObjectStorage
 
@@ -195,10 +222,12 @@ def build_app_from_env() -> FastAPI:
         bucket=settings.bucket,
     )
     extractor = build_extractor(settings.womblex_mode)
+    embedder = build_text_embedder(settings.womblex_mode)
     return build_app(
         storage=storage,
         extractor=extractor,
         bucket=settings.bucket,
+        embedder=embedder,
         womblex_mode=settings.womblex_mode,
         enrichment_mode=settings.enrichment_mode.value,
     )

@@ -30,11 +30,13 @@ cells are normalised into the camelCase wire shape the domain's
 | `GET /status/{run_id}` | —                                            | `200 { runId, evaluationId, status, documentCount, shardKeys, error }` |
 | `GET /extractions/{evaluationId}/{documentId}` | —                          | `200 { documentId, elements[], chunks[], tableCells[] }` |
 | `GET /embeddings/{evaluationId}/{documentId}` | —                           | `200 { documentId, model, dimensions, vectors[] }` |
+| `POST /embeddings/query` | `{ "text": string }`                              | `200 { model, dimensions, values[] }` |
 
 Errors cross the boundary Result-shaped — `{ "error": { "code", "message" } }` —
 so the Thread 4 adapter maps them straight into a redline `DomainError`. Codes:
-`INVALID_REQUEST` (422), `RUN_NOT_FOUND` (404), `NOT_FOUND` (404, unknown
-extraction *or* unknown embeddings), `EXTRACTION_FAILED` (502).
+`INVALID_REQUEST` (422, empty ingest field *or* blank query text), `RUN_NOT_FOUND`
+(404), `NOT_FOUND` (404, unknown extraction *or* unknown embeddings),
+`EXTRACTION_FAILED` (502).
 
 Shards land under `proc/{evaluationId}/` in the `REDLINE_BUCKET` bucket, e.g.
 `proc/eval-42/_manifest.parquet`, `proc/eval-42/tender.pdf.elements.parquet`. The
@@ -72,6 +74,31 @@ widens the JSON boundary to a second, **sibling** resource carrying womblex's
   them in the same space or refuse.
 - `make_document_embeddings` in `records.py` is the only constructor, so those
   guarantees hold by construction rather than by convention.
+
+## The text-embedding query seam (Thread 20a)
+
+Retrieval (Thread 22) matches a topic *definition* against the chunk vectors, and
+redline's TypeScript links no embedding model — so the sidecar embeds query text
+too, in the **same space** as the chunk vectors:
+
+```
+POST /embeddings/query
+  { "text": "network security controls" }
+  → 200 { "model": "stub-deterministic-v1", "dimensions": 8, "values": [0.51, …] }
+  → 422 { "error": { "code": "INVALID_REQUEST", … } }   # blank text
+```
+
+- **Same `model` and `dimensions` as the document vectors**, L2-normalised the
+  same way — a query·chunk dot product is well-formed only then. A consumer can
+  (and should) confirm the declared model matches before ranking.
+- **Chunk-free and evaluation-independent.** A query carries no `chunkId` and is
+  never persisted — a definition is embedded before a corpus is even mapped.
+- **Deterministic.** The stub embeds the same (whitespace-trimmed) text to the
+  same vector, so a captured fixture is stable. `make_query_embedding` in
+  `records.py` is the only constructor; `StubTextEmbedder` (`embedding.py`) shares
+  the stub extractor's hashing scheme so queries and chunks share one space.
+- **Real mode is pending**, like the extractor: `RealWomblexTextEmbedder` must
+  embed with the model womblex's embed stage used, and fails loudly until wired.
 
 Consumers should note the wire cost — a 768-dimension vector is ~15 kB as JSON
 text against ~3 kB packed. The vectors are immutable and content-addressed, so

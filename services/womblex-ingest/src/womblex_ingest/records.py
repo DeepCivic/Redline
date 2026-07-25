@@ -14,6 +14,11 @@ Thread 19 widens the seam to a second resource: `DocumentEmbeddings` carries
 womblex's `*.embeddings.parquet` sibling as plain JSON float arrays (ADR-0014).
 It is a sibling of `DocumentExtraction`, not a field on it, because the embed
 stage is an optional overlay — the two resources are absent independently.
+
+Thread 20a adds `QueryEmbedding`: an arbitrary piece of text embedded into the
+*same* space as the chunk vectors, so a topic definition can be matched against
+them (Thread 22). It declares the same `model`/`dimensions` and crosses the same
+L2-normalised wire, but it is chunk-free — it is not tied to any document.
 """
 
 from __future__ import annotations
@@ -112,6 +117,28 @@ class DocumentEmbeddings:
         }
 
 
+@dataclass(frozen=True)
+class QueryEmbedding:
+    """An arbitrary piece of text embedded for retrieval (ADR-0014, Thread 20a).
+
+    Not a document resource: it carries no `chunkId` and is never persisted. It
+    exists so a topic definition can be matched against the chunk vectors, which
+    is only meaningful when it declares the *same* `model`/`dimensions` and is
+    L2-normalised the same way. Build via `make_query_embedding`.
+    """
+
+    model: str
+    dimensions: int
+    values: List[float]
+
+    def to_json(self) -> dict:
+        return {
+            "model": self.model,
+            "dimensions": self.dimensions,
+            "values": self.values,
+        }
+
+
 def make_document_embeddings(
     *, document_id: str, model: str, vectors: List[EmbeddingRecord]
 ) -> DocumentEmbeddings:
@@ -149,6 +176,24 @@ def make_document_embeddings(
             )
             for vector in vectors
         ],
+    )
+
+
+def make_query_embedding(*, model: str, values: List[float]) -> QueryEmbedding:
+    """Build the query wire model, normalising and deriving `dimensions`.
+
+    Same guarantees as `make_document_embeddings`, minus the per-chunk join: a
+    query vector that cannot be matched (blank model, no values, zero magnitude)
+    is rejected at the seam rather than silently ranking noise downstream.
+    """
+    if not model.strip():
+        raise ValueError("a query embedding must declare the model that produced it")
+    if not values:
+        raise ValueError("a query embedding must carry at least one dimension")
+    return QueryEmbedding(
+        model=model.strip(),
+        dimensions=len(values),
+        values=_l2_normalised(values),
     )
 
 
