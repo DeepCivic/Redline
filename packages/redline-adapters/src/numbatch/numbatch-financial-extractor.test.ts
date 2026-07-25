@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { isOk, isErr } from "@redline/redline-domain";
-import { typedDisplayCell } from "@rbrasier/domain";
+import { WAYFINDER_TYPED_CELL_CONTRACT } from "../wayfinder/wayfinder-contract";
 import {
   NumbatchFinancialExtractor,
   type HttpClient,
@@ -63,7 +63,7 @@ describe("NumbatchFinancialExtractor — extraction → costing contract", () =>
     expect(residency!.elementOrder).toBe(7);
   });
 
-  it("produces a numeric currency cell via typedDisplayCell (exit criterion)", async () => {
+  it("produces an estimate that renders as a numeric currency cell (exit criterion)", async () => {
     const client: HttpClient = async () => jsonResponse(200, extractions);
     const extractor = extractorFor(client);
 
@@ -75,10 +75,13 @@ describe("NumbatchFinancialExtractor — extraction → costing contract", () =>
       (row) => row.requirementId === "req-data-residency",
     )!;
     // The whole point of the numeric estimateAud: Wayfinder's typed-cell helper
-    // renders it as a real numeric Excel cell, not text (build plan §1, §9).
-    const cell = typedDisplayCell("currency", String(residency.estimateAud));
-    expect(cell.isNumeric).toBe(true);
-    expect(cell.value).toBe(1500.5);
+    // renders it as a real numeric Excel cell, not text (build plan §1, §9). The
+    // frozen contract carries that rendering; wayfinder-contract.test.ts holds
+    // the real helper to it (ADR-0012).
+    const frozen = WAYFINDER_TYPED_CELL_CONTRACT.find(
+      (testCase) => testCase.type === "currency" && testCase.raw === String(residency.estimateAud),
+    );
+    expect(frozen?.cell).toEqual({ value: 1500.5, isNumeric: true });
   });
 
   it("keeps a description fallback with a null estimate", async () => {

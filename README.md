@@ -51,15 +51,21 @@ redline/
 │   └── redline-web/                # specialist control surface + review grid
 ├── services/                    # womblex-ingest, numbatch (added in later threads)
 └── vendor/
-    └── wayfinder/               # git submodule (strategy A) — typed reuse only
+    └── wayfinder/               # materialised at build time (never committed) — typed reuse only
 ```
 
 ## Wayfinder consumption strategy
 
-Strategy **A** (submodule + typed reuse), designed at every seam **as if C** (fully
+Strategy **A** (vendored typed reuse), designed at every seam **as if C** (fully
 runtime-decoupled) so the plugin only ever depends on Wayfinder's ports. Wayfinder's
 `@rbrasier/*` packages are `workspace:*` (unpublished), so they are resolved through a
 shared pnpm workspace that includes `vendor/wayfinder/packages/*`.
+
+The tree is **materialised, never committed**: `scripts/vendor-wayfinder.sh` copies
+only the package we consume, from the commit named in [`wayfinder.pin`](./wayfinder.pin).
+It is an **optional** dependency — `pnpm install` and `./validate.sh` are green with no
+Wayfinder present, and the one suite that needs it skips (ADR-0012). To bump Wayfinder,
+edit `wayfinder.pin`.
 
 ## Toolchain
 

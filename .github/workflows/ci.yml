@@ -6,13 +6,16 @@
 # consume into vendor/wayfinder via scripts/vendor-wayfinder.sh — the non-Podman
 # counterpart of what scripts/podman-run.sh does locally.
 #
-# Wayfinder repo/ref are configurable via repository variables so this works
-# whether we track a personal fork (default) or the canonical upstream:
-#   vars.WAYFINDER_REPO (default johntooth/wayfinder — public; matches the fork
-#                        local dev vendors from, keeping CI and local in sync.
-#                        Set to rbrasier/wayfinder to track upstream instead.)
-#   vars.WAYFINDER_REF  (default main)
-# johntooth/wayfinder is public, so the default GITHUB_TOKEN suffices. If you
+# The Wayfinder repo and commit come from wayfinder.pin — one authoritative
+# place, shared with scripts/vendor-wayfinder.sh, so CI and a local clone
+# materialise byte-identical trees (ADR-0012). CI previously tracked a moving
+# `main`, which let an upstream commit turn redline red with nothing changed
+# here and no SHA to bisect against.
+#
+# To bump Wayfinder, edit wayfinder.pin — not this file. Repository variables
+# still override for a one-off experiment:
+#   vars.WAYFINDER_REPO / vars.WAYFINDER_REF
+# rbrasier/wayfinder is public, so the default GITHUB_TOKEN suffices. If you
 # point WAYFINDER_REPO at a private repo, add a secret WAYFINDER_TOKEN (a PAT
 # with contents:read on that repo).
 
@@ -39,11 +42,15 @@ jobs:
       - name: Checkout redline
         uses: actions/checkout@v5
 
+      - name: Read the Wayfinder pin
+        id: pin
+        run: grep -E '^(repo|ref)=' wayfinder.pin >> "$GITHUB_OUTPUT"
+
       - name: Checkout Wayfinder (read-only, for @rbrasier/* reuse)
         uses: actions/checkout@v5
         with:
-          repository: ${{ vars.WAYFINDER_REPO || 'johntooth/wayfinder' }}
-          ref: ${{ vars.WAYFINDER_REF || 'main' }}
+          repository: ${{ vars.WAYFINDER_REPO || steps.pin.outputs.repo }}
+          ref: ${{ vars.WAYFINDER_REF || steps.pin.outputs.ref }}
           token: ${{ secrets.WAYFINDER_TOKEN || github.token }}
           path: .wayfinder-src
 
@@ -67,18 +74,14 @@ jobs:
           cache: pnpm
 
       - name: Install workspace dependencies
-        # --prefer-frozen-lockfile, NOT --frozen-lockfile (which pnpm turns on by
-        # default when CI=true). The lockfile carries an importer for
-        # vendor/wayfinder/packages/domain, materialised from Wayfinder at
-        # WAYFINDER_REF (default `main` — a moving target). A dependency bump in
-        # *Wayfinder's* repo therefore staleness-fails a strict install, turning
-        # our CI red for a commit that is not ours. --prefer-frozen-lockfile
-        # reuses the lockfile when it is current and re-resolves when it is not,
-        # so upstream drift costs resolve time instead of a red build.
-        #
-        # Tighten to --frozen-lockfile once WAYFINDER_REF is pinned to a SHA —
-        # at that point the vendored tree is deterministic and strictness is free.
-        run: pnpm install --prefer-frozen-lockfile
+        # --frozen-lockfile is safe now that wayfinder.pin fixes the vendored tree
+        # to one commit (ADR-0012): the importer for
+        # vendor/wayfinder/packages/domain is deterministic, so a stale lockfile
+        # means *our* manifests moved — exactly what strictness should catch.
+        # Before the pin this had to be --prefer-frozen-lockfile, because an
+        # upstream dependency bump on a moving `main` staleness-failed the
+        # install for a commit that was not ours.
+        run: pnpm install --frozen-lockfile
 
       - name: Set up Python (womblex-ingest sidecar tests)
         uses: actions/setup-python@v6
@@ -86,4 +89,11 @@ jobs:
           python-version: "3.12"
 
       - name: Run validate.sh (typecheck, lint, test, build, static guards, pytest)
+        # REQUIRE_WAYFINDER=1 turns an unresolvable @rbrasier/domain into a hard
+        # failure instead of a skip. Wayfinder is an optional dependency so the
+        # workspace installs without it (ADR-0012), which means the drift check
+        # skips silently on a machine that has no vendored tree. CI is where that
+        # must never happen — it is the only place the contract is re-derived.
+        env:
+          REQUIRE_WAYFINDER: "1"
         run: ./validate.sh

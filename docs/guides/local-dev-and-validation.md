@@ -69,7 +69,7 @@ PODMAN="flatpak-spawn --host podman" ./validate.sh
 ### How the Wayfinder seam works in the container
 
 `@rbrasier/*` packages are `workspace:*` (unpublished). Rather than an on-disk
-submodule, `scripts/podman-run.sh`:
+checkout of Wayfinder, `scripts/podman-run.sh`:
 
 1. Copies the committed `redline` tree into a **throwaway scratch dir** on a
    host-visible volume (`../.redline-scratch/…`).
@@ -133,14 +133,36 @@ WAYFINDER_DIR=../wayfinder scripts/vendor-wayfinder.sh
 pnpm install && ./validate.sh
 ```
 
+### Without Wayfinder at all
+
+Since ADR-0012, Wayfinder is an **optional** dependency: `pnpm install` and
+`./validate.sh` are green on a clean clone with no `vendor/wayfinder`. The three
+drift-check tests skip, and validate.sh prints a `WARN` saying so, so a green run never
+implies the Wayfinder contract was verified. CI vendors the pinned tree and sets
+`REQUIRE_WAYFINDER=1`, which turns an unresolvable `@rbrasier/domain` into a hard
+failure rather than a skip.
+
+> **Note:** running `pnpm install` *without* a vendored tree rewrites `pnpm-lock.yaml`
+> (it drops the `vendor/wayfinder/packages/domain` importer, ~45 lines). That diff is a
+> local artefact of your environment — do not commit it. The committed lockfile is the
+> one CI uses, generated with the tree present.
+
 ### CI configuration (repo variables / secrets)
 
 | Kind | Name | Default | Purpose |
 |---|---|---|---|
-| variable | `WAYFINDER_REPO` | `johntooth/wayfinder` | Wayfinder repo to check out (public; set to `rbrasier/wayfinder` to track upstream) |
-| variable | `WAYFINDER_REF` | `main` | branch/tag/SHA to pin |
+| variable | `WAYFINDER_REPO` | `repo=` in `wayfinder.pin` | one-off override of the pinned repo |
+| variable | `WAYFINDER_REF` | `ref=` in `wayfinder.pin` | one-off override of the pinned commit |
 | secret | `WAYFINDER_TOKEN` | `github.token` | PAT with read access if you point `WAYFINDER_REPO` at a private repo |
 
-The default `johntooth/wayfinder` is public, so no secret is needed. If you point
+**Bump Wayfinder by editing [`wayfinder.pin`](../../wayfinder.pin), not CI.** The pin
+names `rbrasier/wayfinder` at a full SHA, and both CI and `scripts/vendor-wayfinder.sh`
+read it, so the two materialise identical trees (ADR-0012). After a bump, re-vendor and
+run `pnpm install && ./validate.sh`; the drift check
+(`packages/redline-adapters/src/wayfinder/wayfinder-contract.test.ts`) is what tells you
+whether the new commit still satisfies the contract redline reuses. The repository
+variables above stay available for a one-off experiment without committing a pin change.
+
+The default `rbrasier/wayfinder` is public, so no secret is needed. If you point
 `WAYFINDER_REPO` at a private repo, add a `WAYFINDER_TOKEN` secret (a fine-grained
 PAT with `contents: read` on that repo) so the cross-repo checkout succeeds.

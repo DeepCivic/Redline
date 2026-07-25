@@ -102,6 +102,14 @@ run_ws_check "lint" "pnpm lint"
 section "3. pnpm test (@redline/*)"
 run_ws_check "tests" "pnpm test"
 
+# Wayfinder is an optional dependency (ADR-0012): the suite runs without it, but
+# the drift check that re-derives the frozen @rbrasier/domain contract can only
+# run when the tree is vendored. Say so rather than let a green run imply the
+# contract was verified. CI sets REQUIRE_WAYFINDER=1, which makes absence fail.
+if [ ! -d "$ROOT/vendor/wayfinder/packages/domain" ]; then
+  warn "no vendor/wayfinder — the Wayfinder contract drift check SKIPPED (see wayfinder.pin)"
+fi
+
 # ── 4. redline-domain purity (zero external imports, relative only) ─────────────
 section "4. packages/redline-domain has no non-relative imports"
 DOMAIN_LEAKS=$(grep -rnE "from ['\"][^.]" packages/redline-domain/src \
