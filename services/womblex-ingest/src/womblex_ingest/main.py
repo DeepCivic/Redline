@@ -1,10 +1,14 @@
 """FastAPI surface for the womblex-ingest sidecar.
 
 Routes: `POST /ingest` (run extraction, write shards + JSON, return a run id),
-`GET /status/{run_id}`, and `GET /extractions/{evaluation_id}/{document_id}` — the
-Parquet→JSON read seam the Thread 4 adapter consumes. Errors cross the HTTP
-boundary as a Result-shaped body `{"error": {"code", "message"}}`, mirroring
-redline's domain Result pattern so the adapter maps them into `DomainError` cleanly.
+`GET /status/{run_id}`, `GET /extractions/{evaluation_id}/{document_id}` — the
+Parquet→JSON read seam the Thread 4 adapter consumes — and
+`GET /embeddings/{evaluation_id}/{document_id}`, its retrieval sibling (ADR-0014).
+The two read seams are deliberately separate resources: the embed stage is an
+optional overlay, so a document may serve an extraction while its embeddings are
+`NOT_FOUND`. Errors cross the HTTP boundary as a Result-shaped body
+`{"error": {"code", "message"}}`, mirroring redline's domain Result pattern so the
+adapter maps them into `DomainError` cleanly.
 """
 
 from __future__ import annotations
@@ -24,6 +28,11 @@ from womblex_ingest.storage import ObjectNotFound, ObjectStorage
 def extraction_key(evaluation_id: str, document_id: str) -> str:
     """Object key for a document's JSON read model, beside its Parquet shards."""
     return f"proc/{evaluation_id}/{document_id}.extraction.json"
+
+
+def embeddings_key(evaluation_id: str, document_id: str) -> str:
+    """Object key for a document's vectors — a sibling of its extraction."""
+    return f"proc/{evaluation_id}/{document_id}.embeddings.json"
 
 
 class IngestRequest(BaseModel):
@@ -90,6 +99,16 @@ def build_app(*, storage: ObjectStorage, extractor: Extractor, bucket: str) -> F
                 "application/json",
             )
 
+        # The embeddings sibling (ADR-0014). Written separately from the
+        # extraction so the two resources are absent independently: a run with no
+        # embed stage leaves the extraction serving and the vectors NOT_FOUND.
+        for document_embeddings in result.embeddings:
+            storage.put_object(
+                embeddings_key(evaluation_id, document_embeddings.documentId),
+                json.dumps(document_embeddings.to_json()).encode("utf-8"),
+                "application/json",
+            )
+
         registry.mark_succeeded(run.run_id, result.document_count, shard_keys)
         return JSONResponse(
             status_code=202,
@@ -122,6 +141,25 @@ def build_app(*, storage: ObjectStorage, extractor: Extractor, bucket: str) -> F
                 404,
                 "NOT_FOUND",
                 f"no extraction for document {document_id} in evaluation {evaluation_id}",
+            )
+        return JSONResponse(status_code=200, content=json.loads(body))
+
+    @app.get("/embeddings/{evaluation_id}/{document_id}")
+    def read_embeddings(evaluation_id: str, document_id: str) -> JSONResponse:
+        """Serve one document's vectors — the retrieval seam (ADR-0014).
+
+        Vectors cross as plain JSON float arrays, L2-normalised, declaring the
+        producing model, joinable to the extraction's chunks on `chunkId`. An
+        absent shard is `NOT_FOUND` rather than an empty payload: the embed stage
+        is an optional overlay and the consumer must be able to tell.
+        """
+        try:
+            body = storage.get_object(embeddings_key(evaluation_id, document_id))
+        except ObjectNotFound:
+            return _error(
+                404,
+                "NOT_FOUND",
+                f"no embeddings for document {document_id} in evaluation {evaluation_id}",
             )
         return JSONResponse(status_code=200, content=json.loads(body))
 

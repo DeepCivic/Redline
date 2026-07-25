@@ -7,13 +7,21 @@ from typing import Dict, List
 import pytest
 from fastapi.testclient import TestClient
 
-from womblex_ingest.extraction import ExtractionResult, Shard
+from womblex_ingest.extraction import (
+    STUB_EMBEDDING_DIMENSIONS,
+    STUB_EMBEDDING_MODEL,
+    ExtractionResult,
+    Shard,
+)
 from womblex_ingest.main import build_app
 from womblex_ingest.records import (
     ChunkRecord,
+    DocumentEmbeddings,
     DocumentExtraction,
     ElementRecord,
+    EmbeddingRecord,
     TableCellRecord,
+    make_document_embeddings,
 )
 from womblex_ingest.storage import ObjectNotFound, ObjectStorage
 
@@ -45,10 +53,10 @@ class FakeObjectStorage(ObjectStorage):
 class StubExtractor:
     """Deterministic womblex stand-in.
 
-    Emits one manifest shard plus one elements shard per document, and a JSON
-    read model per document (documentId = the document name, for readable test
-    assertions), so tests can assert shard fan-out, provenance, and the JSON
-    read seam without running real womblex/Isaacus.
+    Emits one manifest shard plus one elements shard per document, a JSON read
+    model per document (documentId = the document name, for readable test
+    assertions), and its embeddings sibling, so tests can assert shard fan-out,
+    provenance, and both read seams without running real womblex/Isaacus.
     """
 
     def __init__(self) -> None:
@@ -56,6 +64,7 @@ class StubExtractor:
 
     def extract(self, evaluation_id: str, document_names: List[str]) -> ExtractionResult:
         self.calls.append((evaluation_id, tuple(document_names)))
+        embeddings: List[DocumentEmbeddings] = []
         shards: List[Shard] = [
             Shard(
                 filename="_manifest.parquet",
@@ -96,8 +105,27 @@ class StubExtractor:
                     ],
                 )
             )
+            embeddings.append(
+                make_document_embeddings(
+                    document_id=name,
+                    model=STUB_EMBEDDING_MODEL,
+                    vectors=[
+                        EmbeddingRecord(
+                            chunkId=f"{name}:0",
+                            chunkIndex=0,
+                            values=[
+                                float(index + 1)
+                                for index in range(STUB_EMBEDDING_DIMENSIONS)
+                            ],
+                        )
+                    ],
+                )
+            )
         return ExtractionResult(
-            document_count=len(document_names), shards=shards, documents=documents
+            document_count=len(document_names),
+            shards=shards,
+            documents=documents,
+            embeddings=embeddings,
         )
 
 

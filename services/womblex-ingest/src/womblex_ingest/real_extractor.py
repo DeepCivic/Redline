@@ -30,7 +30,13 @@ class RealWomblexExtractor:
         #   1. run womblex over `document_names` → Parquet shards
         #   2. read those shards and build `DocumentExtraction` per source_hash
         #      (records.py), normalising elem_order / chunk_id / currency cells
-        #   3. return ExtractionResult(shards=..., documents=...)
+        #   3. read the `*.embeddings.parquet` siblings and build
+        #      `DocumentEmbeddings` via `make_document_embeddings`, joining each
+        #      vector to its chunk on (source_hash, chunk_index) and declaring the
+        #      model womblex's embed stage used (ADR-0014). Documents whose embed
+        #      stage did not run are simply omitted — an absent shard is NOT_FOUND,
+        #      not an empty payload.
+        #   4. return ExtractionResult(shards=..., documents=..., embeddings=...)
         raise NotImplementedError(
             "Real womblex extraction is not yet wired: the Parquet→JSON mapping is "
             "pinned (see records.py) but the concrete womblex call surface is "

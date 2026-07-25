@@ -314,8 +314,13 @@ test.
   representation (open question #1).
   _Exit: pytest reads real vectors for a document, joinable on
   `(source_hash, chunk_index)`; absent shard → `NOT_FOUND`._
+  — docs: [thread-19](./threads/thread-19-sidecar-embeddings-endpoint.md)
 
-- **Thread 20 — `IEmbeddingReader` port + adapter** (TS).
+- **Thread 20 — `IEmbeddingReader` port + adapter** (TS). Now also owes the
+  **text-embedding endpoint** Thread 22 needs to put topic definitions in the same
+  vector space (surfaced by ADR-0014), and must parse into `Float32Array` and
+  cache per evaluation — the two constraints cloud hosting imposes on shipping
+  vectors.
   _Exit: contract test against a captured sidecar payload; error taxonomy covered;
   TS still links no Parquet reader._
 
@@ -452,6 +457,7 @@ grid itself.
 | D10 | Preconditions ride the type boundary; only misuse errors | adopted from womblex | error-semantics ADR |
 | D11 | A topic's identity carries into the requirement it projects to | ✅ **settled** 2026-07-25 (discovered in Thread 17) | [ADR-0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md) ✅ |
 | D12 | Hard-rule precedence is specificity, then declaration order | ✅ **settled** 2026-07-25 (discovered in Thread 18) | [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md) ✅ |
+| D13 | Embeddings cross the JSON boundary as float arrays on a sibling resource | ✅ **settled** 2026-07-25 (precondition to Thread 19) | [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) ✅ |
 
 **D1, D2 and D3 were settled by the project owner on 2026-07-24** and are no
 longer assumptions. D1 was settled with a correction to how it had been drafted:
@@ -480,11 +486,26 @@ without settling it; writing the evaluation forced the answer, and it governs
 every consumer of the hard-rule stage from Thread 21 on. Recorded in Thread 18's
 own commit, same model.
 
+**D13 returns to the precondition model.** Unlike D11 and D12 it was drafted
+*before* Thread 19 was built and approved first, because the answer decided
+whether Threads 20 and 22 could exist in TypeScript at all — the one genuinely
+irreversible option (server-side retrieval) would have moved nearest-neighbour
+into the sidecar. Two things sharpened it during review and are recorded in
+ADR-0014 rather than lost: cloud hosting makes `Float32Array` parsing and
+per-evaluation caching **binding constraints on Thread 20**, not optimisations;
+and shipping vectors does not by itself give Thread 22 a comparable query vector,
+so the sidecar still owes a text-embedding endpoint. The rejection of server-side
+retrieval rests on Thread 22's exit-gate testability, not on an architectural
+objection — the ADR says so explicitly, because the architectural case was
+overstated in its first draft.
+
 Amendments the above force on existing ADRs:
 
 - **ADR-0004** — **amended by ADR-0009** (done). "User-defined, ≤10" survives;
   the evaluation-scoped lifetime of `RequirementSet` does not.
-- **ADR-0003** — amend to carry embeddings across the JSON boundary.
+- **ADR-0003** — **amended by ADR-0014** (done). The JSON boundary and the
+  Parquet-free TypeScript surface survive; "one document-scoped resource" does
+  not — the seam is now `/extractions` plus its `/embeddings` sibling.
 - **ADR-0005** — reaffirmed by D2 (additive-only posture preserved); amend only
   if D2 is flipped to relaxing the training floor.
 - **ADR-0006** — amend or extend for Numbatch's `organisation_id` tenancy.
@@ -508,9 +529,12 @@ in real use.
 
 ## 9. Open questions
 
-1. **Vector wire format** (Thread 19) — JSON float arrays across the ADR-0003
-   boundary may not survive corpus scale. Alternatives: a binary side channel, or
-   keeping retrieval server-side in the sidecar and shipping only neighbours.
+1. ~~**Vector wire format** (Thread 19)~~ — **settled 2026-07-25 by
+   [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md)**:
+   plain JSON float arrays on a sibling document-scoped resource, L2-normalised,
+   declaring the producing model. Both alternatives stay reachable *additively* on
+   the same resource, so the re-entry condition is a measured corpus — revisit
+   above ~50k chunks, or if the sidecar and app land in different regions.
 2. **LLM adjudication seam** — `ILanguageModel.summarise` is procurement-shaped
    (`{ vendorName, productName, passages }`). Adjudication needs a second method
    or a distinct port.
@@ -533,8 +557,8 @@ duplicated here._
 | 1–11 | — | — | ✅ **done** | See the deprecated plan's §10 logs (scaffold → workflow manager UI). |
 | 17 — `Topic` + `Lens` entities | L | domain | ✅ **done** | Durable tier restored; lens has no `evaluationId`. Locked [ADR-0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md). [thread-17](./threads/thread-17-topic-and-lens-entities.md) |
 | 18 — `HardRule` + evaluation | L | domain | ✅ **done** | Deterministic pre-model stage; a gap is an outcome, not an error. Locked [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md). [thread-18](./threads/thread-18-hard-rule-entity-and-evaluation.md) |
-| 19 — Sidecar embeddings endpoint | L | womblex-ingest | 🔵 **next** | Settles open question #1. |
-| 20 — `IEmbeddingReader` + adapter | L | domain, adapters | ⚪ not started | Needs 19's wire format. |
+| 19 — Sidecar embeddings endpoint | L | womblex-ingest | ✅ **done** | Vectors ship as JSON floats on a sibling resource, absent independently of the extraction. Locked [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) (precondition), closing open question #1. [thread-19](./threads/thread-19-sidecar-embeddings-endpoint.md) |
+| 20 — `IEmbeddingReader` + adapter | L | domain, adapters | 🔵 **next** | Wire format settled. Scope grew: also owes the text-embedding endpoint, `Float32Array` parsing and per-evaluation caching (ADR-0014). |
 | 21 — Hard-rule pre-pass | L | application | ⚪ not started | Needs 18. |
 | 22 — Retrieval classification | L | application, adapters | ⚪ not started | Needs 20. First demo point. |
 | 23 — LLM adjudication + rationale | L | domain, application | ⚪ not started | Open question #2. |

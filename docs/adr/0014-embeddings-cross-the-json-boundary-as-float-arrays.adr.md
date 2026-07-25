@@ -1,6 +1,6 @@
 # ADR-0014 — Embeddings cross the JSON boundary as plain float arrays on a sibling resource
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-25
 - **Amends**: [ADR-0003](./0003-parquet-to-json-boundary.adr.md) — widens the sidecar's
   read seam from one document-scoped resource to two. ADR-0003's decision that the
@@ -89,6 +89,28 @@ Five things this pins:
   as `proc/{evaluationId}/{documentId}.embeddings.json`, so the read seam survives
   a sidecar restart and MinIO remains the record (ADR-0002).
 
+### Two constraints the deployment target imposes on the consumer
+
+redline is cloud-hosted, so the traffic between the TypeScript app and the sidecar
+is metered and the app runs under a container memory limit. Shipping vectors is
+only the right call *with* both of the following, and they bind Thread 20:
+
+- **Parse into `Float32Array`, not `number[]`.** JavaScript numbers are 64-bit and
+  a boxed array adds per-element overhead — roughly 2–3× the memory for no
+  precision that cosine similarity can use. At procurement scale (order 10–20k
+  chunks) that is the difference between ~60 MB and ~160 MB resident.
+- **Cache per evaluation.** Extraction output is immutable and content-addressed,
+  so a document's vectors never change: the transfer is payable **once per
+  evaluation**, not once per classification run. Without this the cloud economics
+  genuinely favour server-side retrieval, because threshold tuning re-pays the
+  full transfer on every iteration.
+
+This ADR sizes for procurement corpora deliberately (D1: procurement is the
+purpose; generalising the lens is not a goal). **If a corpus exceeds ~50k chunks,
+or the sidecar and app are deployed to different regions, the alternative below
+becomes the better choice** and this decision should be revisited rather than
+stretched.
+
 ## Consequences
 
 **Positive**
@@ -122,6 +144,13 @@ Five things this pins:
   `ChunkRecord` does not carry it, so adding it to embeddings alone would make the
   join asymmetric. If real womblex shards turn out to need it, it is an additive
   field on *both* records.
+- **This does not, by itself, give Thread 22 a comparable query vector.** Matching
+  chunk vectors against topic definitions requires those definitions embedded in
+  the *same* space, and redline's TypeScript has no embedding model — so the
+  sidecar still owes a text-embedding endpoint. That is a gap in the Thread 20/22
+  plan rather than a consequence of this ADR (it exists under the server-side
+  alternative too), but it is recorded here because this decision is what makes it
+  unavoidable: **Thread 20's scope must carry it.**
 
 **Re-entry condition.** Revisit when a real corpus has been measured. Both
 alternatives below remain reachable *additively* on this same resource — an
@@ -139,15 +168,31 @@ the transport efficiency later.
   demonstrated the JSON payload is a problem. The measurement should precede the
   optimisation, and the optimisation is additive when it comes.
 
-- **Keeping retrieval server-side in the sidecar, shipping only neighbours.**
-  Rejected on architecture, not performance. It would put topic definitions —
-  a domain concept the sidecar has no business knowing — into Python, and move
-  nearest-neighbour out of `redline-application` where Thread 22 places it. The
-  lens's classification logic would then straddle two languages, with the
-  interesting half in the service that is explicitly a *foreign-runtime sidecar
-  composed over runtime seams* (ADR-0001's "design as if C"). It also forecloses
-  the first-pass/overlay interchangeability D2 requires: both paths must produce
-  `RequirementClassification` at the same port.
+- **Keeping retrieval server-side in the sidecar, shipping only neighbours**
+  (`POST /retrieval/{evaluationId}/query` → ranked `{documentId, chunkId, score}`).
+  This is the closest alternative and the one to revisit first.
+
+  Rejected primarily on **testability of Thread 22's exit gate**. Under this ADR
+  the matching is a pure function over a fixture corpus — no service, no network,
+  no Python — which is exactly what that exit test asks for ("a fixture corpus
+  classifies with no trained adapter and no samples"). Server-side retrieval turns
+  it into an integration test, or into a fake returning canned neighbours that
+  exercises the score *interpretation* but never the matching. Secondary, and
+  nearly as important: ambiguity thresholds are unmeasured (open question #5), and
+  tuning them means re-running matching over the same corpus many times — cheap
+  in-process against cached vectors, a service round trip each otherwise.
+
+  The architectural objection is weaker than it first appears and is **not** the
+  grounds for rejection. The sidecar could take opaque `{id, text}` queries and
+  never learn what a "topic" is, and classification *policy* — thresholds,
+  primary/secondary, ambiguity bucketing — stays in `redline-application` either
+  way. What moves is vector arithmetic, not the lens's judgement.
+
+  What this alternative wins outright is scale: three numbers per result instead
+  of ~768 floats per chunk, and Parquet read straight from object storage with
+  columnar pushdown, which is what Parquet is for. That is the honest answer to
+  the scale worry behind open question #1, and it is why the re-entry condition
+  above is a corpus measurement rather than a preference.
 
 - **Folding `vectors` into the existing `/extractions` payload.** Rejected: it
   makes the Thread 4 adapter's response megabytes heavier for data it never reads,
