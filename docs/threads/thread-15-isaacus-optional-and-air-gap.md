@@ -94,6 +94,13 @@ turbo typecheck / lint / test / build → all green across the @redline/* packag
 ./validate.sh → Passed: 11  Failed: 0  — All validations passed.
 ```
 
+> **Rebase note (post-Thread 19).** This thread was rebased onto `main` after
+> Thread 19 landed the embeddings read seam, which added its own sidecar tests.
+> The womblex-ingest suite therefore now stands at **47 passed** (Thread 19's 37
+> + this thread's +10), and `./validate.sh` runs **12 checks** (check #12 = the
+> lockfile-vendoring guard, added on `main`). The +10/+5 deltas this thread
+> contributed are unchanged; the exit-test evidence above is the original run.
+
 The exit criterion — *full pipeline runs with `ISAACUS_API_KEY` unset* — is proven
 both offline (pytest) and **live under Podman**.
 
