@@ -305,6 +305,7 @@ test.
 - **Thread 18 — `HardRule` entity + pure evaluation.** Pattern → topic,
   match semantics, precedence when two rules hit.
   _Exit: rule-match invariants covered incl. precedence and no-match; pure, no I/O._
+  — docs: [thread-18](./threads/thread-18-hard-rule-entity-and-evaluation.md)
 
 **Retrieval seam**
 
@@ -449,6 +450,7 @@ grid itself.
 | D9 | Boundary decisions are corrections-as-sample-membership | adopted from Numbatch ADR-0020 | corrections ADR |
 | D10 | Preconditions ride the type boundary; only misuse errors | adopted from womblex | error-semantics ADR |
 | D11 | A topic's identity carries into the requirement it projects to | ✅ **settled** 2026-07-25 (discovered in Thread 17) | [ADR-0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md) ✅ |
+| D12 | Hard-rule precedence is specificity, then declaration order | ✅ **settled** 2026-07-25 (discovered in Thread 18) | [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md) ✅ |
 
 **D1, D2 and D3 were settled by the project owner on 2026-07-24** and are no
 longer assumptions. D1 was settled with a correction to how it had been drafted:
@@ -471,6 +473,11 @@ projected requirement keeps its topic's id — and the answer is load-bearing fo
 the Thread 29 binding, the Thread 33 corrections push, and Thread 30's
 cross-corpus re-attachment. It was recorded in Thread 17's own commit, per the
 retrospective half of the ADR model.
+
+**D12 is the second.** Thread 18's scope named "precedence when two rules hit"
+without settling it; writing the evaluation forced the answer, and it governs
+every consumer of the hard-rule stage from Thread 21 on. Recorded in Thread 18's
+own commit, same model.
 
 Amendments the above force on existing ADRs:
 
@@ -500,7 +507,7 @@ in real use.
 
 ## 9. Open questions
 
-1. **Vector wire format** (Thread 18) — JSON float arrays across the ADR-0003
+1. **Vector wire format** (Thread 19) — JSON float arrays across the ADR-0003
    boundary may not survive corpus scale. Alternatives: a binary side channel, or
    keeping retrieval server-side in the sidecar and shipping only neighbours.
 2. **LLM adjudication seam** — `ILanguageModel.summarise` is procurement-shaped
@@ -524,8 +531,8 @@ duplicated here._
 |---|---|---|---|---|
 | 1–11 | — | — | ✅ **done** | See the deprecated plan's §10 logs (scaffold → workflow manager UI). |
 | 17 — `Topic` + `Lens` entities | L | domain | ✅ **done** | Durable tier restored; lens has no `evaluationId`. Locked [ADR-0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md). [thread-17](./threads/thread-17-topic-and-lens-entities.md) |
-| 18 — `HardRule` + evaluation | L | domain | 🔵 **next** | Pure; no dependency on 17. |
-| 19 — Sidecar embeddings endpoint | L | womblex-ingest | ⚪ not started | Settles open question #1. |
+| 18 — `HardRule` + evaluation | L | domain | ✅ **done** | Deterministic pre-model stage; a gap is an outcome, not an error. Locked [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md). [thread-18](./threads/thread-18-hard-rule-entity-and-evaluation.md) |
+| 19 — Sidecar embeddings endpoint | L | womblex-ingest | 🔵 **next** | Settles open question #1. |
 | 20 — `IEmbeddingReader` + adapter | L | domain, adapters | ⚪ not started | Needs 19's wire format. |
 | 21 — Hard-rule pre-pass | L | application | ⚪ not started | Needs 18. |
 | 22 — Retrieval classification | L | application, adapters | ⚪ not started | Needs 20. First demo point. |

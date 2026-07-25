@@ -15,6 +15,10 @@ export * from "./entities/topic";
 export * from "./entities/lens";
 export * from "./entities/lens-projection";
 
+// Hard rules (Thread 18) — deterministic pattern -> topic, resolved before any model.
+export * from "./entities/hard-rule";
+export * from "./entities/hard-rule-evaluation";
+
 // Ports
 export * from "./ports/evaluation-repository";
 export * from "./ports/financial-extractor";
