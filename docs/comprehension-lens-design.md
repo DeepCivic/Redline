@@ -321,6 +321,7 @@ test.
   imposes on shipping vectors (ADR-0014), binding rather than advisory.
   _Exit: contract test against a captured sidecar payload; error taxonomy covered;
   TS still links no Parquet reader._
+  — docs: [thread-20](./threads/thread-20-embedding-reader.md)
 
 - **Thread 20a — Sidecar text-embedding endpoint** (Python, `womblex-ingest`).
   Embeds arbitrary text in the *same* space as the document vectors, so a topic
@@ -566,8 +567,8 @@ duplicated here._
 | 17 — `Topic` + `Lens` entities | L | domain | ✅ **done** | Durable tier restored; lens has no `evaluationId`. Locked [ADR-0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md). [thread-17](./threads/thread-17-topic-and-lens-entities.md) |
 | 18 — `HardRule` + evaluation | L | domain | ✅ **done** | Deterministic pre-model stage; a gap is an outcome, not an error. Locked [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md). [thread-18](./threads/thread-18-hard-rule-entity-and-evaluation.md) |
 | 19 — Sidecar embeddings endpoint | L | womblex-ingest | ✅ **done** | Vectors ship as JSON floats on a sibling resource, absent independently of the extraction. Locked [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) (precondition), closing open question #1. [thread-19](./threads/thread-19-sidecar-embeddings-endpoint.md) |
-| 20 — `IEmbeddingReader` + adapter | L | domain, adapters | 🔵 **next** | Wire format settled. `Float32Array` + per-evaluation caching are binding (ADR-0014). |
-| 20a — Sidecar text-embedding endpoint | L | womblex-ingest | ⚪ not started | Surfaced by ADR-0014; blocks 22, not 20. |
+| 20 — `IEmbeddingReader` + adapter | L | domain, adapters | ✅ **done** | Vectors reach TS as `Float32Array`, cached per `(evaluation, document)` — both binding per [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md); no new ADR. adapters **58** (+12), domain **97** (+2). [thread-20](./threads/thread-20-embedding-reader.md) |
+| 20a — Sidecar text-embedding endpoint | L | womblex-ingest | 🔵 **next** | Surfaced by ADR-0014; blocks 22, not 20. |
 | 21 — Hard-rule pre-pass | L | application | ⚪ not started | Needs 18. |
 | 22 — Retrieval classification | L | application, adapters | ⚪ not started | Needs 20 **and** 20a. First demo point. |
 | 23 — LLM adjudication + rationale | L | domain, application | ⚪ not started | Open question #2. |
