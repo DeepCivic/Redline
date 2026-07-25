@@ -14,6 +14,36 @@ def test_health_reports_ok(client: TestClient) -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_health_reports_offline_enrichment_by_default(client: TestClient) -> None:
+    # The default build (and the air-gapped stub path) reports the offline
+    # enrichment mode so a deployment / UI toggle can see Isaacus is not engaged.
+    body = client.get("/health").json()
+
+    assert body["womblexMode"] == "stub"
+    assert body["enrichmentMode"] == "offline"
+    assert body["isaacusEnabled"] is False
+
+
+def test_health_reports_isaacus_when_enabled(storage: FakeObjectStorage) -> None:
+    from womblex_ingest.main import build_app
+
+    client = TestClient(
+        build_app(
+            storage=storage,
+            extractor=StubExtractor(),
+            bucket="redline",
+            womblex_mode="real",
+            enrichment_mode="isaacus",
+        )
+    )
+
+    body = client.get("/health").json()
+
+    assert body["womblexMode"] == "real"
+    assert body["enrichmentMode"] == "isaacus"
+    assert body["isaacusEnabled"] is True
+
+
 def test_ingest_returns_a_run_id(client: TestClient) -> None:
     response = client.post(
         "/ingest",

@@ -100,16 +100,17 @@ reality demands it. These are decisions, not omissions:
 | Planning artefact | PRD + ADR + phase doc per feature | Single **build plan** with numbered **threads**; ADRs as needed | One-repo delivery already sequenced into threads (§7 of the plan) |
 | Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | Thread rows in the build plan flip to ✅ and link to a thread doc/README | Keeps the whole delivery legible in one file |
 | Validation | `validate.sh` assuming local Node + services | `validate.sh` runs via **Podman** when no local Node; services added per-thread | Host here has no local Node |
-| E2E | Playwright suite exists day one (`/e2e`) | Playwright specs authored with the control surface (Thread 11), the review grid (Thread 12), the pricing pivots (Thread 13), and the Excel export (Thread 14); their executable exit gate is the vitest suite over the framework-free UI core until a Next.js shell serves the routes | UI logic lives in a pure, testable core; no browser/app server in this build environment yet |
+| E2E | Playwright suite exists day one (`/e2e`) | Playwright specs authored with the control surface (Thread 11), the review grid (Thread 12), the pricing pivots (Thread 13), the Excel export (Thread 14), and the ingest config toggle (Thread 15); their executable exit gate is the vitest suite over the framework-free UI core until a Next.js shell serves the routes | UI logic lives in a pure, testable core; no browser/app server in this build environment yet |
 | Release model | alpha branches, `VERSION` sync | Pre-1.0; no alpha branches yet. Version bumps tracked per thread | Not yet releasing |
 | Scope | `@rbrasier/*` | `@redline/*`, consuming `@rbrasier/*` read-only | This is an adapter, not the framework |
 
 When a deviation stops making sense, add the corresponding Wayfinder
-convention and update this table. Threads 11–14 landed the control surface,
-review grid, pricing pivots, and Excel export with Playwright specs
-(`apps/redline-web/e2e/`); wire them into CI once the Next.js shell serving
-`/evaluations/:id/grouping`, `/evaluations/:id/review` (incl. the Export to Excel
-button), and `/evaluations/:id/pivots` lands (a Track 4 follow-up). The shell
+convention and update this table. Threads 11–15 landed the control surface,
+review grid, pricing pivots, Excel export, and the ingest config toggle with
+Playwright specs (`apps/redline-web/e2e/`); wire them into CI once the Next.js
+shell serving `/evaluations/:id/grouping`, `/evaluations/:id/review` (incl. the
+Export to Excel button), `/evaluations/:id/pivots`, and
+`/evaluations/:id/settings/ingest` lands (a Track 4 follow-up). The shell
 is Next.js/React to match Wayfinder's own `apps/web` (ADR-0006), not Numbatch's
 unused SvelteKit stack.
 

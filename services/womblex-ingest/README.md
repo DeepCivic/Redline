@@ -25,7 +25,7 @@ cells are normalised into the camelCase wire shape the domain's
 
 | Method & path        | Body / params                                  | Returns |
 |----------------------|------------------------------------------------|---------|
-| `GET /health`        | —                                              | `{ "status": "ok", "bucket": "redline" }` |
+| `GET /health`        | —                                              | `{ "status": "ok", "bucket": "redline", "womblexMode", "enrichmentMode", "isaacusEnabled" }` |
 | `POST /ingest`       | `{ "evaluationId": string, "documentNames": string[] }` | `202 { runId, status, documentCount, shardKeys }` |
 | `GET /status/{run_id}` | —                                            | `200 { runId, evaluationId, status, documentCount, shardKeys, error }` |
 | `GET /extractions/{evaluationId}/{documentId}` | —                          | `200 { documentId, elements[], chunks[], tableCells[] }` |
@@ -78,9 +78,18 @@ text against ~3 kB packed. The vectors are immutable and content-addressed, so
 the Thread 20 adapter is expected to parse into `Float32Array` and cache per
 evaluation rather than re-fetching per run.
 
-## Extraction modes
+## Extraction modes & Isaacus-optionality (Thread 15)
 
-`WOMBLEX_MODE` selects the extractor:
+`WOMBLEX_MODE` selects the extractor; the *enrichment mode* is then derived from
+it plus the presence of an `ISAACUS_API_KEY`, and surfaced on `/health` so a
+deployment (and the redline UI config toggle, `renderIngestConfigView`) can read
+which path is live:
+
+| `WOMBLEX_MODE` | `ISAACUS_API_KEY` | `enrichmentMode` | Isaacus engaged? |
+|---|---|---|---|
+| `stub` (default) | any / unset | `offline` | no — the stub never calls Isaacus |
+| `real` | unset / blank | `offline` | no — womblex's edge/offline mode |
+| `real` | set (non-blank) | `isaacus` | yes |
 
 - **`stub`** (default) — deterministic, dependency-free shards. No womblex, no
   Isaacus. This is what the Thread 3 exit test and air-gapped runs use, and it
@@ -89,10 +98,25 @@ evaluation rather than re-fetching per run.
   Parquet→JSON seam serves, so the Thread 4 adapter contract is provable offline.
 - **`real`** — invokes the actual womblex pipeline. Requires an image built with
   `--build-arg INSTALL_WOMBLEX=1`. Isaacus enrichment is a further opt-in
-  (`--build-arg ISAACUS=1` + `ISAACUS_API_KEY` at runtime); womblex also has
-  non-Isaacus (edge/offline) modes. The Parquet→JSON mapping it must honour is
-  pinned in `records.py`; the concrete womblex call surface is still pending, so
-  `real` fails loudly until then.
+  (`--build-arg ISAACUS=1` + a runtime `ISAACUS_API_KEY`). womblex also has
+  **non-Isaacus (edge/offline) modes**, so `real` with the key unset stays fully
+  offline. The Parquet→JSON mapping it must honour is pinned in `records.py`; the
+  concrete womblex call surface is still pending, so `real` fails loudly until
+  then.
+
+### Air-gap (offline) mode — the Thread 15 exit criterion
+
+The **full pipeline runs with `ISAACUS_API_KEY` unset**: `POST /ingest` → shards
+land in MinIO → `GET /extractions/...` serves the JSON read model, all
+disconnected from Isaacus. `/health` reports `"enrichmentMode": "offline"` and
+`"isaacusEnabled": false`. Proven two ways:
+
+- offline (no container): `tests/test_airgap_pipeline.py` builds the app the way
+  the process does at startup with the key deleted and drives the whole seam;
+- live (real MinIO + HTTP): `../../scripts/thread-15-airgap.sh`.
+
+Isaacus is **doubly opt-in** — the `ISAACUS=1` image *and* a runtime key — so an
+air-gapped deployment simply never sets either.
 
 ## Configuration
 
@@ -106,7 +130,7 @@ the S3 target is fully config-driven — never a hardcoded Wayfinder endpoint):
 | `S3_SECRET_KEY` | `minioadmin` | S3 secret key |
 | `REDLINE_BUCKET`| `redline`    | bucket for shards (created on first use) |
 | `WOMBLEX_MODE`  | `stub`       | `stub` \| `real` |
-| `ISAACUS_API_KEY` | _(unset)_  | only used by `real` mode with an Isaacus-enabled image |
+| `ISAACUS_API_KEY` | _(unset)_  | only used by `real` mode with an Isaacus-enabled image; leave unset for the air-gapped (offline) path |
 
 ## Run
 
@@ -116,6 +140,8 @@ Via the redline compose stack (`ingest` profile brings up MinIO + this service):
 podman compose -f ../../infra/docker-compose.yml --profile ingest up -d
 # exit-test smoke check (compose up → POST docs → assert shards in MinIO):
 ../../scripts/thread-03-smoke.sh
+# Thread 15 air-gap check (full pipeline with ISAACUS_API_KEY unset):
+../../scripts/thread-15-airgap.sh
 podman compose -f ../../infra/docker-compose.yml --profile ingest down -v
 ```
 
@@ -124,7 +150,7 @@ podman compose -f ../../infra/docker-compose.yml --profile ingest down -v
 ```sh
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[dev]'
-python -m pytest -q            # 37 tests: HTTP surface, run lifecycle, both JSON read seams, stub extractor
+python -m pytest -q            # HTTP surface, run lifecycle, both JSON read seams, stub extractor, enrichment mode, air-gap pipeline
 ```
 
 Tests use in-memory fakes for both seams (object storage + womblex), so no MinIO

@@ -330,6 +330,7 @@ Each thread is independently buildable, testable, reviewable, with an explicit e
 ### Track 5 — Hardening & handover
 - **Thread 15 — Isaacus-optional & air-gap validation.** Prove womblex non-Isaacus path end-to-end;
   document both modes; surface as a UI config toggle. _Exit: full pipeline runs with `ISAACUS_API_KEY` unset._
+  — docs: [thread-15](./threads/thread-15-isaacus-optional-and-air-gap.md)
 - **Thread 16 — Workspace extraction & release prep.** Split into standalone workspace; sever the
   submodule dependency to the minimum seam (vendor/publish typed helpers or reimplement); CI,
   compose docs, README. _Exit: builds and runs standalone; validate script green._
@@ -389,8 +390,8 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | 12 — In-app review grid | ✅ **done** | Exit test **PASSED**: `apps/redline-web` — the sortable/filterable review grid as a framework-free core (ADR-0006; a Next.js/React shell binds to it). `ReviewGrid` (`src/lib/review-grid.ts`) turns the Thread 10 `ProcurementResponse[]` into typed rows (one per (group, document, matched requirement)) with all required columns (vendor / product / requirement / confidence / summary / estimate (AUD) / costing / source); currency stays a real number so it **sorts numerically** (`[90,100,1000]`, not lexical), pinned against Wayfinder's `typedDisplayCell` (`isNumeric:true`); null estimates cluster non-numeric. `renderReviewGridView` (`src/lib/review-view.ts`) resolves the **source deep-link** (`/evaluations/:id/documents/:doc?element=…&page=…&chunk=…`) + header sort state + filters. `WorkflowController.openReviewGrid` reads persisted responses (`listResponses`). redline-web **33/33** (was 18; +15: review-grid 8, review-view 5, container +2); Playwright spec `e2e/review-grid.e2e.ts` authored (vitest is the gate until the shell lands). `./validate.sh` **11/11**. Docs: [thread-12](./threads/thread-12-in-app-review-grid.md). |
 | 13 — Pricing pivots | ✅ **done** | Exit test **PASSED**: `PricingPivot` (`apps/redline-web`) rolls the Thread 10/12 `ProcurementResponse[]` up per brand, per requirement, and brand×requirement, summing/averaging the real-number `estimateAud`; on a five-row fixture (3 vendors × 2 requirements + one null-estimate fallback) the totals match hand-computed values (per-brand sum Initech 3000/Globex 2000/Acme 1500, grand 6500 over 4 samples; per-brand avg Acme 750; per-requirement residency 6000/support 500; brand×requirement Acme×residency 1000/×support 500) and are **cross-checked against Wayfinder's own `computePivot`** (read-only reuse §9, test-only — production app code imports nothing from Wayfinder, matching Thread 12's `typedDisplayCell` posture). Null-estimate rows are non-samples (excluded from sum, not an avg denominator, blank not `$0.00`); all-fallback → `hasNumericData:false`. `renderPivotView` shapes the table (axis/measure headers, one column per secondary group); `WorkflowController.openPricingPivot` reads persisted responses. redline-web **45/45** (was 33; +12: pricing-pivot 7, pricing-view 4, container +1); Playwright spec `e2e/pricing-pivots.e2e.ts` authored (vitest is the gate until the shell lands). `./validate.sh` **11/11**. Docs: [thread-13](./threads/thread-13-pricing-pivots.md). |
 | 14 — Excel export | ✅ **done** | Exit test **PASSED**: `apps/redline-web` — the Excel export as a framework-free core (a thin lazy `write-excel-file/browser` trigger binds to it; ADR-0006). `buildReviewSheetData` / `buildPivotSheetData` / `buildEvaluationWorkbook` (`src/lib/excel-export.ts`) turn the Thread 12 `ReviewGrid` + Thread 13 `PricingPivot` into `write-excel-file` sheet data — reusing Wayfinder's cell shape (`{ value, type: String\|Number, fontWeight? }`\|`null`, plan §9, verified against the library's bundled types not training data) so **currency writes as a real `Number` cell** (review estimate `1000`, confidence `0.86`, pivot totals — cross-checked against `typedDisplayCell("currency",…)` → `isNumeric:true`), a null estimate writes a **blank** cell (never `0`), and the **source column is a working hyperlink** to the exact document location (`/evaluations/:id/documents/:doc?element=…&page=…&chunk=…`, the same deep-link the in-app grid resolves). One `Review` sheet + one sheet per pivot (`Pricing by Vendor` / `Pricing by Requirement` / `Vendor × Requirement`). `WorkflowController.buildWorkbook` reads persisted responses (read-only); `exportEvaluationXlsx` is the lazy browser writer (dynamic import, `{ name, data }[]` sheets → `.toFile`), mirroring Wayfinder's `exportInsightsXlsx`. redline-web **58/58** (was 45; +13: excel-export 11, container +2); `write-excel-file@^4.1.1` added to `redline-web`. Playwright spec `e2e/excel-export.e2e.ts` authored (vitest is the gate until the shell lands). `./validate.sh` **11/11**. Docs: [thread-14](./threads/thread-14-excel-export.md). |
-| 15 — Isaacus-optional & air-gap validation | 🔵 **next** | |
-| 16 — Workspace extraction & release prep | ⚪ not started | |
+| 15 — Isaacus-optional & air-gap validation | ✅ **done** | Exit test **PASSED live under Podman** (and offline in pytest): the full pipeline runs with `ISAACUS_API_KEY` **unset**. `scripts/thread-15-airgap.sh` brought up the `ingest` profile standalone against real MinIO — `/health` → `enrichmentMode:offline`/`isaacusEnabled:false`, `POST /ingest` → `succeeded`, shards + `{sourceHash}.extraction.json` landed in MinIO, `GET /extractions/...` served the read model. `services/womblex-ingest` models Isaacus-optionality explicitly — `Settings.enrichment_mode` (`offline`\|`isaacus`) derives from `WOMBLEX_MODE` + a non-blank key (**stub always offline**; **real offline unless a key is present**), surfaced on `GET /health` so a deployment + the UI toggle read the live path. Also fixed `infra/docker-compose.yml` so **any single profile comes up standalone** (dev-default credentials; compose interpolates the whole file regardless of `--profile`). UI: `apps/redline-web` `renderIngestConfigView`/`parseIngestHealth` — a pure view-model (Isaacus toggle **disabled on the stub path**). womblex-ingest pytest **47** (was 37; +10); redline-web **63** (was 58; +5). Rebased onto `main` after Thread 19 (the embeddings seam), so the sidecar suite now stands at 47 and `./validate.sh` runs **12/12** (check #12 = the lockfile-vendoring guard). Docs: [thread-15](./threads/thread-15-isaacus-optional-and-air-gap.md). |
+| 16 — Workspace extraction & release prep | 🔵 **next** | |
 
 ### Thread 1 log (2026-07-23) — ✅ COMPLETE
 
@@ -1211,3 +1212,71 @@ toggle stays an in-app lens (Thread 13).
 changes (pre-1.0).
 
 **Docs:** [thread-14](./threads/thread-14-excel-export.md).
+
+### Thread 15 log (2026-08-05) — ✅ COMPLETE
+
+**Made Isaacus-optionality explicit and proved the air-gapped path end to end**
+(build plan §7 Track 5). The stub already ran without Isaacus (Thread 3); Thread 15
+models the choice, proves the whole pipeline degrades cleanly with the key unset,
+and surfaces the live path to the UI.
+
+**Service — `services/womblex-ingest`:**
+- `config.py` — `Settings` reads `ISAACUS_API_KEY` and exposes an `EnrichmentMode`
+  (`offline` \| `isaacus`) derived from `WOMBLEX_MODE` + a non-blank key: **stub is
+  always offline** (never calls Isaacus, even with a key); **real is offline unless
+  a non-blank key is supplied** (womblex's own edge/offline mode). `isaacus_enabled`
+  is the boolean `/health` reports.
+- `main.py` — `build_app` takes `womblex_mode` + `enrichment_mode`; `GET /health`
+  now reports `{ status, bucket, womblexMode, enrichmentMode, isaacusEnabled }` so a
+  deployment and the UI toggle read the live path. `build_app_from_env` wires the
+  derived mode.
+- `README.md` — documents **both modes** (a `WOMBLEX_MODE` × `ISAACUS_API_KEY` →
+  `enrichmentMode` table) + the air-gap section + the new `/health` fields.
+- `scripts/thread-15-airgap.sh` — the **live** exit test (real MinIO): brings up the
+  `ingest` profile with `ISAACUS_API_KEY` unset, asserts `/health` is offline, then
+  `POST /ingest` → shards land → `GET /extractions/...` serves the JSON read model.
+
+**UI config toggle — `apps/redline-web`:** `src/lib/ingest-config.ts` —
+`parseIngestHealth` (narrows the `/health` JSON; null on an older/malformed body) +
+`renderIngestConfigView` (extraction/enrichment labels, `airGapped`, an
+`isaacusToggle` **disabled on the stub path**, so the shell never offers a switch
+that can't take effect). Pure, framework-free (Threads 11–14 posture); exported from
+`src/index.ts`; `e2e/ingest-config.e2e.ts` pins the settings-route DOM contract
+(vitest is the gate until the Next.js shell lands).
+
+**Design decisions.** (1) *Enrichment mode is **derived**, not a fourth env var* —
+one source of truth (`WOMBLEX_MODE` + key presence) can't disagree with itself.
+(2) *Isaacus stays doubly opt-in* (image `ISAACUS=1` *and* runtime key); an
+air-gapped deployment sets neither. (3) *The exit criterion is proven twice* —
+offline in pytest (gates in CI without a container) and live via the smoke script.
+(4) *`/health` is the single surface* the deployment and the UI read; the UI
+view-model is a pure transform of it. (5) *The toggle encodes the constraint* in the
+tested view-model, not DOM glue.
+
+**Exit test — PASSED (live under Podman + offline in pytest).** The full pipeline
+runs with `ISAACUS_API_KEY` **unset**. `scripts/thread-15-airgap.sh` (Podman 5.8,
+real MinIO, `ingest` profile standalone): `/health` →
+`{"enrichmentMode":"offline","isaacusEnabled":false}`, `POST /ingest` → `succeeded`,
+shards + `{sourceHash}.extraction.json` landed in MinIO, `GET /extractions/...`
+served the read model. The offline gate
+`tests/test_airgap_pipeline.py::test_full_pipeline_runs_air_gapped` proves the same
+wiring in CI without a container. Also **fixed `infra/docker-compose.yml`** so any
+single profile comes up standalone (compose interpolates the whole file regardless
+of `--profile`; the numbatch/redline `${VAR:?}` secrets blocked `--profile ingest`)
+— all credentials now have overridable dev defaults, production overrides via
+`infra/.env`. womblex-ingest pytest **27** (was 17; +10: `test_enrichment_mode.py`
+6, `test_airgap_pipeline.py` 2, `/health` +3); redline-web **63** (was 58; +5
+`ingest-config.test.ts`). Full workspace typecheck/lint/test/build green;
+`./validate.sh` → **11/11**.
+
+**Known limitations.** (1) Real womblex still not wired — `real` mode raises
+`NotImplementedError` (carried from Threads 3–4), so the Isaacus-disabled *real*
+path (womblex edge mode) is proven at the wiring/health layer, not by running real
+womblex. (2) No Next.js shell yet — the config view is complete and tested; the
+settings route + the Playwright run are the Track 4 shell follow-up (shared with
+Threads 11–14).
+
+**Version bump intent:** MINOR — new `/health` surface + UI config view + air-gap
+proof; no breaking changes (pre-1.0).
+
+**Docs:** [thread-15](./threads/thread-15-isaacus-optional-and-air-gap.md).
