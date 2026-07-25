@@ -20,6 +20,7 @@ export * from "./entities/hard-rule";
 export * from "./entities/hard-rule-evaluation";
 
 // Ports
+export * from "./ports/embedding-reader";
 export * from "./ports/evaluation-repository";
 export * from "./ports/financial-extractor";
 export * from "./ports/language-model";
