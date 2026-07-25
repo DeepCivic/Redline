@@ -345,6 +345,7 @@ test.
   against topic definitions. Needs both 20 (the chunk vectors) and 20a (the query
   vector).
   _Exit: a fixture corpus classifies with no trained adapter and no samples._
+  — docs: [thread-22](./threads/thread-22-retrieval-classification.md)
 
 - **Thread 23 — LLM adjudication + rationale.** Only for what retrieval left
   unclear; emits the one-sentence rationale. Adds the adjudication seam
@@ -572,8 +573,8 @@ duplicated here._
 | 20 — `IEmbeddingReader` + adapter | L | domain, adapters | ✅ **done** | Vectors reach TS as `Float32Array`, cached per `(evaluation, document)` — both binding per [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md); no new ADR. adapters **58** (+12), domain **97** (+2). [thread-20](./threads/thread-20-embedding-reader.md) |
 | 20a — Sidecar text-embedding endpoint | L | womblex-ingest | ✅ **done** | Query vectors embed in the same space as chunk vectors (same `model`/`dimensions`, L2-normalised); implements the gap [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) named, no new ADR. Blocks 22, needs nothing from 20. [thread-20a](./threads/thread-20a-sidecar-text-embedding-endpoint.md) |
 | 21 — Hard-rule pre-pass | L | application | ✅ **done** | Deterministic first stage: composes Thread 18's `evaluateHardRules`, claims never reach the model (fake asserts zero calls), both paths emit the same `RequirementClassification` (D2). No new ADR. application **24** (+8). [thread-21](./threads/thread-21-hard-rule-pre-pass.md) |
-| 22 — Retrieval classification | L | application, adapters | 🔵 **next** | Needs 20 **and** 20a — both now done. First demo point. |
-| 23 — LLM adjudication + rationale | L | domain, application | ⚪ not started | Open question #2. |
+| 22 — Retrieval classification | L | application, adapters | ✅ **done** | Model-free first pass: chunk vectors ranked against topic definitions by cosine similarity (a dot product — vectors cross L2-normalised, ADR-0014). Carries the query-side seam Thread 20a's endpoint lacked in TS (`ITextEmbedder` + `WomblexTextEmbedder`); both paths emit the same `RequirementClassification` (D2). No new ADR. domain **99** (+2), adapters **69** (+11), application **33** (+9). [thread-22](./threads/thread-22-retrieval-classification.md) |
+| 23 — LLM adjudication + rationale | L | domain, application | 🔵 **next** | Open question #2. |
 | 24 — Ambiguity signals + buckets | L | domain | ⚪ not started | Thresholds unmeasured (open question #5). |
 | 25 — Document Map read model | L | application | ⚪ not started | Reuses `computePivot`. |
 | 26 — Collision selection & capping | L | domain | ⚪ not started | |

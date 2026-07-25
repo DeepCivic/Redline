@@ -11,6 +11,9 @@
 // Thread 20: WomblexEmbeddingReader implements IEmbeddingReader over the
 // womblex-ingest sidecar's retrieval read seam (Float32Array; cached per
 // evaluation — ADR-0014).
+// Thread 22: WomblexTextEmbedder implements ITextEmbedder over the same
+// sidecar's query-embedding seam (POST /embeddings/query), so a topic
+// definition embeds in the same space as the chunk vectors (ADR-0014, Thread 20a).
 export {
   WomblexExtractionReader,
   type HttpClient,
@@ -23,6 +26,13 @@ export {
   type HttpResponse as WomblexEmbeddingHttpResponse,
   type WomblexEmbeddingReaderOptions,
 } from "./embeddings/womblex-embedding-reader";
+export {
+  WomblexTextEmbedder,
+  type HttpClient as WomblexTextEmbedderHttpClient,
+  type HttpRequest as WomblexTextEmbedderHttpRequest,
+  type HttpResponse as WomblexTextEmbedderHttpResponse,
+  type WomblexTextEmbedderOptions,
+} from "./embeddings/womblex-text-embedder";
 export {
   NumbatchClassifier,
   type HttpClient as NumbatchHttpClient,

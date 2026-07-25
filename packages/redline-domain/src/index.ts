@@ -26,3 +26,8 @@ export * from "./ports/financial-extractor";
 export * from "./ports/language-model";
 export * from "./ports/procurement-classifier";
 export * from "./ports/procurement-extraction-reader";
+
+// Retrieval (Thread 22) — embeds a topic definition into a query vector, in the
+// same space as the chunk vectors, so the lens's first pass can match without a
+// trained model (ADR-0014, Thread 20a).
+export * from "./ports/text-embedder";
