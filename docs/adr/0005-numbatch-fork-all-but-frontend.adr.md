@@ -1,6 +1,7 @@
 # ADR-0005 — Numbatch is a vendored fork; run all-but-frontend, bootstrap via API
 
-- **Status**: Accepted
+- **Status**: Accepted (Vendoring clause amended by
+  [ADR-0013](./0013-numbatch-fork-is-materialised-from-a-pin.adr.md), 2026-07-25)
 - **Date**: 2026-07-26
 
 ## Context
@@ -34,8 +35,10 @@ redline drives Numbatch entirely over its HTTP API.**
 
 - **Vendoring.** `services/numbatch/` is the DeepCivic/Numbatch fork. It is *not*
   committed into this repo during the build phase (the tree is large and lives in its own
-  remote); it is added as a submodule / sibling checkout the same way `vendor/wayfinder`
-  is, and its Dockerfiles under `infra/docker/` are referenced by redline's compose
+  remote); it is materialised at build time from a recorded commit the same way
+  `vendor/wayfinder` is ([ADR-0013](./0013-numbatch-fork-is-materialised-from-a-pin.adr.md)
+  — this originally read "as a submodule / sibling checkout", which ADR-0012
+  retired), and its Dockerfiles under `infra/docker/` are referenced by redline's compose
   `numbatch` profile. Thread 16 finalises how the fork ships. This mirrors ADR-0001's
   "compose over runtime seams, design as if C".
 - **Run all-but-frontend.** The `numbatch` compose profile brings up
