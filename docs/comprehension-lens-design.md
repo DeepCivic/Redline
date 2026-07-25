@@ -339,6 +339,7 @@ test.
   documents never reach the classifier.
   _Exit: rule-claimed documents produce classifications with the model port
   unused (fake asserts zero calls)._
+  — docs: [thread-21](./threads/thread-21-hard-rule-pre-pass.md)
 
 - **Thread 22 — Retrieval classification.** Nearest-neighbour of chunk vectors
   against topic definitions. Needs both 20 (the chunk vectors) and 20a (the query
@@ -570,7 +571,7 @@ duplicated here._
 | 19 — Sidecar embeddings endpoint | L | womblex-ingest | ✅ **done** | Vectors ship as JSON floats on a sibling resource, absent independently of the extraction. Locked [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) (precondition), closing open question #1. [thread-19](./threads/thread-19-sidecar-embeddings-endpoint.md) |
 | 20 — `IEmbeddingReader` + adapter | L | domain, adapters | ✅ **done** | Vectors reach TS as `Float32Array`, cached per `(evaluation, document)` — both binding per [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md); no new ADR. adapters **58** (+12), domain **97** (+2). [thread-20](./threads/thread-20-embedding-reader.md) |
 | 20a — Sidecar text-embedding endpoint | L | womblex-ingest | ✅ **done** | Query vectors embed in the same space as chunk vectors (same `model`/`dimensions`, L2-normalised); implements the gap [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) named, no new ADR. Blocks 22, needs nothing from 20. [thread-20a](./threads/thread-20a-sidecar-text-embedding-endpoint.md) |
-| 21 — Hard-rule pre-pass | L | application | ⚪ not started | Needs 18. |
+| 21 — Hard-rule pre-pass | L | application | ✅ **done** | Deterministic first stage: composes Thread 18's `evaluateHardRules`, claims never reach the model (fake asserts zero calls), both paths emit the same `RequirementClassification` (D2). No new ADR. application **24** (+8). [thread-21](./threads/thread-21-hard-rule-pre-pass.md) |
 | 22 — Retrieval classification | L | application, adapters | 🔵 **next** | Needs 20 **and** 20a — both now done. First demo point. |
 | 23 — LLM adjudication + rationale | L | domain, application | ⚪ not started | Open question #2. |
 | 24 — Ambiguity signals + buckets | L | domain | ⚪ not started | Thresholds unmeasured (open question #5). |
