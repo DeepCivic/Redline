@@ -56,3 +56,4 @@ none, so they were written once, ahead of the track.
 | [0007](./0007-procurement-purpose-lens-means.adr.md) | Procurement is the purpose; the comprehension lens is the means | Accepted |
 | [0008](./0008-trained-classifier-is-an-optional-overlay.adr.md) | The trained classifier is an optional overlay; the first pass needs no samples | Accepted |
 | [0009](./0009-numbatch-library-is-system-of-record.adr.md) | Numbatch's topic library is the system of record for topics, samples and corrections | Accepted |
+| [0010](./0010-topic-identity-carries-into-the-requirement-projection.adr.md) | A topic's identity carries into the requirement it projects to | Accepted |
