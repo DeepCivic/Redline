@@ -10,6 +10,11 @@ export * from "./entities/evaluation-structure";
 export * from "./entities/requirement";
 export * from "./entities/procurement-response";
 
+// Comprehension lens (Thread 17) — durable, evaluation-independent.
+export * from "./entities/topic";
+export * from "./entities/lens";
+export * from "./entities/lens-projection";
+
 // Ports
 export * from "./ports/evaluation-repository";
 export * from "./ports/financial-extractor";
