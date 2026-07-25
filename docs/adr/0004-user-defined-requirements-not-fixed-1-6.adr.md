@@ -1,6 +1,10 @@
 # ADR-0004 — Requirements are user-defined criteria (not a fixed 1–6 profile)
 
-- **Status**: Accepted
+- **Status**: Accepted — **amended by
+  [ADR-0009](./0009-numbatch-library-is-system-of-record.adr.md)** on one point:
+  an evaluation does **not** own a `RequirementSet`; the lens is durable and
+  evaluation-independent, and a `RequirementSet` is a projection of a lens bound
+  to an evaluation. Every other ruling below stands.
 - **Date**: 2026-07-26
 
 ## Context

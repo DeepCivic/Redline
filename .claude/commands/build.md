@@ -1,11 +1,23 @@
-# /build — Build a Thread from the Build Plan
+# /build — Build a Thread from the Design Doc
 
-Use this skill when the build plan's next thread is ready to implement and the
+Use this skill when the design doc's next thread is ready to implement and the
 user confirms, or when the user explicitly asks to implement a specific thread.
 
 **Pre-flight:** Read the target thread in
-[`docs/procurement-evaluation-plan.md`](../../docs/procurement-evaluation-plan.md)
+[`docs/comprehension-lens-design.md`](../../docs/comprehension-lens-design.md)
+(§6 Delivery for scope + exit test, §10 Build state for status)
 in full, plus any ADR(s) it references and any thread doc under `docs/threads/`.
+**ADR gate — before writing any code.** Check §7's decision register. If the
+thread rests on a decision that is not yet settled, or requires a new
+architectural decision to proceed:
+
+1. Draft the ADR in `docs/adr/` (`NNNN-<decision>.adr.md`, status **Proposed**).
+2. Present it for review and **stop**.
+3. Build only once the user approves; flip the status to **Accepted** in the
+   thread's commit.
+
+Do not build past an unapproved precondition decision. A thread whose shape
+depends on an open question is not ready — its ADR is the gate.
 Confirm the thread's **exit test** before writing a line of code. Read the
 relevant `@rbrasier/*` source in `vendor/wayfinder/packages/*` for any Wayfinder
 helper you intend to reuse — do not trust training data for its shape.
@@ -55,14 +67,32 @@ explicitly and paste the passing output:
   `docs/threads/thread-<NN>-<slug>.md` (or a package README) covering: what was
   built, files created/modified, migrations, the exit-test evidence, known
   limitations, and any decision that should become an ADR.
-- If the thread made an architectural decision, add an ADR in `docs/adr/`
-  (`NNNN-<decision>.adr.md`) and lock the matching row in §8 of the build plan.
-- **Update the build plan** (`docs/procurement-evaluation-plan.md`):
-  - Flip the thread's row in §10 to ✅ and append a dated thread log.
-  - Append the thread doc link to the thread's §7 entry, in the form
+- **Discovered decisions** — if the build itself forced an architectural choice
+  that could not have been known at planning time (the seam turned out different,
+  a library constrained the shape), record it as an ADR now, in this thread's
+  commit, and update the matching row in §7 of the design doc's decision register.
+  This is the retrospective half of the ADR model; the gate above is the
+  precondition half. Precedent: ADR-0002 and ADR-0003 were both locked mid-build.
+- **Update the design doc** (`docs/comprehension-lens-design.md`):
+  - Flip the thread's row in §10 Build state to ✅ with a one-line note.
+  - Append the thread doc link to the thread's §6 entry, in the form
     `— docs: [thread-<NN>](./threads/thread-<NN>-<slug>.md)`.
+  - Never write to `docs/procurement-evaluation-plan.md` — deprecated and frozen.
 - State the version bump intent (MAJOR / MINOR / PATCH).
 - Run `./validate.sh` one final time — fix all failures before declaring done.
-- Commit all changes. Open a PR against the DeepCivic remote's default branch via
-  `mcp__github__create_pull_request` when the remote exists; otherwise state that
-  the repo is not yet wired to a remote and stop.
+- **One thread = one commit.** Commit all the thread's changes together.
+- **Do NOT open a PR.** A PR is opened only when the user explicitly asks for
+  one. Offer it; do not act on the offer unasked.
+
+---
+
+## Scope discipline
+
+A thread is **one build step including its test** (see the thread contract in
+`/new-thread`). If, mid-build, the thread turns out to be larger than that:
+
+- Build the part that satisfies the stated exit test, and stop.
+- Report what you left out and why, and propose the follow-up thread(s).
+
+Do not widen a thread mid-flight. An overrunning thread is a planning defect to
+be fixed in the design doc, not absorbed into the current context.

@@ -62,18 +62,23 @@ jobs:
           # Podman harness and local validate.sh use node:20, and both 20 and 22
           # satisfy the toolchain. 22 keeps CI off the deprecated-on-runners 20.
           node-version: 22
-          # No pnpm cache yet: caching needs a committed lockfile to key on, and
-          # we don't commit one pre-1.0. setup-node@v5 turns package-manager
-          # caching ON by default (v4 had it off), and with pnpm detected it
-          # fails hard when pnpm-lock.yaml is absent — so disable it explicitly.
-          # Flip to `cache: pnpm` once a lockfile lands.
-          package-manager-cache: false
+          # pnpm-lock.yaml is committed, so store caching keys on it. Install
+          # drops from a full resolve to a lockfile-reuse pass.
+          cache: pnpm
 
       - name: Install workspace dependencies
-        # No committed lockfile yet (pre-1.0; the vendored @rbrasier/domain link
-        # makes a stable checked-in lockfile fragile). Switch to --frozen-lockfile
-        # once a lockfile is committed.
-        run: pnpm install
+        # --prefer-frozen-lockfile, NOT --frozen-lockfile (which pnpm turns on by
+        # default when CI=true). The lockfile carries an importer for
+        # vendor/wayfinder/packages/domain, materialised from Wayfinder at
+        # WAYFINDER_REF (default `main` — a moving target). A dependency bump in
+        # *Wayfinder's* repo therefore staleness-fails a strict install, turning
+        # our CI red for a commit that is not ours. --prefer-frozen-lockfile
+        # reuses the lockfile when it is current and re-resolves when it is not,
+        # so upstream drift costs resolve time instead of a red build.
+        #
+        # Tighten to --frozen-lockfile once WAYFINDER_REF is pinned to a SHA —
+        # at that point the vendored tree is deterministic and strictness is free.
+        run: pnpm install --prefer-frozen-lockfile
 
       - name: Set up Python (womblex-ingest sidecar tests)
         uses: actions/setup-python@v6
