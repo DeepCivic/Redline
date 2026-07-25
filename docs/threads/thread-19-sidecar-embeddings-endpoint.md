@@ -172,13 +172,14 @@ In brief:
 
 ## Known limitations / follow-ups
 
-1. **Thread 20's scope grew, and this is the important one.** Shipping chunk
-   vectors does not by itself give Thread 22 a comparable *query* vector: topic
-   definitions must be embedded in the same space, and redline's TypeScript has no
-   model. **The sidecar still owes a text-embedding endpoint.** This gap exists
-   under the server-side alternative too, so it is a planning gap rather than a
-   consequence of ADR-0014 — but this decision is what makes it unavoidable.
-   Recorded in §6 and §10 of the design doc.
+1. **The sidecar owes a text-embedding endpoint — now Thread 20a.** Shipping
+   chunk vectors does not by itself give Thread 22 a comparable *query* vector:
+   topic definitions must be embedded in the same space, and redline's TypeScript
+   has no model. This gap exists under the server-side alternative too, so it is a
+   planning gap rather than a consequence of ADR-0014. It was first filed against
+   Thread 20; that was wrong — Thread 20 reads document vectors and needs nothing
+   from it, and bolting a Python endpoint onto a TS thread would break the thread
+   contract. It is its own sidecar thread, blocking Thread 22. §6 and §10 updated.
 2. **`Float32Array` + per-evaluation caching are unenforced here.** They are
    binding constraints on Thread 20 (ADR-0014), but nothing in this service can
    check them. If Thread 20 lands without the cache, the cloud economics of this

@@ -316,13 +316,20 @@ test.
   `(source_hash, chunk_index)`; absent shard → `NOT_FOUND`._
   — docs: [thread-19](./threads/thread-19-sidecar-embeddings-endpoint.md)
 
-- **Thread 20 — `IEmbeddingReader` port + adapter** (TS). Now also owes the
-  **text-embedding endpoint** Thread 22 needs to put topic definitions in the same
-  vector space (surfaced by ADR-0014), and must parse into `Float32Array` and
-  cache per evaluation — the two constraints cloud hosting imposes on shipping
-  vectors.
+- **Thread 20 — `IEmbeddingReader` port + adapter** (TS). Parses into
+  `Float32Array` and caches per evaluation — the two constraints cloud hosting
+  imposes on shipping vectors (ADR-0014), binding rather than advisory.
   _Exit: contract test against a captured sidecar payload; error taxonomy covered;
   TS still links no Parquet reader._
+
+- **Thread 20a — Sidecar text-embedding endpoint** (Python, `womblex-ingest`).
+  Embeds arbitrary text in the *same* space as the document vectors, so a topic
+  definition can be matched against them. Surfaced by ADR-0014: redline's
+  TypeScript has no embedding model, so shipping chunk vectors does not by itself
+  give Thread 22 a comparable query vector. **Thread 22's dependency, not Thread
+  20's** — 20 reads document vectors and needs nothing from this.
+  _Exit: pytest embeds text and gets a vector whose `model` and `dimensions` match
+  the document embeddings' declaration; the same text embeds identically twice._
 
 **First-pass classification** (each stage an independent function — no orchestrator)
 
@@ -332,7 +339,8 @@ test.
   unused (fake asserts zero calls)._
 
 - **Thread 22 — Retrieval classification.** Nearest-neighbour of chunk vectors
-  against topic definitions.
+  against topic definitions. Needs both 20 (the chunk vectors) and 20a (the query
+  vector).
   _Exit: a fixture corpus classifies with no trained adapter and no samples._
 
 - **Thread 23 — LLM adjudication + rationale.** Only for what retrieval left
@@ -558,9 +566,10 @@ duplicated here._
 | 17 — `Topic` + `Lens` entities | L | domain | ✅ **done** | Durable tier restored; lens has no `evaluationId`. Locked [ADR-0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md). [thread-17](./threads/thread-17-topic-and-lens-entities.md) |
 | 18 — `HardRule` + evaluation | L | domain | ✅ **done** | Deterministic pre-model stage; a gap is an outcome, not an error. Locked [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md). [thread-18](./threads/thread-18-hard-rule-entity-and-evaluation.md) |
 | 19 — Sidecar embeddings endpoint | L | womblex-ingest | ✅ **done** | Vectors ship as JSON floats on a sibling resource, absent independently of the extraction. Locked [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) (precondition), closing open question #1. [thread-19](./threads/thread-19-sidecar-embeddings-endpoint.md) |
-| 20 — `IEmbeddingReader` + adapter | L | domain, adapters | 🔵 **next** | Wire format settled. Scope grew: also owes the text-embedding endpoint, `Float32Array` parsing and per-evaluation caching (ADR-0014). |
+| 20 — `IEmbeddingReader` + adapter | L | domain, adapters | 🔵 **next** | Wire format settled. `Float32Array` + per-evaluation caching are binding (ADR-0014). |
+| 20a — Sidecar text-embedding endpoint | L | womblex-ingest | ⚪ not started | Surfaced by ADR-0014; blocks 22, not 20. |
 | 21 — Hard-rule pre-pass | L | application | ⚪ not started | Needs 18. |
-| 22 — Retrieval classification | L | application, adapters | ⚪ not started | Needs 20. First demo point. |
+| 22 — Retrieval classification | L | application, adapters | ⚪ not started | Needs 20 **and** 20a. First demo point. |
 | 23 — LLM adjudication + rationale | L | domain, application | ⚪ not started | Open question #2. |
 | 24 — Ambiguity signals + buckets | L | domain | ⚪ not started | Thresholds unmeasured (open question #5). |
 | 25 — Document Map read model | L | application | ⚪ not started | Reuses `computePivot`. |

@@ -147,10 +147,11 @@ stretched.
 - **This does not, by itself, give Thread 22 a comparable query vector.** Matching
   chunk vectors against topic definitions requires those definitions embedded in
   the *same* space, and redline's TypeScript has no embedding model — so the
-  sidecar still owes a text-embedding endpoint. That is a gap in the Thread 20/22
-  plan rather than a consequence of this ADR (it exists under the server-side
-  alternative too), but it is recorded here because this decision is what makes it
-  unavoidable: **Thread 20's scope must carry it.**
+  sidecar still owes a text-embedding endpoint. That is a gap in the plan rather
+  than a consequence of this ADR (it exists under the server-side alternative
+  too), but it is recorded here because this decision is what makes it
+  unavoidable. It is **Thread 20a**, a sidecar thread blocking Thread 22 — not
+  Thread 20, which reads document vectors and needs nothing from it.
 
 **Re-entry condition.** Revisit when a real corpus has been measured. Both
 alternatives below remain reachable *additively* on this same resource — an
