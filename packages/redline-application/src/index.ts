@@ -30,6 +30,14 @@ export type {
   ClassifyWithHardRulesInput,
 } from "./use-cases/classify-with-hard-rules";
 
+// Comprehension lens — first-pass classification (Thread 22). Model-free
+// retrieval: rank chunk vectors against topic definitions by cosine similarity.
+export { ClassifyByRetrieval } from "./use-cases/classify-by-retrieval";
+export type {
+  ClassifyByRetrievalDependencies,
+  ClassifyByRetrievalInput,
+} from "./use-cases/classify-by-retrieval";
+
 export { ExtractFinancials } from "./use-cases/extract-financials";
 export type { ExtractFinancialsDependencies } from "./use-cases/extract-financials";
 

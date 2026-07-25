@@ -30,3 +30,27 @@ from womblex_ingest.extraction import StubWomblexExtractor
 result = StubWomblexExtractor().extract("eval-9", ["tender.pdf"])
 print(json.dumps(result.embeddings[0].to_json(), indent=2))
 ```
+
+## `query-embedding.json`
+
+A capture of the sidecar's **query** seam (ADR-0014, Thread 20a) — the body of
+
+```
+POST /embeddings/query  {"text": "network security controls"}
+```
+
+against the deterministic stub text embedder. It is the contract the
+`WomblexTextEmbedder` maps into the domain's `QueryEmbedding` (`values` parsed
+into `Float32Array`). It is chunk-free — a query is never persisted and carries no
+join key — and declares the *same* `model`/`dimensions` as the chunk vectors and
+crosses L2-normalised, which is what lets Thread 22 rank chunks against a topic
+definition by dot product.
+
+Regenerate from `services/womblex-ingest`:
+
+```python
+import json
+from womblex_ingest.embedding import StubTextEmbedder
+
+print(json.dumps(StubTextEmbedder().embed("network security controls").to_json(), indent=2))
+```
