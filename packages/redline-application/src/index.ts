@@ -22,6 +22,14 @@ export type {
 export { ClassifyResponseGroup } from "./use-cases/classify-response-group";
 export type { ClassifyResponseGroupDependencies } from "./use-cases/classify-response-group";
 
+// Comprehension lens — first-pass classification (Thread 21). The deterministic
+// hard-rule pre-pass that resolves before, and in front of, the model.
+export { ClassifyWithHardRules } from "./use-cases/classify-with-hard-rules";
+export type {
+  ClassifyWithHardRulesDependencies,
+  ClassifyWithHardRulesInput,
+} from "./use-cases/classify-with-hard-rules";
+
 export { ExtractFinancials } from "./use-cases/extract-financials";
 export type { ExtractFinancialsDependencies } from "./use-cases/extract-financials";
 
