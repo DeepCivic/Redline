@@ -1,6 +1,7 @@
 # ADR-0001 — Adapter over Wayfinder (not a fork) + Strategy A consumption
 
-- **Status**: Accepted
+- **Status**: Accepted (Strategy A's mechanics amended by
+  [ADR-0012](./0012-wayfinder-is-pinned-and-optional.adr.md), 2026-07-25)
 - **Date**: 2026-07-23
 
 ## Context
@@ -66,8 +67,12 @@ schemas. This mirrors Wayfinder ADR-001/ADR-003.
 
 **Negative**
 
-- Contributors must initialise the submodule (`git submodule update --init`)
-  before `pnpm install`, or `@rbrasier/domain` will not resolve.
+- ~~Contributors must initialise the submodule (`git submodule update --init`)
+  before `pnpm install`, or `@rbrasier/domain` will not resolve.~~ **Amended by
+  ADR-0012:** there is no submodule (one was never registered, and a real one
+  would drag Wayfinder's whole package set into our workspace). Wayfinder is
+  materialised from the commit in `wayfinder.pin` and is an *optional*
+  dependency, so `pnpm install` succeeds without it.
 - Two package scopes coexist in one workspace (`@redline/*` and
   `@rbrasier/*`); tooling must ignore `vendor/**` for lint/format.
 
@@ -78,9 +83,13 @@ schemas. This mirrors Wayfinder ADR-001/ADR-003.
 - ESLint restricts `packages/redline-domain/src/**` to relative imports only
   (domain stays framework-free), mirroring Wayfinder's ADR-001 enforcement.
 - ESLint ignores `vendor/**` — we never lint or reformat Wayfinder's tree.
-- **Thread 1 exit test** (`packages/redline-domain/src/wayfinder-spike.test.ts`)
+- ~~**Thread 1 exit test** (`packages/redline-domain/src/wayfinder-spike.test.ts`)
   imports and runs `typedDisplayCell` from `@rbrasier/domain`, proving Strategy A
-  end to end.
+  end to end.~~ **Superseded by ADR-0012:** the proof is now
+  `packages/redline-adapters/src/wayfinder/wayfinder-contract.test.ts`, which
+  re-derives every reused value from upstream and covers strictly more. It lives
+  in adapters because that is the layer CLAUDE.md sanctions for Wayfinder reuse;
+  `redline-domain` is zero-dependency again.
 
 ## Alternatives considered
 

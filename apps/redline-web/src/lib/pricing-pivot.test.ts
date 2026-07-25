@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { computePivot, type PivotColumn, type FieldReportSessionRow } from "@rbrasier/domain";
 import type { ProcurementResponse } from "@redline/redline-domain";
 import { PricingPivot, PIVOT_AXES } from "./pricing-pivot";
 
@@ -8,10 +7,11 @@ import { PricingPivot, PIVOT_AXES } from "./pricing-pivot";
 // rolls the Thread 10/12 ProcurementResponse[] up per brand, per requirement,
 // and brand×requirement, summing/averaging the real-number estimateAud (Thread
 // 8/10). The exit criterion is "pivot matches hand-computed totals on a
-// fixture" — proven below, and cross-checked against Wayfinder's own
-// `computePivot` (the read-only reuse §9 / ADR-0006 calls for; the assertion is
-// test-only, so the app keeps its allowed production dependency set exactly as
-// Thread 12 did with `typedDisplayCell`).
+// fixture" — proven below. That Wayfinder's own `computePivot` agrees with
+// these totals on the same data (the read-only reuse §9 / ADR-0006 calls for) is
+// asserted in redline-adapters' wayfinder-contract.test.ts, where the seam
+// lives: this fixture's projection and its expected roll-up are frozen there
+// (ADR-0012), so this suite needs no vendored Wayfinder.
 
 const response = (over: Partial<ProcurementResponse> = {}): ProcurementResponse => ({
   evaluationId: "eval-1",
@@ -109,34 +109,20 @@ describe("PricingPivot", () => {
     expect(result.grandTotal).toEqual({ value: 0, sampleCount: 0 });
   });
 
-  it("matches Wayfinder's computePivot on the same data (read-only reuse, test-only)", () => {
+  it("matches the frozen Wayfinder roll-up on the same data (read-only reuse)", () => {
     // The reuse the plan §9 names: our pivot must agree with Wayfinder's engine
-    // when the ProcurementResponse[] is projected onto its FieldReportSessionRow
-    // shape. This pins the contract on both sides without importing Wayfinder
-    // into production app code.
-    const columns: PivotColumn[] = [
-      { columnKey: "vendorName", label: "Vendor", type: "text", memberKeys: ["vendorName"] },
-      { columnKey: "estimateAud", label: "Estimate (AUD)", type: "currency", memberKeys: ["estimateAud"] },
-    ];
-    const wayfinderRows: FieldReportSessionRow[] = fixture.map((response, index) => ({
-      sessionId: `row-${index}`,
-      startedAt: new Date(0),
-      status: "complete",
-      values: {
-        vendorName: response.vendorName,
-        estimateAud: response.costing.estimateAud === null ? "" : String(response.costing.estimateAud),
-      },
-    }));
-    const expected = computePivot(wayfinderRows, {
-      columns,
-      groupByKey: "vendorName",
-      measure: { kind: "sum", columnKey: "estimateAud" },
-    });
-
+    // when the ProcurementResponse[] is projected onto its session-row shape.
+    // These are the values Wayfinder's computePivot produces for exactly this
+    // fixture, frozen in WAYFINDER_PIVOT_CONTRACT and re-derived from upstream
+    // by the drift check — so the contract is pinned on both sides without this
+    // app importing Wayfinder at all.
     const ours = new PricingPivot(fixture).compute({ axis: "brand", measure: "sum" });
-    expect(ours.rows.map((row) => ({ key: row.key, value: row.total.value }))).toEqual(
-      expected.rows.map((row) => ({ key: row.key, value: row.total.value })),
-    );
-    expect(ours.grandTotal.value).toBe(expected.grandTotal.value);
+
+    expect(ours.rows.map((row) => ({ key: row.key, value: row.total.value }))).toEqual([
+      { key: "Initech", value: 3000 },
+      { key: "Globex", value: 2000 },
+      { key: "Acme", value: 1500 },
+    ]);
+    expect(ours.grandTotal).toEqual({ value: 6500, sampleCount: 4 });
   });
 });

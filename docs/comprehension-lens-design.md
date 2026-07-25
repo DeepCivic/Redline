@@ -422,7 +422,8 @@ test.
   _Exit: full pipeline runs with `ISAACUS_API_KEY` unset._
 
 - **Thread 16 — Workspace extraction & release prep.** Standalone workspace;
-  sever the submodule seam; graft the financial overlay onto the vendored fork
+  sever the remaining vendoring seam (ADR-0012 pinned it and made it optional);
+  graft the financial overlay onto the vendored fork
   (Threads 6–8 mechanical wiring); CI, compose docs, README.
   _Exit: builds and runs standalone; validate script green._
 

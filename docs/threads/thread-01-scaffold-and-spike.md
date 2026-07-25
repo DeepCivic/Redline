@@ -20,7 +20,9 @@ unpublished `@rbrasier/domain` package.
   Wayfinder packages are never built/linted/tested by us.
 - `pnpm-workspace.yaml` — `apps/*`, `packages/*`, and the seam `vendor/wayfinder/packages/*`.
 - `turbo.json`, `tsconfig.base.json`, `tsconfig.json`, `.prettierrc`, `.gitignore`,
-  `.gitmodules` (Wayfinder submodule → DeepCivic remote).
+  `.gitmodules` (Wayfinder submodule → DeepCivic remote). **Superseded** by
+  [thread-01a](./thread-01a-wayfinder-seam-pin-and-optional.md) / ADR-0012:
+  `.gitmodules` is deleted and the tree is pinned by `wayfinder.pin`.
 - `eslint.config.mjs` — flat config; `redline-domain` non-test source restricted to
   relative imports; `vendor/**` ignored.
 

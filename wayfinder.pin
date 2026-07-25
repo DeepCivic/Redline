@@ -1,0 +1,22 @@
+# The Wayfinder commit redline is built and tested against.
+#
+# Wayfinder is consumed read-only (ADR-0001) and never committed here
+# (validate.sh check #6): CI and local dev *materialise* it into vendor/wayfinder
+# via scripts/vendor-wayfinder.sh. This file is what makes that materialisation
+# reproducible — without it CI tracked a moving `main`, so an upstream commit
+# could turn redline red with nothing changed on our side, and no SHA to bisect.
+#
+# Why a pin file and not a git submodule: a submodule checkout puts *all* of
+# Wayfinder's packages under vendor/wayfinder/packages/*, which our pnpm
+# workspace glob would absorb — dragging @huggingface/transformers, the
+# OpenTelemetry SDK, minio, docx and pdf-parse into redline's install. The
+# vendoring script deliberately copies only the one package we consume
+# (WAYFINDER_PACKAGES, default: domain). See ADR-0012.
+#
+# To bump: change ref below, re-run scripts/vendor-wayfinder.sh, then
+# `pnpm install && ./validate.sh`. The drift check
+# (packages/redline-adapters/src/wayfinder/wayfinder-contract.test.ts) is what
+# tells you whether the new commit still satisfies the contract redline reuses.
+
+repo=rbrasier/wayfinder
+ref=d3c2f4e7d561df9528a6a9ffa840a1fe965e1215

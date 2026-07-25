@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { typedDisplayCell } from "@rbrasier/domain";
 import type { ProcurementResponse } from "@redline/redline-domain";
 import { ReviewGrid } from "./review-grid";
 import { PricingPivot } from "./pricing-pivot";
@@ -66,10 +65,10 @@ describe("buildReviewSheetData", () => {
     const estimateCell = firstBody[5];
     expect(estimateCell).toEqual({ value: 1000, type: Number });
 
-    // Cross-check the numeric contract against Wayfinder's own helper (§9).
-    const typed = typedDisplayCell("currency", "1000");
-    expect(typed.isNumeric).toBe(true);
-    expect(typed.value).toBe(1000);
+    // The matching Wayfinder cell — typedDisplayCell("currency", "1000") →
+    // { value: 1000, isNumeric: true } — is asserted against the real helper in
+    // redline-adapters' wayfinder-contract.test.ts (ADR-0012), so this suite
+    // runs with no vendored Wayfinder present.
   });
 
   it("writes a blank cell (null) for a null estimate — never a misleading 0", () => {

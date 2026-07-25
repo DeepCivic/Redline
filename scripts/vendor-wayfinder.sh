@@ -20,10 +20,25 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WAYFINDER_DIR="${WAYFINDER_DIR:-$REPO_ROOT/../wayfinder}"
 WAYFINDER_PACKAGES="${WAYFINDER_PACKAGES:-domain}"
 
+# The pinned commit (wayfinder.pin) is the reference redline is built against.
+PIN_FILE="$REPO_ROOT/wayfinder.pin"
+PINNED_REF="$(grep -E '^ref=' "$PIN_FILE" 2>/dev/null | cut -d= -f2)"
+PINNED_REPO="$(grep -E '^repo=' "$PIN_FILE" 2>/dev/null | cut -d= -f2)"
+
 if [ ! -d "$WAYFINDER_DIR/packages/domain" ]; then
   echo "ERROR: Wayfinder checkout not found at: $WAYFINDER_DIR" >&2
   echo "Set WAYFINDER_DIR=/path/to/wayfinder and re-run." >&2
+  echo "The pinned source is $PINNED_REPO @ $PINNED_REF (see wayfinder.pin)." >&2
   exit 1
+fi
+
+# Vendoring from an unpinned checkout is allowed — it is how you test an
+# upstream bump — but it must never be silent, because the drift check's verdict
+# then describes a commit the pin does not name.
+SOURCE_REF="$(git -C "$WAYFINDER_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")"
+if [ -n "$PINNED_REF" ] && [ "$SOURCE_REF" != "$PINNED_REF" ]; then
+  echo "WARNING: vendoring Wayfinder at $SOURCE_REF, which is not the pinned $PINNED_REF." >&2
+  echo "         Update wayfinder.pin if this bump is intended." >&2
 fi
 
 DEST="$REPO_ROOT/vendor/wayfinder"

@@ -74,13 +74,16 @@ without settling it, and writing the evaluation forced the answer.
 
 ## Exit-test evidence
 
-The workspace still cannot be installed as-is in this container: `vendor/wayfinder`
-is absent, so `@rbrasier/domain@workspace:*` does not resolve and `pnpm install`
-fails at the root — checks 1–3 of `./validate.sh` fail identically on the
-unmodified tree (verified before any code was written, exactly as in Thread 17).
-Unlike Thread 17's container this host *does* have Node 22 + pnpm, so the suite
-ran natively against an isolated copy of `packages/redline-domain` with the one
-Wayfinder-dependent file (`src/wayfinder-spike.test.ts`, 3 tests) excluded:
+At the time this thread was built the workspace could not be installed —
+`vendor/wayfinder` was absent, so `@rbrasier/domain@workspace:*` did not resolve
+and `pnpm install` failed at the root, exactly as in Thread 17. The suite
+therefore ran against an isolated copy of `packages/redline-domain`.
+
+**That gap is now closed** by
+[thread-01a](./thread-01a-wayfinder-seam-pin-and-optional.md) / ADR-0012, and
+these numbers have since been re-verified on the real workspace via
+`./validate.sh` (11/11 checks, `Failed: 0`) — both with the pinned Wayfinder tree
+vendored and with no Wayfinder present at all:
 
 ```
 vitest run → Test Files 11 passed (11) · Tests 95 passed (95)
@@ -110,16 +113,16 @@ specifically:
 | no-match | `hard-rule-evaluation.test.ts` → no matching rule, empty rule set, and no subjects each yield `{ kind: "unclaimed" }` — never an error |
 | pure, no I/O | Nothing imported beyond `./hard-rule`; purity check #4 PASS; a test asserts repeated evaluation is identical and mutates neither input |
 
-`./validate.sh` on the real tree: **checks 4–11 PASS** (8 passed, including #4
-domain purity, #8 no focused tests, #9 file size, and both Python suites);
-checks 1–3 fail for the environment reason above, exactly as they do on `main`.
+`./validate.sh` on the real tree: **11/11 PASS** since thread-01a landed the
+pinned, optional Wayfinder seam. When Thread 18 was written it was checks 4–11
+passing with 1–3 failing for the install reason above.
 
 ## Known limitations / follow-ups
 
-1. **`validate.sh` still cannot run green in this container.** Unchanged from
-   Thread 17 follow-up 1, and now slightly sharper: this host has Node, so the
-   *only* thing standing between the workspace and a green run is the absent
-   `vendor/wayfinder` needed by two spike tests. Worth its own thread.
+1. ~~**`validate.sh` still cannot run green in this container.**~~ **Resolved**
+   by [thread-01a](./thread-01a-wayfinder-seam-pin-and-optional.md): Wayfinder is
+   pinned and optional, so `pnpm install && ./validate.sh` is green with or
+   without it.
 2. **Rules are not attached to a `Lens`.** Deliberate (above); Thread 29.
 3. **No explicit priority field.** ADR-0011 accepts specificity as the only
    precedence axis; an optional `priority` ahead of it is additive if real use

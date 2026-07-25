@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { typedDisplayCell } from "@rbrasier/domain";
 import type { ProcurementResponse } from "@redline/redline-domain";
 import { ReviewGrid, REVIEW_COLUMNS } from "./review-grid";
 
@@ -40,13 +39,13 @@ describe("ReviewGrid", () => {
     });
   });
 
-  it("marks the currency cell numeric via typedDisplayCell and keeps a real number sort key", () => {
+  it("marks the currency cell numeric and keeps a real number sort key", () => {
     const grid = new ReviewGrid([response({ costing: { estimateAud: 1500.5, description: "" } })]);
     const cell = grid.all()[0].cells.estimateAud;
 
-    // The exit criterion — currency is numeric, consistent with the reused
-    // Wayfinder helper the export path (Thread 14) needs.
-    expect(typedDisplayCell("currency", "1500.5")).toEqual({ value: 1500.5, isNumeric: true });
+    // The exit criterion — currency is numeric, consistent with the Wayfinder
+    // helper the export path (Thread 14) needs. That the helper still agrees is
+    // asserted once, in redline-adapters' wayfinder-contract.test.ts (ADR-0012).
     expect(cell.isNumeric).toBe(true);
     expect(cell.sortValue).toBe(1500.5);
     expect(cell.display).toContain("1,500.5");
