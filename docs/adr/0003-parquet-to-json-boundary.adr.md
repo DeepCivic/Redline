@@ -1,7 +1,10 @@
 # ADR-0003 — The womblex extraction boundary is JSON (sidecar reads Parquet, serves JSON)
 
-- **Status**: Accepted
+- **Status**: Accepted — amended by [ADR-0014](./0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md)
 - **Date**: 2026-07-25
+- **Amended by**: [ADR-0014](./0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md)
+  — the read seam is two document-scoped resources, not one: `/extractions`
+  (below) and its `/embeddings` sibling. Everything else here stands unchanged.
 
 ## Context
 

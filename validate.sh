@@ -231,6 +231,38 @@ else
   find "$FIN_EXT" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
+# ── 12. pnpm-lock.yaml was resolved against the vendored Wayfinder tree ──────
+# pnpm-workspace.yaml globs vendor/wayfinder/packages/* into the workspace, but
+# vendor/ is never committed (check #6) — so the lockfile is a function of state
+# that is deliberately absent from the repo. `pnpm install` WITHOUT vendoring
+# first silently drops the vendor/wayfinder/packages/domain importer and flips its
+# transitive deps to `optional`; committing that fails CI's --frozen-lockfile
+# install for a reason that has nothing to do with the change under review.
+#
+# The invariant is the lockfile's *content*, not its git status: a legitimate
+# dependency bump may rewrite it freely, so long as it was resolved with the tree
+# vendored. Fix by materialising Wayfinder and re-installing:
+#   scripts/vendor-wayfinder.sh && pnpm install
+# then `git checkout -- pnpm-lock.yaml` if you only meant to install.
+# Scoped to a lockfile that BOTH lacks the importer AND differs from HEAD, so it
+# fires on the rewrite and not on a repo that legitimately carries no Wayfinder
+# importer at all. ADR-0012's "green without Wayfinder" therefore still holds for
+# a clean clone — right up until an unvendored install rewrites the lockfile,
+# which is precisely the state that must not be committed.
+section "12. pnpm-lock.yaml was not rewritten by an unvendored install"
+LOCKFILE_IMPORTER='^  vendor/wayfinder/packages/[a-z-]+:'
+if [ ! -f pnpm-lock.yaml ]; then
+  skip "lockfile — no pnpm-lock.yaml"
+elif grep -qE "$LOCKFILE_IMPORTER" pnpm-lock.yaml; then
+  pass "lockfile resolved against the vendored tree"
+elif ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  skip "lockfile — git unavailable to compare against HEAD"
+elif git diff --quiet -- pnpm-lock.yaml 2>/dev/null; then
+  pass "lockfile has no Wayfinder importer, but matches HEAD — not a local rewrite"
+else
+  fail "pnpm-lock.yaml was rewritten without the vendored Wayfinder tree (the vendor/wayfinder importer is gone). Do not commit it: run 'git checkout -- pnpm-lock.yaml', or vendor first ('scripts/vendor-wayfinder.sh && pnpm install') if you meant to change dependencies"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo; echo "──────────────────────────────────────────"
 echo "Passed:  $PASS"; echo "Failed:  $FAIL"; echo "Skipped: ${#SKIPPED_CHECKS[@]}"

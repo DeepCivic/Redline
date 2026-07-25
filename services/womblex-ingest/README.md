@@ -29,17 +29,54 @@ cells are normalised into the camelCase wire shape the domain's
 | `POST /ingest`       | `{ "evaluationId": string, "documentNames": string[] }` | `202 { runId, status, documentCount, shardKeys }` |
 | `GET /status/{run_id}` | —                                            | `200 { runId, evaluationId, status, documentCount, shardKeys, error }` |
 | `GET /extractions/{evaluationId}/{documentId}` | —                          | `200 { documentId, elements[], chunks[], tableCells[] }` |
+| `GET /embeddings/{evaluationId}/{documentId}` | —                           | `200 { documentId, model, dimensions, vectors[] }` |
 
 Errors cross the boundary Result-shaped — `{ "error": { "code", "message" } }` —
 so the Thread 4 adapter maps them straight into a redline `DomainError`. Codes:
 `INVALID_REQUEST` (422), `RUN_NOT_FOUND` (404), `NOT_FOUND` (404, unknown
-extraction), `EXTRACTION_FAILED` (502).
+extraction *or* unknown embeddings), `EXTRACTION_FAILED` (502).
 
 Shards land under `proc/{evaluationId}/` in the `REDLINE_BUCKET` bucket, e.g.
 `proc/eval-42/_manifest.parquet`, `proc/eval-42/tender.pdf.elements.parquet`. The
-JSON read model is stored beside them as
-`proc/{evaluationId}/{documentId}.extraction.json`, so `GET /extractions/...`
-survives a sidecar restart (MinIO is the durable record, per ADR-0002).
+JSON read models are stored beside them as
+`proc/{evaluationId}/{documentId}.extraction.json` and
+`…​.embeddings.json`, so both read seams survive a sidecar restart (MinIO is the
+durable record, per ADR-0002).
+
+## The embeddings seam (Thread 19)
+
+[ADR-0014](../../docs/adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md)
+widens the JSON boundary to a second, **sibling** resource carrying womblex's
+`*.embeddings.parquet` — one vector per chunk:
+
+```json
+{
+  "documentId": "<source_hash>",
+  "model": "stub-deterministic-v1",
+  "dimensions": 8,
+  "vectors": [{ "chunkId": "<source_hash>:0", "chunkIndex": 0, "values": [0.37, …] }]
+}
+```
+
+- **A sibling, not a field on `/extractions`.** The embed stage is an optional
+  overlay, so the two resources are absent **independently**: a document with no
+  embed stage keeps serving its extraction while `GET /embeddings/...` returns
+  `NOT_FOUND`. Folding vectors into the extraction would also make the Thread 4
+  adapter pay megabytes for data it never reads.
+- **`chunkId` is the join key** — `"{source_hash}:{chunk_index}"`, the same
+  identity `ChunkRecord` carries — with `chunkIndex` repeating the ordinal so a
+  consumer can join on `(source_hash, chunk_index)` without parsing the key.
+- **Vectors cross L2-normalised**, so a consumer's cosine similarity is a dot
+  product, and the payload **declares its `model`** — vectors from different
+  models are incomparable, and a consumer matching topic definitions must embed
+  them in the same space or refuse.
+- `make_document_embeddings` in `records.py` is the only constructor, so those
+  guarantees hold by construction rather than by convention.
+
+Consumers should note the wire cost — a 768-dimension vector is ~15 kB as JSON
+text against ~3 kB packed. The vectors are immutable and content-addressed, so
+the Thread 20 adapter is expected to parse into `Float32Array` and cache per
+evaluation rather than re-fetching per run.
 
 ## Extraction modes
 
@@ -87,7 +124,7 @@ podman compose -f ../../infra/docker-compose.yml --profile ingest down -v
 ```sh
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[dev]'
-python -m pytest -q            # 17 tests: HTTP surface, run lifecycle, JSON read seam, stub extractor
+python -m pytest -q            # 37 tests: HTTP surface, run lifecycle, both JSON read seams, stub extractor
 ```
 
 Tests use in-memory fakes for both seams (object storage + womblex), so no MinIO
