@@ -26,18 +26,44 @@ Consequences to know:
 
 - **Commit the lockfile with any dependency change.** A `package.json` edit that
   leaves `pnpm-lock.yaml` unstaged is an incomplete commit.
-- **CI installs with `--prefer-frozen-lockfile`, not `--frozen-lockfile`** (which
-  pnpm enables by default when `CI=true`). The lockfile contains an importer for
-  `vendor/wayfinder/packages/domain`, materialised from Wayfinder at
-  `WAYFINDER_REF` (default `main`). A dependency bump in *Wayfinder's* repo would
-  staleness-fail a strict install and turn our CI red for someone else's commit.
-  The tolerant flag re-resolves in that case instead of failing.
-- **Upgrade to `--frozen-lockfile` when `WAYFINDER_REF` is pinned to a SHA.** That
-  makes the vendored tree deterministic, at which point strictness costs nothing.
+- **CI installs with `--frozen-lockfile`.** Since ADR-0012, `wayfinder.pin` fixes
+  the vendored tree to one commit, so the importer for
+  `vendor/wayfinder/packages/domain` is deterministic and strictness costs
+  nothing. (Before the pin this had to be `--prefer-frozen-lockfile`, because a
+  dependency bump on Wayfinder's moving `main` staleness-failed a strict install
+  and turned our CI red for someone else's commit.)
 
-Regenerate after changing dependencies:
+### The vendoring trap — read this before running `pnpm install`
+
+`pnpm-workspace.yaml` globs `vendor/wayfinder/packages/*` into the workspace, but
+`vendor/` is **never committed** (check #6). The lockfile is therefore a function
+of state that is deliberately absent from the repo, and the same command produces
+two different results:
+
+| `pnpm install` run… | `vendor/wayfinder/packages/domain` importer | transitive deps |
+|---|---|---|
+| **with** the tree vendored | present | normal |
+| **without** it | silently dropped | flipped to `optional: true` |
+
+**The committed lockfile is the vendored one**, because that is what CI's
+`--frozen-lockfile` install expects. A bare `pnpm install` on a machine with no
+vendored tree rewrites it into the other state; committing that fails CI for a
+reason unrelated to your change.
+
+`validate.sh` check #12 catches it. If it fires:
 
 ```bash
+scripts/vendor-wayfinder.sh   # materialise the pinned tree (needs a checkout)
+pnpm install                  # re-resolve against it
+```
+
+…or, if you only meant to install and changed no dependencies,
+`git checkout -- pnpm-lock.yaml`.
+
+Regenerate after genuinely changing dependencies — **vendor first**:
+
+```bash
+scripts/vendor-wayfinder.sh
 pnpm install           # updates pnpm-lock.yaml
 git add pnpm-lock.yaml
 ```
@@ -105,11 +131,13 @@ checkout is never written to. Point `WAYFINDER_DIR` at your Wayfinder checkout
 | 8 | no committed `.only` tests | no |
 | 9 | source file size (warn ≥ 700, fail ≥ 800) | no |
 | 10 | `services/womblex-ingest` pytest (isolated venv) | needs Python 3 |
+| 11 | `services/numbatch/financial_extension` pytest (isolated venv) | needs Python 3 |
+| 12 | `pnpm-lock.yaml` carries the vendored Wayfinder importer | no |
 
-Static checks (4–9) always run on the host. If neither local Node nor Podman is
-available, the Node-dependent checks (1–3) `SKIP` — and the run **exits 2**, not
-0, so a change is never mistaken as shippable until those checks have run green
-somewhere (locally or in CI).
+Static checks (4–9, 12) always run on the host. If neither local Node nor Podman
+is available, the Node-dependent checks (1–3) `SKIP` — and the run **exits 2**,
+not 0, so a change is never mistaken as shippable until those checks have run
+green somewhere (locally or in CI).
 
 ## C. Continuous integration (GitHub Actions)
 
@@ -146,6 +174,12 @@ failure rather than a skip.
 > (it drops the `vendor/wayfinder/packages/domain` importer, ~45 lines). That diff is a
 > local artefact of your environment — do not commit it. The committed lockfile is the
 > one CI uses, generated with the tree present.
+>
+> **check #12 enforces this**, so the "green without Wayfinder" promise is precisely:
+> green on a clean clone, and green after an unvendored `pnpm install` *once you
+> revert the lockfile* (`git checkout -- pnpm-lock.yaml`). The check compares against
+> `HEAD` rather than looking for the importer outright, so it fires on the rewrite and
+> never on a tree that simply has no Wayfinder importer committed.
 
 ### CI configuration (repo variables / secrets)
 
