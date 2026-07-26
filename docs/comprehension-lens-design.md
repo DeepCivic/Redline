@@ -5,7 +5,7 @@
 > (deprecated; retained as delivery history for Threads 1–11).
 >
 > This is the living delivery document. It carries the new **comprehension lens**
-> track *and* the outstanding procurement scope the old plan had not yet built.
+> track _and_ the outstanding procurement scope the old plan had not yet built.
 
 ---
 
@@ -24,11 +24,11 @@ to build and what the engines actually do.
 
 Numbatch is built on a deliberate **two-tier** split (`docs/DATA_MODEL.md`):
 
-| Tier | Tables | Lifetime |
-|---|---|---|
-| **Library** | `topics`, `topic_samples`, `feedback_corrections` | durable, org-scoped, shared across profiles |
-| **Bundle** | `profiles`, `profile_topics`, `profile_samples` | disposable, per-use |
-| **Results** | `chunk_classifications`, `document_classifications` | ephemeral (30-day purge) |
+| Tier        | Tables                                              | Lifetime                                    |
+| ----------- | --------------------------------------------------- | ------------------------------------------- |
+| **Library** | `topics`, `topic_samples`, `feedback_corrections`   | durable, org-scoped, shared across profiles |
+| **Bundle**  | `profiles`, `profile_topics`, `profile_samples`     | disposable, per-use                         |
+| **Results** | `chunk_classifications`, `document_classifications` | ephemeral (30-day purge)                    |
 
 redline's `Requirement` + `RequirementSet` (`packages/redline-domain/src/entities/requirement.ts`)
 is a flattened projection of **one profile, scoped to one evaluation**. The
@@ -59,10 +59,10 @@ pipeline is chunks → LoRA adapter → roll-up.
 
 womblex has a complete embedding stage:
 
-- `src/womblex/analyse/embed_stage.py` — *"Consumes `*.chunks.parquet` … writes a
+- `src/womblex/analyse/embed_stage.py` — _"Consumes `*.chunks.parquet` … writes a
   `*.embeddings.parquet` sibling per batch — one vector per chunk, joinable back
   on `(source_hash, chunk_index, content_type)`. Chunks are the right granularity
-  for retrieval."*
+  for retrieval."_
 - `EMBEDDINGS_SCHEMA`, `embeddings_path_for()` — `src/womblex/store/output.py:168`
 - A first-class composable operation: `embed(chunks) → list[Embedding]`
 
@@ -72,8 +72,8 @@ we are not yet reading, not a service to build.**
 ### Finding 3 — the zero-example promise collides with the training floor
 
 `MIN_SAMPLES_PER_TOPIC = 10` (`backend/app/models/profile.py:23`), enforced at
-train time (`backend/app/services/training_jobs.py:85`: *"Every topic needs at
-least 10 unique samples"*). A definition-only profile **cannot be trained**.
+train time (`backend/app/services/training_jobs.py:85`: _"Every topic needs at
+least 10 unique samples"_). A definition-only profile **cannot be trained**.
 
 Any workflow promising "write a definition paragraph, get a mapped corpus, no
 examples" therefore cannot reach Numbatch's classifier on its first pass. This is
@@ -102,12 +102,12 @@ The lens is the durable asset. Everything else is disposable infrastructure.
 
 ### Relationship to procurement
 
-**Procurement evaluation remains the purpose.** The lens is the *means*: a more
+**Procurement evaluation remains the purpose.** The lens is the _means_: a more
 composable design that puts a usable solution in a specialist's hands sooner,
 because the sorting loop works before any classifier is trained, before costing,
 and before the grid.
 
-A procurement *requirement* is a lens *topic*; a `RequirementSet` is a lens bound
+A procurement _requirement_ is a lens _topic_; a `RequirementSet` is a lens bound
 to an evaluation. The review grid, pricing pivots, and Excel export (Threads
 12–14) sit on top unchanged.
 
@@ -115,7 +115,7 @@ to an evaluation. The review grid, pricing pivots, and Excel export (Threads
 > procurement evaluation; the comprehension lens is the composable architecture
 > that delivers it sooner, not a separate product goal. Generalising the lens
 > beyond procurement is **not a goal** — it is a property the design happens to
-> have, and it is not to be pursued at procurement's expense. *Consequence:* the
+> have, and it is not to be pursued at procurement's expense. _Consequence:_ the
 > repo identity stays procurement-first; the lens describes how it is built.
 
 ---
@@ -126,19 +126,19 @@ womblex's composable design is the model we adopt, deliberately and in detail.
 Its lessons, and how each lands here:
 
 **Stages communicate through persisted, joinable sidecars — never an
-orchestrator.** womblex *had* a stage registry and deleted it
+orchestrator.** womblex _had_ a stage registry and deleted it
 (`docs/composable-design.md:7`: the orchestrator, `STAGE_REGISTRY`,
 `_resolve_stages` and `config.stages` "have been removed. Operations are
-independent functions that callers compose directly"). *A stage invoked on its
-own must not depend on which stages ran before — only on what is on disk.*
+independent functions that callers compose directly"). _A stage invoked on its
+own must not depend on which stages ran before — only on what is on disk._
 
 → Lens operations are independent functions over shards joinable on
 `source_hash` (+ `chunk_index`). No lens orchestrator. Note the surviving
-registries in Numbatch (roll-up strategy, model family) are *strategy selection*,
+registries in Numbatch (roll-up strategy, model family) are _strategy selection_,
 a different and legitimate pattern.
 
-**The base is verbatim and never rewritten.** *"The extraction shard is verbatim
-and never rewritten; every downstream mutation … is a separate sibling parquet."*
+**The base is verbatim and never rewritten.** _"The extraction shard is verbatim
+and never rewritten; every downstream mutation … is a separate sibling parquet."_
 
 → Classifications and resolutions are additive sibling overlays. A boundary
 decision never mutates the extraction record.
@@ -146,12 +146,12 @@ decision never mutates the extraction record.
 **A missing overlay falls back — ordering, not dependency.** `chunk` reuses
 `enrich`'s sidecar when present and self-enriches when absent.
 
-→ **This resolves Finding 3.** The trained Numbatch adapter is an *optional
-overlay*, not a required stage (§4).
+→ **This resolves Finding 3.** The trained Numbatch adapter is an _optional
+overlay_, not a required stage (§4).
 
 **Content-addressed identity makes reuse a cache hit by construction.**
-`source_hash = sha256(record_id + text)` — *"re-ingesting an unchanged record
-yields the same hash, and its existing … sidecars still join."*
+`source_hash = sha256(record_id + text)` — _"re-ingesting an unchanged record
+yields the same hash, and its existing … sidecars still join."_
 
 → Boundary decisions are keyed on content hash, so a decision re-attaches
 automatically when the same document appears in a different corpus. **This is the
@@ -159,7 +159,7 @@ mechanism by which the lens compounds**, rather than a promise that it does.
 
 **Enforcement is pragmatic.** A disabled stage passes through unchanged; a
 per-document gap is skipped; only genuine misuse raises; structural
-impossibilities *"fail naturally at the type boundary."*
+impossibilities _"fail naturally at the type boundary."_
 
 → Sharpens redline's Result semantics: a skipped document is not a
 `DomainError`. Currently unstated in our ports.
@@ -202,8 +202,8 @@ documents
 ```
 
 Hard rules bypassing the model has direct precedent: womblex's register ingests
-(G-NAF, ABN, geospatial) *"produce Parquet directly and … bypass the NLP
-pipeline. This is by design."*
+(G-NAF, ABN, geospatial) _"produce Parquet directly and … bypass the NLP
+pipeline. This is by design."_
 
 ---
 
@@ -216,7 +216,7 @@ pipeline. This is by design."*
 > `MIN_SAMPLES_PER_TOPIC`, the adapter is trained and engages for subsequent
 > runs.
 >
-> *Rationale of record:* Numbatch and womblex are resources to be leveraged **to
+> _Rationale of record:_ Numbatch and womblex are resources to be leveraged **to
 > their maximum capacity** in service of the intent. This decision does exactly
 > that — it uses womblex's embeddings (built, currently unread by redline) and
 > Numbatch's trained classification (built, currently reachable only after a
@@ -229,7 +229,7 @@ Why this is the right call rather than a workaround:
 - It is womblex's own composable-fallback idiom, applied unchanged.
 - It preserves **ADR-0005**'s additive-only fork posture — no upstream constraint
   is weakened.
-- It makes the first pass *fast*, which the workflow requires. Training a LoRA
+- It makes the first pass _fast_, which the workflow requires. Training a LoRA
   adapter is minutes-to-hours on GPU; "map the corpus" cannot wait on it.
 - It degrades honestly: with no samples the lens is a retrieval-and-LLM sorter;
   with accumulated judgement it becomes a trained classifier. Same interface.
@@ -248,7 +248,7 @@ the first-pass path both produce it.
 > `feedback_corrections`) is canonical. redline persists lens **references and
 > bindings** only, not copies.
 >
-> *Reasoning:* D2 commits to leveraging Numbatch to its maximum capacity, and D1
+> _Reasoning:_ D2 commits to leveraging Numbatch to its maximum capacity, and D1
 > keeps procurement — not lens infrastructure — as the purpose. Mirroring the
 > library into `redline_` tables would rebuild machinery Numbatch already
 > provides, add a two-way sync, and spend procurement delivery time on it. The
@@ -278,8 +278,8 @@ A **thread is one build step**, sized to fit a single agent's context:
 - **One build step, including its test.** If the exit test needs two unrelated
   things built first, it is two threads.
 - **One agent, one context.** A thread must be completable without the agent
-  re-reading half the repo. If planning it requires spanning packages *and*
-  languages *and* a new seam, split it.
+  re-reading half the repo. If planning it requires spanning packages _and_
+  languages _and_ a new seam, split it.
 - **One commit.** A PR is opened **only on explicit user request**.
 - **Tests-first.** The test file is written before the implementation file.
 - **One package where possible.** A thread crossing a package boundary needs a
@@ -324,7 +324,7 @@ test.
   — docs: [thread-20](./threads/thread-20-embedding-reader.md)
 
 - **Thread 20a — Sidecar text-embedding endpoint** (Python, `womblex-ingest`).
-  Embeds arbitrary text in the *same* space as the document vectors, so a topic
+  Embeds arbitrary text in the _same_ space as the document vectors, so a topic
   definition can be matched against them. Surfaced by ADR-0014: redline's
   TypeScript has no embedding model, so shipping chunk vectors does not by itself
   give Thread 22 a comparable query vector. **Thread 22's dependency, not Thread
@@ -352,6 +352,7 @@ test.
   (open question #2).
   _Exit: adjudicated assignments carry a rationale; the seam is a port, exercised
   with a fake._
+  — docs: [thread-23](./threads/thread-23-llm-adjudication-and-rationale.md)
 
 **Comprehension read models (pure)**
 
@@ -455,21 +456,21 @@ grid itself.
 
 ## 7. Decision register
 
-| # | Decision | Status | Proposed ADR |
-|---|---|---|---|
-| D1 | Procurement is the purpose; the lens is the composable means | ✅ **settled** 2026-07-24 | [ADR-0007](./adr/0007-procurement-purpose-lens-means.adr.md) ✅ |
-| D2 | Trained adapter is an optional overlay; first pass needs no samples | ✅ **settled** 2026-07-24 | [ADR-0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md) ✅ |
-| D3 | Numbatch's library is the system of record | ✅ **settled** 2026-07-24 (implied by D1+D2) | [ADR-0009](./adr/0009-numbatch-library-is-system-of-record.adr.md) ✅ |
-| D4 | Lens operations are independent functions over joinable sidecars | adopted from womblex | composition ADR |
-| D5 | Retrieval is womblex's; redline builds no vector store | settled by Finding 2 | retrieval ADR |
-| D6 | Boundary decisions are content-addressed | adopted from womblex | addressing ADR |
-| D7 | Base is verbatim; resolutions are additive overlays | adopted from womblex | overlay ADR |
-| D8 | Corpus classifications ephemeral; lens durable | adopted from Numbatch | retention ADR |
-| D9 | Boundary decisions are corrections-as-sample-membership | adopted from Numbatch ADR-0020 | corrections ADR |
-| D10 | Preconditions ride the type boundary; only misuse errors | adopted from womblex | error-semantics ADR |
-| D11 | A topic's identity carries into the requirement it projects to | ✅ **settled** 2026-07-25 (discovered in Thread 17) | [ADR-0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md) ✅ |
-| D12 | Hard-rule precedence is specificity, then declaration order | ✅ **settled** 2026-07-25 (discovered in Thread 18) | [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md) ✅ |
-| D13 | Embeddings cross the JSON boundary as float arrays on a sibling resource | ✅ **settled** 2026-07-25 (precondition to Thread 19) | [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) ✅ |
+| #   | Decision                                                                 | Status                                                | Proposed ADR                                                                                |
+| --- | ------------------------------------------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| D1  | Procurement is the purpose; the lens is the composable means             | ✅ **settled** 2026-07-24                             | [ADR-0007](./adr/0007-procurement-purpose-lens-means.adr.md) ✅                             |
+| D2  | Trained adapter is an optional overlay; first pass needs no samples      | ✅ **settled** 2026-07-24                             | [ADR-0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md) ✅                  |
+| D3  | Numbatch's library is the system of record                               | ✅ **settled** 2026-07-24 (implied by D1+D2)          | [ADR-0009](./adr/0009-numbatch-library-is-system-of-record.adr.md) ✅                       |
+| D4  | Lens operations are independent functions over joinable sidecars         | adopted from womblex                                  | composition ADR                                                                             |
+| D5  | Retrieval is womblex's; redline builds no vector store                   | settled by Finding 2                                  | retrieval ADR                                                                               |
+| D6  | Boundary decisions are content-addressed                                 | adopted from womblex                                  | addressing ADR                                                                              |
+| D7  | Base is verbatim; resolutions are additive overlays                      | adopted from womblex                                  | overlay ADR                                                                                 |
+| D8  | Corpus classifications ephemeral; lens durable                           | adopted from Numbatch                                 | retention ADR                                                                               |
+| D9  | Boundary decisions are corrections-as-sample-membership                  | adopted from Numbatch ADR-0020                        | corrections ADR                                                                             |
+| D10 | Preconditions ride the type boundary; only misuse errors                 | adopted from womblex                                  | error-semantics ADR                                                                         |
+| D11 | A topic's identity carries into the requirement it projects to           | ✅ **settled** 2026-07-25 (discovered in Thread 17)   | [ADR-0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md) ✅     |
+| D12 | Hard-rule precedence is specificity, then declaration order              | ✅ **settled** 2026-07-25 (discovered in Thread 18)   | [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md) ✅ |
+| D13 | Embeddings cross the JSON boundary as float arrays on a sibling resource | ✅ **settled** 2026-07-25 (precondition to Thread 19) | [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) ✅         |
 
 **D1, D2 and D3 were settled by the project owner on 2026-07-24** and are no
 longer assumptions. D1 was settled with a correction to how it had been drafted:
@@ -499,7 +500,7 @@ every consumer of the hard-rule stage from Thread 21 on. Recorded in Thread 18's
 own commit, same model.
 
 **D13 returns to the precondition model.** Unlike D11 and D12 it was drafted
-*before* Thread 19 was built and approved first, because the answer decided
+_before_ Thread 19 was built and approved first, because the answer decided
 whether Threads 20 and 22 could exist in TypeScript at all — the one genuinely
 irreversible option (server-side retrieval) would have moved nearest-neighbour
 into the sidecar. Two things sharpened it during review and are recorded in
@@ -544,12 +545,17 @@ in real use.
 1. ~~**Vector wire format** (Thread 19)~~ — **settled 2026-07-25 by
    [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md)**:
    plain JSON float arrays on a sibling document-scoped resource, L2-normalised,
-   declaring the producing model. Both alternatives stay reachable *additively* on
+   declaring the producing model. Both alternatives stay reachable _additively_ on
    the same resource, so the re-entry condition is a measured corpus — revisit
    above ~50k chunks, or if the sidecar and app land in different regions.
-2. **LLM adjudication seam** — `ILanguageModel.summarise` is procurement-shaped
-   (`{ vendorName, productName, passages }`). Adjudication needs a second method
-   or a distinct port.
+2. ~~**LLM adjudication seam**~~ — **settled 2026-08-07 by
+   [Thread 23](./threads/thread-23-llm-adjudication-and-rationale.md)**: a
+   _distinct_ port, `IAdjudicator`, not a second method on `ILanguageModel`.
+   `ILanguageModel.summarise` is procurement-shaped
+   (`{ vendorName, productName, passages }`) and shape-coupled to the review-grid
+   summary; adjudication is a lens concern with a different input (candidate
+   topics) and output (a chosen topic + rationale), so it gets its own seam per
+   the composable-operations design (D4).
 3. **Tenancy mapping** — Numbatch `organisation_id` ↔ Wayfinder identity (§5).
 4. **Primary/secondary semantics** — Numbatch returns score-sorted ≤3 topics with
    no primary/secondary distinction; this is net-new modelling in Thread 21.
@@ -564,42 +570,42 @@ _Update at the end of every thread. Threads 1–11 are complete — their logs r
 in the [deprecated plan](./procurement-evaluation-plan.md) §10 and are not
 duplicated here._
 
-| Thread | Track | Package(s) | Status | Notes |
-|---|---|---|---|---|
-| 1–11 | — | — | ✅ **done** | See the deprecated plan's §10 logs (scaffold → workflow manager UI). |
-| 17 — `Topic` + `Lens` entities | L | domain | ✅ **done** | Durable tier restored; lens has no `evaluationId`. Locked [ADR-0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md). [thread-17](./threads/thread-17-topic-and-lens-entities.md) |
-| 18 — `HardRule` + evaluation | L | domain | ✅ **done** | Deterministic pre-model stage; a gap is an outcome, not an error. Locked [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md). [thread-18](./threads/thread-18-hard-rule-entity-and-evaluation.md) |
-| 19 — Sidecar embeddings endpoint | L | womblex-ingest | ✅ **done** | Vectors ship as JSON floats on a sibling resource, absent independently of the extraction. Locked [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) (precondition), closing open question #1. [thread-19](./threads/thread-19-sidecar-embeddings-endpoint.md) |
-| 20 — `IEmbeddingReader` + adapter | L | domain, adapters | ✅ **done** | Vectors reach TS as `Float32Array`, cached per `(evaluation, document)` — both binding per [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md); no new ADR. adapters **58** (+12), domain **97** (+2). [thread-20](./threads/thread-20-embedding-reader.md) |
-| 20a — Sidecar text-embedding endpoint | L | womblex-ingest | ✅ **done** | Query vectors embed in the same space as chunk vectors (same `model`/`dimensions`, L2-normalised); implements the gap [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) named, no new ADR. Blocks 22, needs nothing from 20. [thread-20a](./threads/thread-20a-sidecar-text-embedding-endpoint.md) |
-| 21 — Hard-rule pre-pass | L | application | ✅ **done** | Deterministic first stage: composes Thread 18's `evaluateHardRules`, claims never reach the model (fake asserts zero calls), both paths emit the same `RequirementClassification` (D2). No new ADR. application **24** (+8). [thread-21](./threads/thread-21-hard-rule-pre-pass.md) |
-| 22 — Retrieval classification | L | application, adapters | ✅ **done** | Model-free first pass: chunk vectors ranked against topic definitions by cosine similarity (a dot product — vectors cross L2-normalised, ADR-0014). Carries the query-side seam Thread 20a's endpoint lacked in TS (`ITextEmbedder` + `WomblexTextEmbedder`); both paths emit the same `RequirementClassification` (D2). No new ADR. domain **99** (+2), adapters **69** (+11), application **33** (+9). [thread-22](./threads/thread-22-retrieval-classification.md) |
-| 23 — LLM adjudication + rationale | L | domain, application | 🔵 **next** | Open question #2. |
-| 24 — Ambiguity signals + buckets | L | domain | ⚪ not started | Thresholds unmeasured (open question #5). |
-| 25 — Document Map read model | L | application | ⚪ not started | Reuses `computePivot`. |
-| 26 — Collision selection & capping | L | domain | ⚪ not started | |
-| 27 — `BoundaryDecision` entity | L | domain | ⚪ not started | Net-new modelling (open question #4). |
-| 28 — Decision persistence + corrections | L | adapters | ⚪ not started | Upstream ADR-0020. |
-| 29 — Lens persistence | L | adapters | ⚪ not started | Depends on D3. |
-| 30 — Lens portability | L | application | ⚪ not started | The compounding proof. |
-| 31 — Lens stage machine | L | redline-web | ⚪ not started | Must not disturb Thread 11. |
-| 32 — Collision resolution surface | L | redline-web | ⚪ not started | |
-| 33 — Sample accrual | L | adapters | ⚪ not started | |
-| 34 — Train/activate policy | L | adapters | ⚪ not started | Engages the overlay. |
-| 12 — In-app review grid | P | redline-web | ⚪ not started | Priority 1; independent of Track L. |
-| 13 — Pricing pivots | P | application | ⚪ not started | |
-| 14 — Excel export | P | adapters | ⚪ not started | Priority 2. |
-| 35 — Next.js shell | H | redline-web | ⚪ not started | Closes the `/e2e` deviation. |
-| 15 — Isaacus-optional & air-gap | H | womblex-ingest | ⚪ not started | Now covers the lens's network posture. |
-| 16 — Workspace extraction & release | H | workspace | ⚪ not started | Grafts the Threads 6–8 overlay onto the fork. |
+| Thread                                  | Track | Package(s)            | Status         | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------- | ----- | --------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1–11                                    | —     | —                     | ✅ **done**    | See the deprecated plan's §10 logs (scaffold → workflow manager UI).                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 17 — `Topic` + `Lens` entities          | L     | domain                | ✅ **done**    | Durable tier restored; lens has no `evaluationId`. Locked [ADR-0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md). [thread-17](./threads/thread-17-topic-and-lens-entities.md)                                                                                                                                                                                                                                                           |
+| 18 — `HardRule` + evaluation            | L     | domain                | ✅ **done**    | Deterministic pre-model stage; a gap is an outcome, not an error. Locked [ADR-0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md). [thread-18](./threads/thread-18-hard-rule-entity-and-evaluation.md)                                                                                                                                                                                                                                |
+| 19 — Sidecar embeddings endpoint        | L     | womblex-ingest        | ✅ **done**    | Vectors ship as JSON floats on a sibling resource, absent independently of the extraction. Locked [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) (precondition), closing open question #1. [thread-19](./threads/thread-19-sidecar-embeddings-endpoint.md)                                                                                                                                                                          |
+| 20 — `IEmbeddingReader` + adapter       | L     | domain, adapters      | ✅ **done**    | Vectors reach TS as `Float32Array`, cached per `(evaluation, document)` — both binding per [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md); no new ADR. adapters **58** (+12), domain **97** (+2). [thread-20](./threads/thread-20-embedding-reader.md)                                                                                                                                                                              |
+| 20a — Sidecar text-embedding endpoint   | L     | womblex-ingest        | ✅ **done**    | Query vectors embed in the same space as chunk vectors (same `model`/`dimensions`, L2-normalised); implements the gap [ADR-0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) named, no new ADR. Blocks 22, needs nothing from 20. [thread-20a](./threads/thread-20a-sidecar-text-embedding-endpoint.md)                                                                                                                                     |
+| 21 — Hard-rule pre-pass                 | L     | application           | ✅ **done**    | Deterministic first stage: composes Thread 18's `evaluateHardRules`, claims never reach the model (fake asserts zero calls), both paths emit the same `RequirementClassification` (D2). No new ADR. application **24** (+8). [thread-21](./threads/thread-21-hard-rule-pre-pass.md)                                                                                                                                                                                   |
+| 22 — Retrieval classification           | L     | application, adapters | ✅ **done**    | Model-free first pass: chunk vectors ranked against topic definitions by cosine similarity (a dot product — vectors cross L2-normalised, ADR-0014). Carries the query-side seam Thread 20a's endpoint lacked in TS (`ITextEmbedder` + `WomblexTextEmbedder`); both paths emit the same `RequirementClassification` (D2). No new ADR. domain **99** (+2), adapters **69** (+11), application **33** (+9). [thread-22](./threads/thread-22-retrieval-classification.md) |
+| 23 — LLM adjudication + rationale       | L     | domain, application   | ✅ **done**    | Distinct `IAdjudicator` port (settles open question #2), not a second `ILanguageModel` method; adjudicated rows carry a rationale _alongside_ the shared `RequirementClassification` shape (D2), chosen topic id = requirement id (ADR-0010). Model-hallucinated / no-choice inputs refuse. No new ADR. domain **101** (+2), application **41** (+8). [thread-23](./threads/thread-23-llm-adjudication-and-rationale.md)                                              |
+| 24 — Ambiguity signals + buckets        | L     | domain                | 🔵 **next**    | Thresholds unmeasured (open question #5).                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 25 — Document Map read model            | L     | application           | ⚪ not started | Reuses `computePivot`.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 26 — Collision selection & capping      | L     | domain                | ⚪ not started |                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 27 — `BoundaryDecision` entity          | L     | domain                | ⚪ not started | Net-new modelling (open question #4).                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 28 — Decision persistence + corrections | L     | adapters              | ⚪ not started | Upstream ADR-0020.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 29 — Lens persistence                   | L     | adapters              | ⚪ not started | Depends on D3.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 30 — Lens portability                   | L     | application           | ⚪ not started | The compounding proof.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 31 — Lens stage machine                 | L     | redline-web           | ⚪ not started | Must not disturb Thread 11.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 32 — Collision resolution surface       | L     | redline-web           | ⚪ not started |                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 33 — Sample accrual                     | L     | adapters              | ⚪ not started |                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 34 — Train/activate policy              | L     | adapters              | ⚪ not started | Engages the overlay.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 12 — In-app review grid                 | P     | redline-web           | ⚪ not started | Priority 1; independent of Track L.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 13 — Pricing pivots                     | P     | application           | ⚪ not started |                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 14 — Excel export                       | P     | adapters              | ⚪ not started | Priority 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 35 — Next.js shell                      | H     | redline-web           | ⚪ not started | Closes the `/e2e` deviation.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 15 — Isaacus-optional & air-gap         | H     | womblex-ingest        | ⚪ not started | Now covers the lens's network posture.                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 16 — Workspace extraction & release     | H     | workspace             | ⚪ not started | Grafts the Threads 6–8 overlay onto the fork.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ---
 
 ## 11. A note on recording decisions
 
-womblex keeps `docs/decisions.md` — *"decisions and their rejected alternatives,
+womblex keeps `docs/decisions.md` — _"decisions and their rejected alternatives,
 approaches that were tried and abandoned (so they aren't re-attempted),
-library-general limitations, and the deferred backlog"* — corpus-agnostic, with
+library-general limitations, and the deferred backlog"_ — corpus-agnostic, with
 measured tradeoffs attached.
 
 redline has no equivalent. ADRs record what we chose; they do not record what we

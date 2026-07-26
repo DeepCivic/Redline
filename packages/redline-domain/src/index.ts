@@ -20,6 +20,9 @@ export * from "./entities/hard-rule";
 export * from "./entities/hard-rule-evaluation";
 
 // Ports
+// Adjudication (Thread 23) — the lens's LLM seam; picks among contending topics
+// for what retrieval left unclear and returns a one-sentence rationale.
+export * from "./ports/adjudicator";
 export * from "./ports/embedding-reader";
 export * from "./ports/evaluation-repository";
 export * from "./ports/financial-extractor";
