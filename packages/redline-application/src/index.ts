@@ -49,6 +49,17 @@ export type {
   UnclearDocument,
 } from "./use-cases/adjudicate-unclear";
 
+// Comprehension lens — Document Map read model (Thread 25). A derived,
+// never-stored roll-up of how the corpus sorted across topics (counts + shares)
+// and the corpus-wide Clear/Ambiguous split. Reuses computePivot's algorithm,
+// not its types (Thread 13's precedent); carries no confidence value (§8).
+export { buildDocumentMap } from "./use-cases/build-document-map";
+export type {
+  DocumentMap,
+  DocumentMapEntry,
+  MappedDocument,
+} from "./use-cases/build-document-map";
+
 export { ExtractFinancials } from "./use-cases/extract-financials";
 export type { ExtractFinancialsDependencies } from "./use-cases/extract-financials";
 
