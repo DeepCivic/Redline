@@ -38,6 +38,17 @@ export type {
   ClassifyByRetrievalInput,
 } from "./use-cases/classify-by-retrieval";
 
+// Comprehension lens — first-pass classification (Thread 23). LLM adjudication:
+// choose among the contending topics for what retrieval left unclear, and carry
+// the model's one-sentence rationale alongside the shared classification shape.
+export { AdjudicateUnclear } from "./use-cases/adjudicate-unclear";
+export type {
+  AdjudicateUnclearDependencies,
+  AdjudicateUnclearInput,
+  AdjudicatedClassification,
+  UnclearDocument,
+} from "./use-cases/adjudicate-unclear";
+
 export { ExtractFinancials } from "./use-cases/extract-financials";
 export type { ExtractFinancialsDependencies } from "./use-cases/extract-financials";
 
