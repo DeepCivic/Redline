@@ -1,32 +1,24 @@
-# womblex-ingest — womblex document-extraction sidecar for redline.
+# womblex-ingest — the lightweight FastAPI read seam (Parquet→JSON) for redline.
 #
-# Installs the service and its runtime deps. womblex itself is OPT-IN:
-#   - default build: stub extractor only (WOMBLEX_MODE=stub), no heavy deps,
-#     no Isaacus. Enough for the Thread 3 exit test and air-gapped runs.
-#   - --build-arg INSTALL_WOMBLEX=1        installs the real womblex pipeline.
-#   - --build-arg ISAACUS=1                additionally enables womblex's Isaacus
-#                                          enrichment path (needs ISAACUS_API_KEY
-#                                          at runtime). womblex has non-Isaacus
-#                                          modes, so this stays off by default.
+# This image stays LIGHT. The real womblex engine is a REQUIRED subsystem of
+# redline but lives in its OWN pod (Dockerfile.womblex / the `womblex` compose
+# service, Thread 37a) because its OCR/tokeniser/model runtime is heavy and its
+# resource profile is disparate from this API sidecar's. This image never
+# installs womblex; it reads the shards the womblex pod wrote and serves them as
+# JSON (ADR-0003).
 #
-# Mirrors Wayfinder's services/australian-writing-mcp precedent: third-party
-# extraction code is installed at build time, never vendored into this repo.
+# WOMBLEX_MODE selects the extractor at runtime:
+#   - real (redline's deployment): the real extractor reads the womblex pod's
+#     shards from MinIO.
+#   - stub (the dependency-free TEST DOUBLE): deterministic shards for fast CI and
+#     the Thread 4 adapter contract. NOT a shipping mode — a test double.
 FROM python:3.12-slim
-
-ARG INSTALL_WOMBLEX=0
-ARG ISAACUS=0
-
-# git is only needed to resolve a VCS install of womblex when INSTALL_WOMBLEX=1.
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y git \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
 
-RUN pip install --no-cache-dir . \
-    && if [ "$INSTALL_WOMBLEX" = "1" ]; then pip install --no-cache-dir ".[womblex]"; fi
+RUN pip install --no-cache-dir .
 
 ENV S3_ENDPOINT=http://minio:9000 \
     S3_ACCESS_KEY=minioadmin \
@@ -35,10 +27,6 @@ ENV S3_ENDPOINT=http://minio:9000 \
     WOMBLEX_MODE=stub \
     HOST=0.0.0.0 \
     PORT=8000
-
-# ISAACUS build arg flips the default extraction mode to real; womblex still runs
-# without an Isaacus key (edge/offline mode) unless ISAACUS_API_KEY is set.
-RUN if [ "$ISAACUS" = "1" ]; then echo "WOMBLEX_MODE=real" >> /etc/environment; fi
 
 EXPOSE 8000
 

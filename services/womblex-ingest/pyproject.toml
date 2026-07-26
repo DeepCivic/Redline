@@ -11,10 +11,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Real womblex extraction (WOMBLEX_MODE=real). Isaacus is opt-in on top of this
-# (see the Dockerfile ISAACUS build arg); womblex has non-Isaacus modes too.
+# The real womblex engine. redline runs it as its OWN pod (Dockerfile.womblex /
+# the `womblex` compose service, Thread 37a) — a REQUIRED subsystem kept out of
+# the API image because its runtime is heavy. This extra is here so a real-lane
+# test environment can `pip install .[womblex]` to exercise the binding
+# (Thread 37b); it is pinned for reproducibility, mirroring wayfinder.pin.
+# womblex needs Python 3.11/3.12 (its OCR dep has no 3.10 wheel).
+#
+# `pyarrow` is what the binding uses to DECODE the Parquet shards the pod landed
+# in MinIO (real_extractor.py); it is far lighter than womblex's full OCR/model
+# stack, so the read side of the binding runs anywhere pyarrow resolves even when
+# the engine itself only runs in its pod.
 womblex = [
-    "womblex",
+    "womblex==0.2.0",
+    "pyarrow>=16,<25",
 ]
 dev = [
     "pytest>=8.0,<9.0",
