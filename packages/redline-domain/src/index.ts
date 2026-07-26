@@ -19,6 +19,12 @@ export * from "./entities/lens-projection";
 export * from "./entities/hard-rule";
 export * from "./entities/hard-rule-evaluation";
 
+// Comprehension (Thread 24) — a named, statused ambiguity signal register
+// (womblex's heuristics_disambiguation shape) and the pure Clear/Ambiguous
+// derivation it drives. No confidence value escapes to the view model.
+export * from "./entities/ambiguity-signal";
+export * from "./entities/ambiguity-derivation";
+
 // Ports
 // Adjudication (Thread 23) — the lens's LLM seam; picks among contending topics
 // for what retrieval left unclear and returns a one-sentence rationale.
