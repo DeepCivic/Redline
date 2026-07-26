@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  WAYFINDER_COUNT_PIVOT_CONTRACT,
   WAYFINDER_PIVOT_CONTRACT,
   WAYFINDER_TYPED_CELL_CONTRACT,
   WAYFINDER_TYPED_VALUE_CONTRACT,
@@ -44,6 +45,24 @@ describe.skipIf(wayfinder === null)("Wayfinder pivot contract", () => {
       WAYFINDER_PIVOT_CONTRACT.expectedRows,
     );
     expect(result.grandTotal).toEqual(WAYFINDER_PIVOT_CONTRACT.expectedGrandTotal);
+    expect(result.hasNumericData).toBe(true);
+  });
+
+  // The Document Map (Thread 25) reuses computePivot's *count* measure ranking —
+  // descending count, alphabetical tiebreak — over redline's own types. Freeze
+  // the order upstream produces so drift in the ranking rule surfaces here, the
+  // one package that may reach Wayfinder.
+  it("still ranks a count roll-up the way the Document Map depends on", () => {
+    const result = wayfinder!.computePivot(WAYFINDER_COUNT_PIVOT_CONTRACT.rows, {
+      columns: WAYFINDER_COUNT_PIVOT_CONTRACT.columns,
+      groupByKey: WAYFINDER_COUNT_PIVOT_CONTRACT.groupByKey,
+      measure: WAYFINDER_COUNT_PIVOT_CONTRACT.measure,
+    });
+
+    expect(result.rows.map((row) => ({ key: row.key, value: row.total.value }))).toEqual(
+      WAYFINDER_COUNT_PIVOT_CONTRACT.expectedRows,
+    );
+    expect(result.grandTotal).toEqual(WAYFINDER_COUNT_PIVOT_CONTRACT.expectedGrandTotal);
     expect(result.hasNumericData).toBe(true);
   });
 });

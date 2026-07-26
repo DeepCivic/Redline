@@ -29,10 +29,13 @@ export interface WayfinderPivotColumn {
   readonly memberKeys: string[];
 }
 
-export interface WayfinderPivotMeasure {
-  readonly kind: "sum";
-  readonly columnKey: string;
-}
+// Upstream's measure union. redline uses `sum` for pricing (Thread 13) and
+// `count` for the Document Map's per-topic tally (Thread 25); `avg` is declared
+// to match `computePivot`'s real signature so the drift check exercises the
+// whole shape, not a subset.
+export type WayfinderPivotMeasure =
+  | { readonly kind: "count" }
+  | { readonly kind: "sum" | "avg"; readonly columnKey: string };
 
 export interface WayfinderPivotOptions {
   readonly columns: readonly WayfinderPivotColumn[];
@@ -140,4 +143,42 @@ export const WAYFINDER_PIVOT_CONTRACT = {
     { key: "Acme", value: 1500 },
   ],
   expectedGrandTotal: { value: 6500, sampleCount: 4 },
+} as const;
+
+// The Document Map (Thread 25) rolls the corpus up per topic with a *count*
+// measure, ranked by descending count with an alphabetical tiebreak. Its
+// `buildDocumentMap` reimplements that shape over redline's own `MappedDocument`
+// (Thread 13's precedent: reuse the algorithm, not the types); this fixture
+// freezes the ordering `computePivot`'s count measure produces on the same tie
+// so drift in the ranking rule is caught here. Mirrors the map's tie-break test:
+// topic-c (3) outranks topic-a and topic-b (2 each), and the tie resolves
+// alphabetically.
+const topicRows: readonly WayfinderSessionRow[] = [
+  "topic-b",
+  "topic-b",
+  "topic-a",
+  "topic-a",
+  "topic-c",
+  "topic-c",
+  "topic-c",
+].map((topicId, index) => ({
+  sessionId: `doc-${index}`,
+  startedAt: new Date(0),
+  status: "complete",
+  values: { topicId },
+}));
+
+export const WAYFINDER_COUNT_PIVOT_CONTRACT = {
+  rows: topicRows,
+  columns: [
+    { columnKey: "topicId", label: "Topic", type: "text", memberKeys: ["topicId"] },
+  ] as const satisfies readonly WayfinderPivotColumn[],
+  groupByKey: "topicId",
+  measure: { kind: "count" } as const satisfies WayfinderPivotMeasure,
+  expectedRows: [
+    { key: "topic-c", value: 3 },
+    { key: "topic-a", value: 2 },
+    { key: "topic-b", value: 2 },
+  ],
+  expectedGrandTotal: { value: 7, sampleCount: 7 },
 } as const;
