@@ -49,6 +49,9 @@ class FakeObjectStorage(ObjectStorage):
     def keys_under(self, prefix: str) -> List[str]:
         return sorted(key for key in self.objects if key.startswith(prefix))
 
+    def list_objects(self, prefix: str) -> List[str]:
+        return self.keys_under(prefix)
+
 
 class StubExtractor:
     """Deterministic womblex stand-in.

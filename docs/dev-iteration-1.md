@@ -1,15 +1,18 @@
 # Procurement Evaluation Adapter — Build Plan
+# (Dev Iteration 1 — frozen history)
 
-> ## ⚠️ DEPRECATED — superseded by [`comprehension-lens-design.md`](./comprehension-lens-design.md)
+> ## ⚠️ DEPRECATED — frozen delivery history
 >
-> **This plan is no longer the living delivery document.** It is retained as the
-> **delivery history for Threads 1–11** (all ✅ complete) — the thread logs in §10
-> remain the authoritative record of what was built and how it was proven.
+> **This was the first delivery plan ("dev iteration 1").** It is superseded first by
+> [`dev-iteration-2.md`](./dev-iteration-2.md) (the comprehension-lens design) and now by
+> the current living delivery document, [`dev-iteration-3.md`](./dev-iteration-3.md).
 >
-> **Do not add new threads here.** §7 (phased plan) and §10 (progress table) are
-> frozen. Outstanding scope — Threads 12–16 and the Next.js shell follow-up — has
-> been carried into the design doc under Tracks P and H, alongside the new
-> comprehension-lens track (Threads 17–24).
+> **It is retained only as the delivery history for Threads 1–15** (all ✅ complete) —
+> the thread logs in §10 remain the authoritative record of what was built and how it
+> was proven. **Do not add or track new threads here** — §7 and §10 are frozen. **No
+> outstanding work is tracked in this document**; every item still to be done —
+> whether it needs fresh work or only verification — lives in
+> [`dev-iteration-3.md`](./dev-iteration-3.md).
 >
 > **Why superseded.** Reading the upstream engines showed requirements were
 > modelled one tier too shallow (Numbatch's durable topic library was flattened
@@ -391,7 +394,7 @@ _This section is the living "current state" tracker. Update it at the end of eve
 | 13 — Pricing pivots | ✅ **done** | Exit test **PASSED**: `PricingPivot` (`apps/redline-web`) rolls the Thread 10/12 `ProcurementResponse[]` up per brand, per requirement, and brand×requirement, summing/averaging the real-number `estimateAud`; on a five-row fixture (3 vendors × 2 requirements + one null-estimate fallback) the totals match hand-computed values (per-brand sum Initech 3000/Globex 2000/Acme 1500, grand 6500 over 4 samples; per-brand avg Acme 750; per-requirement residency 6000/support 500; brand×requirement Acme×residency 1000/×support 500) and are **cross-checked against Wayfinder's own `computePivot`** (read-only reuse §9, test-only — production app code imports nothing from Wayfinder, matching Thread 12's `typedDisplayCell` posture). Null-estimate rows are non-samples (excluded from sum, not an avg denominator, blank not `$0.00`); all-fallback → `hasNumericData:false`. `renderPivotView` shapes the table (axis/measure headers, one column per secondary group); `WorkflowController.openPricingPivot` reads persisted responses. redline-web **45/45** (was 33; +12: pricing-pivot 7, pricing-view 4, container +1); Playwright spec `e2e/pricing-pivots.e2e.ts` authored (vitest is the gate until the shell lands). `./validate.sh` **11/11**. Docs: [thread-13](./threads/thread-13-pricing-pivots.md). |
 | 14 — Excel export | ✅ **done** | Exit test **PASSED**: `apps/redline-web` — the Excel export as a framework-free core (a thin lazy `write-excel-file/browser` trigger binds to it; ADR-0006). `buildReviewSheetData` / `buildPivotSheetData` / `buildEvaluationWorkbook` (`src/lib/excel-export.ts`) turn the Thread 12 `ReviewGrid` + Thread 13 `PricingPivot` into `write-excel-file` sheet data — reusing Wayfinder's cell shape (`{ value, type: String\|Number, fontWeight? }`\|`null`, plan §9, verified against the library's bundled types not training data) so **currency writes as a real `Number` cell** (review estimate `1000`, confidence `0.86`, pivot totals — cross-checked against `typedDisplayCell("currency",…)` → `isNumeric:true`), a null estimate writes a **blank** cell (never `0`), and the **source column is a working hyperlink** to the exact document location (`/evaluations/:id/documents/:doc?element=…&page=…&chunk=…`, the same deep-link the in-app grid resolves). One `Review` sheet + one sheet per pivot (`Pricing by Vendor` / `Pricing by Requirement` / `Vendor × Requirement`). `WorkflowController.buildWorkbook` reads persisted responses (read-only); `exportEvaluationXlsx` is the lazy browser writer (dynamic import, `{ name, data }[]` sheets → `.toFile`), mirroring Wayfinder's `exportInsightsXlsx`. redline-web **58/58** (was 45; +13: excel-export 11, container +2); `write-excel-file@^4.1.1` added to `redline-web`. Playwright spec `e2e/excel-export.e2e.ts` authored (vitest is the gate until the shell lands). `./validate.sh` **11/11**. Docs: [thread-14](./threads/thread-14-excel-export.md). |
 | 15 — Isaacus-optional & air-gap validation | ✅ **done** | Exit test **PASSED live under Podman** (and offline in pytest): the full pipeline runs with `ISAACUS_API_KEY` **unset**. `scripts/thread-15-airgap.sh` brought up the `ingest` profile standalone against real MinIO — `/health` → `enrichmentMode:offline`/`isaacusEnabled:false`, `POST /ingest` → `succeeded`, shards + `{sourceHash}.extraction.json` landed in MinIO, `GET /extractions/...` served the read model. `services/womblex-ingest` models Isaacus-optionality explicitly — `Settings.enrichment_mode` (`offline`\|`isaacus`) derives from `WOMBLEX_MODE` + a non-blank key (**stub always offline**; **real offline unless a key is present**), surfaced on `GET /health` so a deployment + the UI toggle read the live path. Also fixed `infra/docker-compose.yml` so **any single profile comes up standalone** (dev-default credentials; compose interpolates the whole file regardless of `--profile`). UI: `apps/redline-web` `renderIngestConfigView`/`parseIngestHealth` — a pure view-model (Isaacus toggle **disabled on the stub path**). womblex-ingest pytest **47** (was 37; +10); redline-web **63** (was 58; +5). Rebased onto `main` after Thread 19 (the embeddings seam), so the sidecar suite now stands at 47 and `./validate.sh` runs **12/12** (check #12 = the lockfile-vendoring guard). Docs: [thread-15](./threads/thread-15-isaacus-optional-and-air-gap.md). |
-| 16 — Workspace extraction & release prep | 🔵 **next** | |
+| 16 — Workspace extraction & release prep | ➡️ **carried forward** | Not built under this plan. Tracked in the current living doc, [`dev-iteration-3.md`](./dev-iteration-3.md). |
 
 ### Thread 1 log (2026-07-23) — ✅ COMPLETE
 

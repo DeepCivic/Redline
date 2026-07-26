@@ -1,66 +1,199 @@
-"""Real womblex extractor — invokes the actual womblex pipeline.
+"""Real womblex extractor — Thread 37b, the binding behind the seam.
 
-Isolated in its own module and imported lazily (see `extraction.build_extractor`)
-so `pip install womblex` (and, optionally, Isaacus) is only required when
-`WOMBLEX_MODE=real`. The stub path carries the Thread 3 exit test and the
-air-gapped mode.
+The **womblex pod** (Thread 37a, `Dockerfile.womblex`) runs the real pipeline
+(`extract` → `chunk` → `embed`) and lands its Parquet shards in the shared MinIO
+under `proc/{evaluationId}/`. This module is the *binding*: with `WOMBLEX_MODE=
+real` it reads those pod-produced shards from object storage and maps womblex's
+schema into the JSON read model (`records.py`), so the TypeScript adapter never
+links a Parquet reader (ADR-0003 / ADR-0014). The pod owns the durable Parquet;
+the binding only *reads* it — hence `ExtractionResult.shards` is empty here
+(re-writing shards the pod already wrote would duplicate the record).
 
-Thread 4 pins the Parquet→JSON boundary this extractor must honour: after running
-womblex it reads the emitted Parquet shards (`*.elements.parquet`,
-`*.chunks.parquet`, `*.table_cells.parquet`) and maps womblex's provenance keys
-(`source_hash`, `elem_order`, `chunk_id`, currency cells) into the `records.py`
-dataclasses (`ElementRecord` / `ChunkRecord` / `TableCellRecord`), returning them
-on `ExtractionResult.documents` alongside the durable shards. That mapping is the
-one place that understands womblex's schema; everything downstream sees JSON.
+Why read the pod's shards rather than invoke womblex in-process: womblex's
+runtime (PyMuPDF, OCR, the Kanon tokeniser, model weights) is heavy and lives in
+its own pod (Thread 37a's whole point). The API sidecar stays light; its only
+seam to the engine is object storage (ADR-0002). This keeps the two lifecycles
+decoupled and the production orchestration of the worker a free deployment
+choice.
 
-The concrete womblex call surface is still being finalised, so running with
-`WOMBLEX_MODE=real` fails loudly rather than emitting empty or stub data.
+The schema mapping itself lives in `shard_reader.py` (the one place that
+understands `source_hash` / `elem_order` / `chunk_index` / currency cells / the
+`(source_hash, chunk_index)` embedding join), kept separate so it is provable
+with plain row dicts — no pyarrow or womblex install needed for the mapping
+tests. This module supplies the rows by decoding the Parquet, and delegates.
+
+`pyarrow` (the Parquet decode) and `womblex` (the query embedder) are imported
+lazily so `pip install` of the base API package stays light; both are pulled by
+the `.[womblex]` extra and only touched under `WOMBLEX_MODE=real`.
 """
 
 from __future__ import annotations
 
-from typing import List
+import io
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from womblex_ingest.extraction import ExtractionResult
-from womblex_ingest.records import QueryEmbedding
+from womblex_ingest.records import QueryEmbedding, make_query_embedding
+from womblex_ingest.shard_reader import (
+    Row,
+    ShardSchemaError,
+    group_rows_by_document,
+    map_document_embeddings,
+    map_document_extraction,
+)
+from womblex_ingest.storage import ObjectStorage
+
+# The womblex shard-name suffixes the pod writes (dev-iteration-1 §upstream tools;
+# ADR-0008). We discover shards by suffix rather than by an assumed run-directory
+# name, because the batch/run segment is womblex's, not ours.
+_ELEMENTS_SUFFIX = ".elements.parquet"
+_CHUNKS_SUFFIX = ".chunks.parquet"
+_TABLE_CELLS_SUFFIX = ".table_cells.parquet"
+_EMBEDDINGS_SUFFIX = ".embeddings.parquet"
 
 
 class RealWomblexExtractor:
+    """Reads the womblex pod's Parquet shards from MinIO and serves them as JSON.
+
+    Constructed with the same `ObjectStorage` the API writes JSON through, plus
+    the bucket, so the real lane reads exactly the shards the pod produced. The
+    `document_names` argument is advisory: womblex keys by `source_hash`, so the
+    binding serves every document present under the evaluation's prefix and the
+    read seams look them up by `documentId` (a `source_hash`).
+    """
+
+    def __init__(self, storage: ObjectStorage, bucket: str) -> None:
+        self._storage = storage
+        self._bucket = bucket
+
     def extract(self, evaluation_id: str, document_names: List[str]) -> ExtractionResult:
-        # Shape once the womblex Python API is wired:
-        #   1. run womblex over `document_names` → Parquet shards
-        #   2. read those shards and build `DocumentExtraction` per source_hash
-        #      (records.py), normalising elem_order / chunk_id / currency cells
-        #   3. read the `*.embeddings.parquet` siblings and build
-        #      `DocumentEmbeddings` via `make_document_embeddings`, joining each
-        #      vector to its chunk on (source_hash, chunk_index) and declaring the
-        #      model womblex's embed stage used (ADR-0014). Documents whose embed
-        #      stage did not run are simply omitted — an absent shard is NOT_FOUND,
-        #      not an empty payload.
-        #   4. return ExtractionResult(shards=..., documents=..., embeddings=...)
-        raise NotImplementedError(
-            "Real womblex extraction is not yet wired: the Parquet→JSON mapping is "
-            "pinned (see records.py) but the concrete womblex call surface is "
-            "pending. Run with WOMBLEX_MODE=stub until then."
+        prefix = f"proc/{evaluation_id}/"
+        keys = self._storage.list_objects(prefix)
+        parquet_keys = [key for key in keys if key.endswith(".parquet")]
+        if not parquet_keys:
+            # No shards under the prefix means the womblex pod has not run for this
+            # evaluation (or ran elsewhere). Fail loudly: an empty ExtractionResult
+            # would masquerade as "extracted, found nothing", a different and
+            # misleading state.
+            raise ShardSchemaError(
+                f"no womblex Parquet shards under {prefix!r}: run the womblex pod "
+                "(Thread 37a) for this evaluation before ingesting in real mode"
+            )
+
+        elements = self._read_shards(parquet_keys, _ELEMENTS_SUFFIX)
+        chunks = self._read_shards(parquet_keys, _CHUNKS_SUFFIX)
+        table_cells = self._read_shards(parquet_keys, _TABLE_CELLS_SUFFIX)
+        embeddings, models_by_source_hash = self._read_embedding_shards(parquet_keys)
+
+        documents_rows = group_rows_by_document(
+            elements=elements,
+            chunks=chunks,
+            table_cells=table_cells,
+            embeddings=embeddings,
+            models_by_source_hash=models_by_source_hash,
         )
+
+        documents = [map_document_extraction(rows) for rows in documents_rows]
+        document_embeddings = [
+            mapped
+            for rows in documents_rows
+            if (mapped := map_document_embeddings(rows)) is not None
+        ]
+
+        return ExtractionResult(
+            document_count=len(documents),
+            # The pod owns the durable Parquet; the binding does not re-write it.
+            shards=[],
+            documents=documents,
+            embeddings=document_embeddings,
+        )
+
+    def _read_shards(self, parquet_keys: Sequence[str], suffix: str) -> List[Row]:
+        rows: List[Row] = []
+        for key in parquet_keys:
+            if key.endswith(suffix):
+                rows.extend(_read_parquet_rows(self._storage.get_object(key)))
+        return rows
+
+    def _read_embedding_shards(
+        self, parquet_keys: Sequence[str]
+    ) -> Tuple[List[Row], Dict[str, str]]:
+        """Read embedding rows and the model each document's vectors declare.
+
+        womblex's embed stage records the model on the shard (a column, or the
+        file's key/value metadata); we surface it per `source_hash` so the
+        mapping can declare it (ADR-0014). A shard with no embed stage simply
+        contributes no rows — the NOT_FOUND path, resolved per document
+        downstream.
+        """
+        rows: List[Row] = []
+        models_by_source_hash: Dict[str, str] = {}
+        for key in parquet_keys:
+            if not key.endswith(_EMBEDDINGS_SUFFIX):
+                continue
+            body = self._storage.get_object(key)
+            table_model = _read_parquet_model(body)
+            for row in _read_parquet_rows(body):
+                rows.append(row)
+                source_hash = row.get("source_hash") or row.get("source_doc_id")
+                declared = row.get("model") or table_model
+                if source_hash is not None and declared:
+                    models_by_source_hash[str(source_hash)] = str(declared)
+        return rows, models_by_source_hash
 
 
 class RealWomblexTextEmbedder:
     """Embeds arbitrary text via womblex's embed operation (ADR-0014, Thread 20a).
 
     The query counterpart of `RealWomblexExtractor`: it must embed text with the
-    *same* model womblex's embed stage used for chunk vectors, and declare that
-    model, or Thread 22's nearest-neighbour ranks noise. Still pending, so it
-    fails loudly rather than returning a stub vector in a real deployment.
+    *same* model womblex's embed stage used for chunk vectors, or Thread 22's
+    nearest-neighbour ranking is noise. It draws the model from womblex's own
+    configuration (never hard-codes a second copy) so a self-consistent
+    deployment cannot drift chunks into model A and queries into model B — the
+    one mismatch Thread 22 refuses.
     """
 
+    def __init__(self) -> None:
+        # Imported lazily so the base package installs without womblex.
+        from womblex import embed_query, embedding_model_id  # type: ignore[import-not-found]
+
+        self._embed_query = embed_query
+        self._model_id = embedding_model_id
+
     def embed(self, text: str) -> QueryEmbedding:
-        # Shape once the womblex embed surface is wired:
-        #   1. call womblex's embed(text) with the corpus's embed-stage model
-        #   2. build the wire model via `make_query_embedding`, declaring that
-        #      model so a consumer can confirm it matches the chunk vectors'.
-        raise NotImplementedError(
-            "Real womblex text embedding is not yet wired: it must share the model "
-            "womblex's embed stage uses for chunk vectors (ADR-0014). Run with "
-            "WOMBLEX_MODE=stub until then."
-        )
+        model = self._model_id()
+        values = list(self._embed_query(text))
+        # `make_query_embedding` declares the model and L2-normalises so a
+        # query·chunk dot product is well-formed; a producer that already
+        # normalised pays only an idempotent second pass.
+        return make_query_embedding(model=model, values=[float(value) for value in values])
+
+
+def _read_parquet_rows(body: bytes) -> List[Row]:
+    """Decode one Parquet shard's rows into plain dicts.
+
+    Isolated (and pyarrow imported here, not at module top) so the schema mapping
+    in `shard_reader` — and its tests — need neither pyarrow nor a real shard.
+    """
+    import pyarrow.parquet as pq  # type: ignore[import-not-found]
+
+    table = pq.read_table(io.BytesIO(body))
+    return table.to_pylist()
+
+
+def _read_parquet_model(body: bytes) -> Optional[str]:
+    """Read the embed-stage model from a shard's file-level metadata, if declared.
+
+    womblex may record the model as a column (handled per row) or in the file's
+    key/value metadata; this reads the metadata fallback. Absent → ``None``, and
+    the mapping then relies on a per-row `model` column, or refuses (a payload a
+    consumer cannot confirm is worse than an absent one).
+    """
+    import pyarrow.parquet as pq  # type: ignore[import-not-found]
+
+    metadata = pq.read_metadata(io.BytesIO(body)).metadata or {}
+    for raw_key, raw_value in metadata.items():
+        key = raw_key.decode() if isinstance(raw_key, bytes) else str(raw_key)
+        if key in ("model", "embedding_model", "embed_model"):
+            return raw_value.decode() if isinstance(raw_value, bytes) else str(raw_value)
+    return None

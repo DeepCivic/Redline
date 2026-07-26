@@ -15,17 +15,21 @@ Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
 ## Status
 
-Under construction. See the living design doc and build state at
-[`docs/comprehension-lens-design.md`](./docs/comprehension-lens-design.md).
-The former build plan is **deprecated**, retained as delivery history for
-Threads 1–11.
+Under construction. See the living delivery plan and build state at
+[`docs/dev-iteration-3.md`](./docs/dev-iteration-3.md). The two earlier
+iteration documents are **frozen history**, retained as delivery logs:
+[`dev-iteration-1.md`](./docs/dev-iteration-1.md) (Threads 1–15) and
+[`dev-iteration-2.md`](./docs/dev-iteration-2.md) (the comprehension-lens design
++ Threads 17–25, and the still-authoritative architecture rationale).
 
-Threads 1–11 (+ 2a) are ✅ complete: scaffold, `redline-domain` (user-defined
-requirements), the `womblex-ingest` sidecar, the extraction reader adapter, the
-Numbatch classifier + service scaffold, the financial extension (schema + config
-API + extraction worker + adapter), the `redline_` persistence layer, the
-orchestration use-cases, and the workflow-manager control surface. Current
-thread: **Thread 17 — lens domain (`Topic`, `Lens`, `HardRule`)**.
+Threads 1–15 and 17–25 are ✅ complete: scaffold, `redline-domain` (user-defined
+requirements + the lens domain), the `womblex-ingest` sidecar + embeddings seam,
+the extraction/embedding reader adapters, the Numbatch classifier + service
+scaffold, the financial extension, the `redline_` persistence layer, the
+orchestration use-cases, the workflow-manager control surface, the review
+grid/pivots/Excel export, the first-pass classification path (hard-rule /
+retrieval / adjudication) and the comprehension read models. Current thread:
+**Thread 37 — real womblex binding** (see `dev-iteration-3.md` §4).
 
 ## Architecture
 
@@ -40,8 +44,9 @@ redline/
 ├── docs/
 │   ├── adr/                     # architecture decision records (Wayfinder ADR model)
 │   ├── threads/                 # per-thread technical docs
-│   ├── comprehension-lens-design.md   # the living design doc + build state
-│   └── procurement-evaluation-plan.md # deprecated; Threads 1–11 delivery history
+│   ├── dev-iteration-3.md       # the living delivery plan + build state
+│   ├── dev-iteration-2.md       # frozen; comprehension-lens design + Threads 17–25
+│   └── dev-iteration-1.md       # frozen; original build plan + Threads 1–15
 ├── packages/
 │   ├── redline-domain/             # entities + ports (zero deps, Result pattern)
 │   ├── redline-application/        # use-cases

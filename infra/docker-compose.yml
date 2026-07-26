@@ -12,6 +12,14 @@
 #
 # Profiles:
 #   ingest    — womblex-ingest + minio (Thread 3; the ingestion path)
+#   womblex   — the real womblex engine as its OWN pod (Thread 37a), sharing
+#               MinIO. womblex is a REQUIRED subsystem (Finding 2 / D5), kept in
+#               a separate image because its OCR/tokeniser/model runtime is heavy
+#               and its resource profile is disparate from the API sidecar's.
+#               This pod is a LOCAL TEST HARNESS: it extracts + chunks (+ embeds
+#               when ISAACUS_API_KEY is set) a mounted corpus and lands the shards
+#               in the bucket under proc/{evaluationId}/. Production orchestration
+#               of the worker is a deployment choice (the seam is object storage).
 #   numbatch  — the Numbatch stack, all-but-frontend: postgres + redis + minio +
 #               backend API + Arq worker + inference service + one-shot migrate
 #               (Thread 5; ADR-0004/ADR-0005 — the SvelteKit frontend is excluded,
@@ -33,7 +41,7 @@ name: redline
 services:
   minio:
     image: docker.io/minio/minio:latest
-    profiles: ["ingest", "numbatch"]
+    profiles: ["ingest", "numbatch", "womblex"]
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
@@ -49,14 +57,14 @@ services:
       timeout: 5s
       retries: 12
 
+  # The lightweight FastAPI read seam (Parquet→JSON). It stays light: the real
+  # womblex engine is its own pod (the `womblex` service below), never baked into
+  # this image. WOMBLEX_MODE=real selects the real extractor (Thread 37b), which
+  # reads the shards the womblex pod produced.
   womblex-ingest:
     build:
       context: ../services/womblex-ingest
       dockerfile: Dockerfile
-      args:
-        # Opt in to the real womblex pipeline / Isaacus enrichment at build time.
-        INSTALL_WOMBLEX: ${INSTALL_WOMBLEX:-0}
-        ISAACUS: ${ISAACUS:-0}
     profiles: ["ingest"]
     depends_on:
       minio:
@@ -66,11 +74,39 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
       REDLINE_BUCKET: ${REDLINE_BUCKET:-redline}
+      # stub is the dependency-free TEST DOUBLE (fast CI, the Thread 4 adapter
+      # contract). redline's real deployment runs the womblex pod + WOMBLEX_MODE=real.
       WOMBLEX_MODE: ${WOMBLEX_MODE:-stub}
-      # Only consulted when WOMBLEX_MODE=real and the image was built with ISAACUS=1.
       ISAACUS_API_KEY: ${ISAACUS_API_KEY:-}
     ports:
       - "8000:8000"
+
+  # ── womblex engine (its own pod — Thread 37a) ─────────────────────────────
+  # The REAL womblex pipeline (extract → chunk → embed). A required subsystem,
+  # isolated in its own image (Dockerfile.womblex) because its runtime is heavy
+  # and unlike the API sidecar's. A local test harness: it runs over a mounted
+  # corpus and syncs shards to the shared bucket under proc/{evaluationId}/.
+  womblex:
+    build:
+      context: ../services/womblex-ingest
+      dockerfile: Dockerfile.womblex
+    profiles: ["womblex"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      REDLINE_BUCKET: ${REDLINE_BUCKET:-redline}
+      EVALUATION_ID: ${WOMBLEX_EVAL_ID:-womblex-pod}
+      # Engages the embed stage (kanon-2-embedder); *.embeddings.parquet — the
+      # retrieval sibling — is only produced when this is set.
+      ISAACUS_API_KEY: ${ISAACUS_API_KEY:-}
+    volumes:
+      # Mount a local corpus to extract. Default points at the committed fixture
+      # corpus the exit test uses; override WOMBLEX_CORPUS for a real document set.
+      - ${WOMBLEX_CORPUS:-../services/womblex-ingest/tests/corpus}:/work/input:ro
 
   # ── Numbatch stack (all-but-frontend) ─────────────────────────────────────
   # Vendored fork under ../services/numbatch (DeepCivic/Numbatch). We run its

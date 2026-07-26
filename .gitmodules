@@ -1,0 +1,3 @@
+[submodule "services/womblex"]
+	path = services/womblex
+	url = https://github.com/DeepCivic/womblex.git

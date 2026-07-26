@@ -221,7 +221,7 @@ def build_app_from_env() -> FastAPI:
         secret_key=settings.s3_secret_key,
         bucket=settings.bucket,
     )
-    extractor = build_extractor(settings.womblex_mode)
+    extractor = build_extractor(settings.womblex_mode, storage=storage, bucket=settings.bucket)
     embedder = build_text_embedder(settings.womblex_mode)
     return build_app(
         storage=storage,

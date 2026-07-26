@@ -1,15 +1,21 @@
 """Object-storage seam (MinIO/S3).
 
-Kept deliberately thin: `put_object` / `get_object`. `S3ObjectStorage` wraps boto3
-and is only constructed at process start (see `main.build_app` callers), so tests use
-`FakeObjectStorage` and never touch boto3 or a live bucket. `get_object` backs the
-Parquet→JSON read seam: the JSON read model is durably stored alongside the Parquet
-shards, so `GET /extractions/...` survives a sidecar restart (MinIO is the record).
+Kept deliberately thin: `put_object` / `get_object` / `list_objects`.
+`S3ObjectStorage` wraps boto3 and is only constructed at process start (see
+`main.build_app` callers), so tests use `FakeObjectStorage` and never touch boto3
+or a live bucket. `get_object` backs the Parquet→JSON read seam: the JSON read
+model is durably stored alongside the Parquet shards, so `GET /extractions/...`
+survives a sidecar restart (MinIO is the record).
+
+`list_objects` was added for Thread 37b: the real extractor discovers the Parquet
+shards the womblex pod (Thread 37a) landed under `proc/{evaluationId}/` — whose
+batch/run-directory names are womblex's, not ours — rather than assuming a fixed
+set of keys.
 """
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import List, Protocol
 
 
 class ObjectNotFound(Exception):
@@ -21,6 +27,10 @@ class ObjectStorage(Protocol):
 
     def get_object(self, key: str) -> bytes:
         """Return the object body, or raise `ObjectNotFound` if the key is absent."""
+        ...
+
+    def list_objects(self, prefix: str) -> List[str]:
+        """Return every object key under `prefix` (sorted), or an empty list."""
         ...
 
 
@@ -80,3 +90,13 @@ class S3ObjectStorage:
                 raise ObjectNotFound(key) from error
             raise
         return response["Body"].read()
+
+    def list_objects(self, prefix: str) -> List[str]:
+        # Paginate so a large corpus's shard set is fully enumerated, not
+        # truncated at boto3's 1000-key page default.
+        paginator = self._client.get_paginator("list_objects_v2")
+        keys: List[str] = []
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            for entry in page.get("Contents", []):
+                keys.append(entry["Key"])
+        return sorted(keys)

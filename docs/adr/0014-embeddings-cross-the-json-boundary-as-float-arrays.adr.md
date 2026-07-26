@@ -55,11 +55,19 @@ Five things this pins:
 - **A sibling resource, not a field on `/extractions`.** Embeddings are an
   *optional overlay* on the extraction, exactly as womblex writes them: a sibling
   Parquet, never a rewrite of the verbatim base (design doc §3). A document may
-  legitimately have an extraction and no embeddings — the embed stage did not run,
-  or the deployment is air-gapped — so the two resources must be absent
+  legitimately have an extraction and no embeddings — the embed stage did not run
+  (it is Isaacus-gated; see the note below) — so the two resources must be absent
   independently. This is what makes the thread's exit criterion *"absent shard →
   `NOT_FOUND`"* a normal outcome rather than a broken extraction. It also keeps
   the Thread 4 adapter from paying megabytes for a payload it never reads.
+
+  > **Isaacus is required for retrieval; air-gap is a non-goal (ADR-0008,
+  > amended 2026-08-08).** The embed stage that writes `*.embeddings.parquet` is
+  > Isaacus-only (`kanon-2-embedder`). A deployment without an `ISAACUS_API_KEY`
+  > has no embeddings and therefore no retrieval. "Absent embeddings" here means
+  > *the embed stage has not run yet for this document* — not a supported
+  > air-gapped operating mode. Any "air-gapped" phrasing elsewhere is superseded
+  > by that amendment.
 
 - **The join key is `chunkId`, the vocabulary the seam already speaks.**
   `chunkId = "{source_hash}:{chunk_index}"` is already `ChunkRecord`'s identity on

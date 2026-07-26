@@ -1,11 +1,20 @@
 # redline — Comprehension Lens Design
+# (Dev Iteration 2 — frozen history)
 
-> **Status:** Draft for review · **Date:** 2026-07-24
-> **Supersedes:** [`procurement-evaluation-plan.md`](./procurement-evaluation-plan.md)
-> (deprecated; retained as delivery history for Threads 1–11).
+> **Status:** ⚠️ DEPRECATED — frozen delivery history · **Date:** 2026-07-24
+> **Supersedes:** [`dev-iteration-1.md`](./dev-iteration-1.md)
+> (the original build plan; delivery history for Threads 1–15).
+> **Superseded by:** [`dev-iteration-3.md`](./dev-iteration-3.md) — the current living
+> delivery document.
 >
-> This is the living delivery document. It carries the new **comprehension lens**
-> track _and_ the outstanding procurement scope the old plan had not yet built.
+> This doc introduced the **comprehension lens** track (Threads 17–25, all ✅ done)
+> and carried forward the outstanding procurement scope at the time. It is retained
+> as the authoritative design rationale (§1–§5, §7 decision register, §8 non-goals)
+> and as the delivery history for Threads 17–25. **Do not track new threads here** —
+> §6 sequencing and §10 build-state are frozen at the iteration-2 boundary. **No
+> outstanding work is tracked in this document**; every item still to be done now
+> lives in [`dev-iteration-3.md`](./dev-iteration-3.md). Only the design *rationale*
+> remains authoritative here.
 
 ---
 
@@ -271,6 +280,13 @@ tenancy mapping needs a decision before the lens is shared between users.
 
 ## 6. Delivery
 
+### Sequencing
+
+Thread 17 → 18 → 19 is the critical path; 19 is where the workflow first becomes
+demonstrable without any trained model. Threads 12–14 are independent of the lens
+track and can proceed in parallel — the lens changes what feeds the grid, not the
+grid itself.
+
 ### The thread contract (non-negotiable)
 
 A **thread is one build step**, sized to fit a single agent's context:
@@ -429,6 +445,20 @@ test.
 
 ### Track H — Shell & hardening
 
+- **Thread 36 — Real womblex binding** (next). Implement `RealWomblexExtractor`
+  and `RealWomblexTextEmbedder` against the actual womblex Python API — the
+  engine every consumer since Thread 4 has only ever seen as a stub. Resolves the
+  `womblex` extra to the concrete fork, honours the Parquet→JSON mapping pinned
+  in `records.py`, and proves Thread 22's retrieval sorts a _real_ corpus. womblex
+  is a **required** dependency, not optional; the stub is a test double, and its
+  space is by its own admission "not semantically meaningful". **Precedes Thread
+  16** — the engine must run before release is prepped.
+  _Exit: `WOMBLEX_MODE=real` ingests a real document, `/embeddings/...` declares
+  womblex's real model, `/embeddings/query` matches that space, and
+  `ClassifyByRetrieval` sorts a real fixture corpus onto expected topics; runs
+  with `ISAACUS_API_KEY` unset._
+  — docs: [thread-36](./threads/thread-36-real-womblex-binding.md)
+
 - **Thread 35 — Next.js shell** (was the Track 4 follow-up). React/Next shell
   matching Wayfinder's `apps/web` (ADR-0006) serving
   `/evaluations/:id/grouping` and the lens routes; wires the existing Playwright
@@ -447,12 +477,7 @@ test.
   (Threads 6–8 mechanical wiring); CI, compose docs, README.
   _Exit: builds and runs standalone; validate script green._
 
-### Sequencing
 
-Thread 17 → 18 → 19 is the critical path; 19 is where the workflow first becomes
-demonstrable without any trained model. Threads 12–14 are independent of the lens
-track and can proceed in parallel — the lens changes what feeds the grid, not the
-grid itself.
 
 ---
 
@@ -568,9 +593,7 @@ in real use.
 
 ## 10. Build state
 
-_Update at the end of every thread. Threads 1–11 are complete — their logs remain
-in the [deprecated plan](./procurement-evaluation-plan.md) §10 and are not
-duplicated here._
+_These logs are frozen history. Threads 1–11 are in the [first-iteration plan](./dev-iteration-1.md) §10; remaining work is in [`dev-iteration-3.md`](./dev-iteration-3.md)._
 
 | Thread                                  | Track | Package(s)            | Status         | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | --------------------------------------- | ----- | --------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -585,7 +608,7 @@ duplicated here._
 | 23 — LLM adjudication + rationale       | L     | domain, application   | ✅ **done**    | Distinct `IAdjudicator` port (settles open question #2), not a second `ILanguageModel` method; adjudicated rows carry a rationale _alongside_ the shared `RequirementClassification` shape (D2), chosen topic id = requirement id (ADR-0010). Model-hallucinated / no-choice inputs refuse. No new ADR. domain **101** (+2), application **41** (+8). [thread-23](./threads/thread-23-llm-adjudication-and-rationale.md)                                              |
 | 24 — Ambiguity signals + buckets        | L     | domain                | ✅ **done**    | Named, statused signal register (womblex's `heuristics_disambiguation` shape — implemented + not-implemented listed) drives a pure Clear/Ambiguous derivation; no confidence value escapes the read model (non-goal §8). Two signals wired (`no-clear-leader`, `close-contenders`), two declared-inert. Thresholds unmeasured (open question #5). No new ADR. domain **123** (+22). [thread-24](./threads/thread-24-ambiguity-signals-and-buckets.md)                    |
 | 25 — Document Map read model            | L     | application           | ✅ **done**    | Derived, never stored: a pure roll-up of how the corpus sorted — per-topic counts + shares and the corpus-wide Clear/Ambiguous split. Reuses `computePivot`'s count-measure algorithm (descending count, alphabetical tiebreak) over redline's own `MappedDocument`, not its types (Thread 13's precedent); parity against the real `computePivot` is frozen in the adapters' Wayfinder contract test. No confidence value enters or escapes (non-goal §8). No new ADR. application **50** (+9), adapters **70** (+1, the count-pivot parity). [thread-25](./threads/thread-25-document-map-read-model.md) |
-| 26 — Collision selection & capping      | L     | domain                | 🔵 **next**    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 26 — Collision selection & capping      | L     | domain                | ⚪ not started | Was next on Track L; deferred behind Thread 36 (real womblex binding) at the owner's direction — the required engine must run before more lens work stacks on the stub.                                                                                                                                                                                                                                                                                              |
 | 27 — `BoundaryDecision` entity          | L     | domain                | ⚪ not started | Net-new modelling (open question #4).                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 28 — Decision persistence + corrections | L     | adapters              | ⚪ not started | Upstream ADR-0020.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 29 — Lens persistence                   | L     | adapters              | ⚪ not started | Depends on D3.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -597,6 +620,7 @@ duplicated here._
 | 12 — In-app review grid                 | P     | redline-web           | ⚪ not started | Priority 1; independent of Track L.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | 13 — Pricing pivots                     | P     | application           | ⚪ not started |                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 14 — Excel export                       | P     | adapters              | ⚪ not started | Priority 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 36 — Real womblex binding               | H     | womblex-ingest        | 🔵 **next**    | Binds the real engine behind the otherwise-complete seam; retires the "stub space is not semantic" caveat (Threads 19/22/24) and proves real-corpus retrieval. womblex is **required**, not optional. Precedes Thread 16. [thread-36](./threads/thread-36-real-womblex-binding.md)                                                                                                                                                                                     |
 | 35 — Next.js shell                      | H     | redline-web           | ⚪ not started | Closes the `/e2e` deviation.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 15 — Isaacus-optional & air-gap         | H     | womblex-ingest        | ⚪ not started | Now covers the lens's network posture.                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 16 — Workspace extraction & release     | H     | workspace             | ⚪ not started | Grafts the Threads 6–8 overlay onto the fork.                                                                                                                                                                                                                                                                                                                                                                                                                         |
