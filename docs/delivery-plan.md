@@ -214,6 +214,36 @@ _Exit: a test maps a real `table_cells` row — real column names, pinned to
 the bare number beside it does not; the query embedder calls womblex's
 `embed_texts` with `task="retrieval/query"` and the configured model._
 
+### V1a (61) — Map non-text elements instead of raising on them
+
+**Found by QA on thread 56; it blocks the real lane exactly as V1's four defects
+did, and V1 does not fix it.** `map_element` reads `text` with `_require`, but
+womblex's `Element.text` is `str | None` and only text-bearing kinds populate it.
+`table`, `image`, `figure`, `form`, `page_break`, `sheet_meta` and `sheet_cell` all
+serialise `text: None` (`store/output.py:262` writes `e.text` verbatim; the
+constructors at `orchestrator.py:263` and `strategies_file.py:90` pass no `text=`
+at all). `map_document_extraction` maps every element row, so **one such element
+raises `ShardSchemaError` and the entire document's extraction is lost.**
+
+The two are inseparable: `table_cells` rows are only emitted under
+`if e.kind == "table"` (`output.py:275`), so every `parent_elem_order` that V1 now
+maps correctly points at a `table` element that kills the document first. V1's
+currency derivation is therefore unreachable on any real table-bearing shard —
+which is the only corpus it exists to serve. V1's exit test does not catch this
+because its fixture elements are all text-bearing: the fixtures now use the right
+*columns*, but still describe a document shape womblex never produces.
+
+Needs a contract decision, which is why it is its own thread rather than a patch:
+`ExtractionElement.text` is non-nullable `string` in `redline-domain`, so the
+options are `text: ""`, an `alt_text` fallback for `image`/`figure`, or skipping
+non-text kinds entirely — and they serve materially different things to
+`BuildDocumentMap`. Recommendation: `alt_text` then `""`, keeping every element so
+`elementOrder` provenance stays contiguous.
+
+_Exit: a shard whose elements include `table`, `image` and `page_break` rows maps
+to a `DocumentExtraction` with every element present and no raise; the fixture
+carries at least one non-text element in every element shard._
+
 ### V2 (57) — Retrieval-backed `IProcurementClassifier`
 
 `ClassifyResponseGroup` takes an `IProcurementClassifier`; the container wires
@@ -270,6 +300,7 @@ document delineated by topic and brand, with provenance back to source._
 | 37a | womblex pod (test harness) | H | infra | ⛔ **retired** — the engine ships its own image, runner and staging (§3). Replaced by the `womblex` compose profile building `services/womblex` + `scripts/womblex-engine-smoke.sh`. |
 | 37b | Real womblex binding | H | womblex-ingest | ↪ **absorbed into V1 (56)** — the schema defects were its real content |
 | 56 | V1 — fix the womblex bindings | **V** | womblex-ingest | ✅ **done** — sidecar pytest 118 passed, 1 skipped (the schema drift guard, which needs the `[womblex]` extra). All four defects fixed (the `col` miss was found during review); currency respecified as [ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md) after `value_type` proved always `"text"`. Fixtures rebuilt on womblex's real `TABLE_CELLS_SCHEMA` and pinned to it by a drift guard; `pyarrow` moved into `[dev]` so the real-shard lane actually runs instead of skipping. |
+| 61 | V1a — map non-text elements | **V** | womblex-ingest | 🔵 **next** — found by QA on 56 (§4 V1a). `map_element` requires `text`, but womblex writes `text: None` for every non-text kind; one such element raises and the **whole document's extraction is lost**. Blocks the real lane. |
 | 57 | V2 — retrieval-backed classifier | **V** | redline-web | 🔵 next |
 | 58 | V3 — currency from table cells | **V** | adapters | 🔵 next |
 | 59 | V4 — Next.js shell | **V** | redline-web | 🔵 next (was 41) |
@@ -333,22 +364,25 @@ document delineated by topic and brand, with provenance back to source._
 
 **Track V runs to completion before anything else starts.**
 
-1. **V1 (56)** — the three schema defects. Hard-blocks everything: no query
-   embedding means no retrieval, and the table-cell mapping raises on every real
-   row. Nothing downstream can be trusted until this is green against real shards.
-2. **V2 (57)** and **V3 (58)** — independent of each other, both depend on V1.
+1. **V1 (56)** — ✅ done. The four schema defects: no query embedding meant no
+   retrieval, and the table-cell mapping raised on every real row.
+2. **V1a (61)** — the element mapping. V1 left the real lane still unable to read
+   a table-bearing document, so this inherits V1's "nothing downstream can be
+   trusted until it is green against real shards" and must land before V3 has
+   anything to price.
+3. **V2 (57)** and **V3 (58)** — independent of each other, both depend on V1.
    V2 unblocks classification without Numbatch; V3 unblocks pricing without
    Numbatch. Either order, or in parallel.
-3. **V4 (59)** — the shell. The only piece that is genuinely new code, and the
+4. **V4 (59)** — the shell. The only piece that is genuinely new code, and the
    only reason the product cannot be looked at today.
-4. **V5 (60)** — the real corpus run. The point of the exercise.
+5. **V5 (60)** — the real corpus run. The point of the exercise.
 
 Then, and only then:
 
-5. **42–50** — Track L, in dependency order, scoped by §3's findings. Revisit
+6. **42–50** — Track L, in dependency order, scoped by §3's findings. Revisit
    *after* V5 has shown what the cold-start path actually gets right on a real
    corpus — that evidence should shape the lens work rather than be assumed.
-6. **51** — workspace extraction and release, last by nature.
+7. **51** — workspace extraction and release, last by nature.
 
 ### What Track V deliberately does not do
 

@@ -1,0 +1,38 @@
+# Python linting for redline's own Python. The counterpart to eslint.config.mjs:
+# TypeScript has been linted since day one and Python has had nothing, so a stale
+# import or an undefined name in the sidecar surfaced only as a test failure — or
+# not at all, on a branch the tests do not reach. Wired into validate.sh #14.
+#
+# Config lives at the root rather than in each service's pyproject.toml so there
+# is one place to change, and so the exclusions below cannot be bypassed by a
+# service that grows its own [tool.ruff] table.
+
+target-version = "py311"  # services/womblex-ingest declares requires-python >=3.11
+
+# Measured against the tree, not chosen by taste: no redline Python line exceeds
+# 112 characters today, so this gates the outliers without a reformat. Tighten it
+# when a formatter is wired, not before.
+line-length = 120
+
+# The upstream engines are submodules holding upstream source we never modify
+# (ADR-0015), so they are excluded here exactly as vendor/wayfinder is excluded
+# from the Node scope and as validate.sh #9 excludes them from the size guard.
+# redline's own overlays — services/womblex-ingest, services/numbatch-extension —
+# sit beside them and ARE linted.
+extend-exclude = [
+    "services/womblex",
+    "services/numbatch",
+    "vendor",
+]
+
+[lint]
+# Ruff's default selection, stated explicitly so it cannot drift with a ruff
+# upgrade: pycodestyle import/statement/syntax errors (E4/E7/E9) and the whole of
+# pyflakes (F) — unused imports, undefined names, f-strings with no placeholders.
+#
+# Deliberately a floor rather than a style regime. This repo has no Python
+# formatter, and a lint pass that arrives with hundreds of cosmetic findings gets
+# switched off; this one catches the class of defect that actually ships. Widen it
+# (I for import order, B for bugbear, UP for pyupgrade) in its own change, so the
+# diff is reviewable as a decision rather than as noise.
+select = ["E4", "E7", "E9", "F"]
