@@ -23,8 +23,9 @@
 #   numbatch  — the Numbatch stack, all-but-frontend: postgres + redis + minio +
 #               backend API + Arq worker + inference service + one-shot migrate
 #               (Thread 5; ADR-0004/ADR-0005 — the SvelteKit frontend is excluded,
-#               redline owns its own control surface). Requires the vendored fork
-#               under ../services/numbatch (see services/README.md).
+#               redline owns its own control surface). Builds from the
+#               ../services/numbatch submodule using ITS OWN infra/docker/*.Dockerfile
+#               — run `git submodule update --init` first (see services/README.md).
 #   redline   — redline's own Postgres for the redline_ schema (Thread 9; ADR-0002).
 #
 # Usage (Thread 3 exit test):
@@ -170,10 +171,16 @@ services:
               "--poll-interval", "5", "--stale-timeout", "900"]
 
   # ── Numbatch stack (all-but-frontend) ─────────────────────────────────────
-  # Vendored fork under ../services/numbatch (DeepCivic/Numbatch). We run its
-  # backend + Arq worker + inference service; the SvelteKit frontend is never
-  # started — redline owns its own UI (ADR-0005). Numbatch reads the same MinIO
-  # (its ingestion feed points at redline's `proc/{evaluationId}/` chunks).
+  # The DeepCivic/Numbatch fork, consumed as a submodule at ../services/numbatch
+  # and built with the ENGINE'S OWN infra/docker/*.Dockerfile — redline supplies
+  # no Dockerfile of its own here (D14). We run its backend + Arq worker +
+  # inference service; the SvelteKit frontend is never started — redline owns its
+  # own UI (ADR-0005). Numbatch reads the same MinIO: its ingestion feed accepts
+  # womblex *.chunks.parquet directly (POST /ingestion/womblex-configs/{id}/upload,
+  # s3_womblex_bucket), pointed at redline's `proc/{evaluationId}/` chunks.
+  #
+  # redline's OWN additive overlay is NOT here — it lives in
+  # ../services/numbatch-extension and grafts onto this tree (ADR-0005).
 
   numbatch-postgres:
     image: docker.io/library/postgres:16

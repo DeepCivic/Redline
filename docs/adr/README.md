@@ -51,7 +51,7 @@ none, so they were written once, ahead of the track.
 | [0002](./0002-own-minio-and-postgres.adr.md) | redline owns its MinIO bucket and Postgres, not Wayfinder's | Accepted |
 | [0003](./0003-parquet-to-json-boundary.adr.md) | The womblex extraction boundary is JSON (sidecar reads Parquet, serves JSON) | Accepted — amended by [0014](./0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) |
 | [0004](./0004-user-defined-requirements-not-fixed-1-6.adr.md) | Requirements are user-defined criteria (not a fixed 1–6 profile) | Accepted — amended by [0009](./0009-numbatch-library-is-system-of-record.adr.md) |
-| [0005](./0005-numbatch-fork-all-but-frontend.adr.md) | Numbatch is a vendored fork; run all-but-frontend, bootstrap via API | Accepted — amended by [0013](./0013-numbatch-fork-is-materialised-from-a-pin.adr.md) |
+| [0005](./0005-numbatch-fork-all-but-frontend.adr.md) | Numbatch is a vendored fork; run all-but-frontend, bootstrap via API | Accepted — Vendoring clause amended by [0015](./0015-upstream-python-engines-are-submodules.adr.md) |
 | [0006](./0006-inherit-wayfinder-auth-roles.adr.md) | Auth/roles: inherit Wayfinder's, do not build our own | Accepted |
 | [0007](./0007-procurement-purpose-lens-means.adr.md) | Procurement is the purpose; the comprehension lens is the means | Accepted |
 | [0008](./0008-trained-classifier-is-an-optional-overlay.adr.md) | The trained classifier is an optional overlay; the first pass needs no samples | Accepted |
@@ -59,5 +59,6 @@ none, so they were written once, ahead of the track.
 | [0010](./0010-topic-identity-carries-into-the-requirement-projection.adr.md) | A topic's identity carries into the requirement it projects to | Accepted |
 | [0011](./0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md) | Hard-rule precedence is specificity, then declaration order | Accepted |
 | [0012](./0012-wayfinder-is-pinned-and-optional.adr.md) | Wayfinder is pinned by commit and optional at install time | Accepted |
-| [0013](./0013-numbatch-fork-is-materialised-from-a-pin.adr.md) | The Numbatch fork is materialised from a pin, not a submodule | Accepted |
+| [0013](./0013-numbatch-fork-is-materialised-from-a-pin.adr.md) | The Numbatch fork is materialised from a pin, not a submodule | **Superseded** by [0015](./0015-upstream-python-engines-are-submodules.adr.md) |
 | [0014](./0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md) | Embeddings cross the JSON boundary as plain float arrays on a sibling resource | Accepted |
+| [0015](./0015-upstream-python-engines-are-submodules.adr.md) | The upstream Python engines are submodules, consumed for what they already do | Accepted — supersedes [0013](./0013-numbatch-fork-is-materialised-from-a-pin.adr.md) |

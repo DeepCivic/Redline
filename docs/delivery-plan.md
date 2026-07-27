@@ -43,12 +43,11 @@ shipped capabilities rather than reimplementing them.**
   **JavaScript** upstream (Wayfinder) stays a build-time pin, because a submodule
   drags its whole package set into the pnpm workspace (ADR-0012). This is a
   narrower and more honest rule than "one vendoring idiom for both upstreams".
-- **This supersedes [ADR-0013](./adr/0013-numbatch-fork-is-materialised-from-a-pin.adr.md)**,
-  which decided the opposite for Numbatch ("No submodule"). ADR-0013's stated
-  reason was consistency with Wayfinder's pin, and Wayfinder's pin exists for a
-  JS-specific reason that does not apply to Numbatch. A superseding ADR is
-  **Thread 53** — until it is written, ADR-0013 and this document disagree and
-  ADR-0013 is the older of the two.
+- Ratified as [**ADR-0015**](./adr/0015-upstream-python-engines-are-submodules.adr.md),
+  which **supersedes [ADR-0013](./adr/0013-numbatch-fork-is-materialised-from-a-pin.adr.md)**
+  in full. ADR-0013 had decided the opposite for Numbatch ("No submodule"), on
+  consistency with Wayfinder's pin — and Wayfinder's pin exists for a
+  pnpm-workspace reason that does not apply to a Python upstream.
 - Before any thread builds something an upstream may already provide, the
   upstream tree is read first (Thread 54).
 
@@ -157,7 +156,7 @@ defensibility problem, not just a technical one.
 | 39 | Pricing pivots | P | application, redline-web | ✅ **verified** — pivots match hand-computed totals and the frozen Wayfinder roll-up. |
 | 40 | Excel export | P | redline-web | ✅ **verified** — real `Number` cells, blank-not-zero, hyperlink source column; `write-excel-file@4.1.1` wired. "Workbook opens" → 41. |
 | 52 | womblex submodule wiring | H | infra, workspace | ✅ **done** (this change) — CI fetches submodules; `validate.sh` #13 guards pin drift; static guards exclude the vendored tree. |
-| 53 | Numbatch submodule + superseding ADR | H | infra, docs | 🔵 **next** — also fixes the four dead `infra/docker/*.Dockerfile` compose refs |
+| 53 | Numbatch submodule + superseding ADR | H | infra, docs | ✅ **done** — submodule @ `72bcead`; overlay moved to `services/numbatch-extension/`; [ADR-0015](./adr/0015-upstream-python-engines-are-submodules.adr.md) supersedes ADR-0013; the four dead `infra/docker/*.Dockerfile` compose refs now resolve |
 | 54 | Upstream capability audit | H | docs | ✅ **done** (§3) — womblex and Numbatch both read; findings folded in |
 | 41 | Next.js shell | H | redline-web | ⚪ not started — closes the `/e2e` deviation and the browser half of 38–40. |
 | 42 | Collision selection, ordering & capping | L | domain | ⚪ not started |

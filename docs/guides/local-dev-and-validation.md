@@ -3,6 +3,19 @@
 redline mirrors Wayfinder's toolchain (pnpm 9, Node ≥ 20, Turborepo,
 TypeScript 5.6 strict, Vitest 4). Two ways to run it.
 
+## First, on a fresh clone: the upstream submodules
+
+```bash
+git submodule update --init
+```
+
+`services/womblex` and `services/numbatch` are the upstream engines, consumed as
+submodules ([ADR-0015](../adr/0015-upstream-python-engines-are-submodules.adr.md)).
+`validate.sh` **SKIPs** rather than fails when they are absent, so a shallow clone
+still goes green — but the compose `womblex` / `numbatch` profiles build from
+them, and the pin-drift guard (check 13) only bites when they are present. CI
+checks them out (`submodules: true`).
+
 ## A. You have local Node ≥ 20 + pnpm
 
 ```bash
@@ -131,10 +144,11 @@ checkout is never written to. Point `WAYFINDER_DIR` at your Wayfinder checkout
 | 8 | no committed `.only` tests | no |
 | 9 | source file size (warn ≥ 700, fail ≥ 800) | no |
 | 10 | `services/womblex-ingest` pytest (isolated venv) | needs Python 3 |
-| 11 | `services/numbatch/financial_extension` pytest (isolated venv) | needs Python 3 |
+| 11 | `services/numbatch-extension/financial_extension` pytest (isolated venv) | needs Python 3 |
 | 12 | `pnpm-lock.yaml` carries the vendored Wayfinder importer | no |
+| 13 | `services/womblex` submodule tag matches the sidecar's `womblex==` pin | needs the submodule |
 
-Static checks (4–9, 12) always run on the host. If neither local Node nor Podman
+Static checks (4–9, 12–13) always run on the host. If neither local Node nor Podman
 is available, the Node-dependent checks (1–3) `SKIP` — and the run **exits 2**,
 not 0, so a change is never mistaken as shippable until those checks have run
 green somewhere (locally or in CI).

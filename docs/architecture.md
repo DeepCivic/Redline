@@ -11,7 +11,7 @@
 >
 > It is written against the *actual* behaviour of
 > the upstream engines (womblex is vendored as a submodule at `services/womblex`,
-> pinned to `v0.2.0`; Numbatch is vendored under `services/numbatch`), not against
+> pinned to `v0.2.0`; Numbatch is a submodule at `services/numbatch`), not against
 > aspiration. Where an earlier assumption proved false, the correction is stated
 > plainly under **Corrections to earlier assumptions**.
 
@@ -41,7 +41,7 @@ adjudication — lives behind a seam in an upstream system or an external API.
 | System | What it is | How redline consumes it |
 |---|---|---|
 | **womblex** (`services/womblex`, submodule @ `v0.2.0`) | Python document-extraction pipeline: detect → extract → (redact) → chunk → (embed / enrich / pii). Writes **Parquet shards** to object storage. | As a **worker pod** that lands shards in MinIO, plus a thin **FastAPI read sidecar** (`services/womblex-ingest`) that reads those shards and serves **JSON** (ADR-0003). redline's TypeScript never links a Parquet reader. |
-| **Numbatch** (`services/numbatch`, vendored fork) | Python no-code multi-topic classifier: curated samples → LoRA adapter → per-document classification. FastAPI backend + Arq worker + DB-free inference service. | As a **backend+worker+inference stack** (SvelteKit frontend excluded — redline owns its UI). A redline requirement ↔ a Numbatch topic; a requirement set ↔ a profile. redline **extends** the backend for financial-figure extraction. |
+| **Numbatch** (`services/numbatch`, submodule @ `72bcead`) | Python no-code multi-topic classifier: curated samples → LoRA adapter → per-document classification. FastAPI backend + Arq worker + DB-free inference service. Ships a corrections API with an append-only audit trail, topic-scoped sample dedupe, and user-controlled adapter activation with replay comparison. | As a **backend+worker+inference stack** (SvelteKit frontend excluded — redline owns its UI), built from the fork's own Dockerfiles. A redline requirement ↔ a Numbatch topic; a requirement set ↔ a profile. redline **extends** the backend for financial-figure extraction via `services/numbatch-extension/`. |
 | **Isaacus** (external SaaS API) | The Kanon model family: `kanon-2-embedder` (retrieval embeddings), `kanon-2-enricher` (entity/graph enrichment + AI chunking), `kanon-universal-classifier`, `kanon-answer-extractor`. | **Only** through womblex's embed/enrich stages. redline never calls Isaacus directly. Requires `ISAACUS_API_KEY`. |
 
 ---
@@ -289,7 +289,9 @@ redline/
 │   │   ├── src/womblex_ingest/    stub + real extractor, records (wire shape),
 │   │   │                          shard_reader (schema map), storage, embedding
 │   │   └── Dockerfile             the light API image
-│   └── numbatch/                  vendored fork (backend financial_extension + bootstrap)
+│   ├── numbatch/                  ◄ SUBMODULE: the Numbatch fork @ 72bcead
+│   └── numbatch-extension/        redline's additive overlay (financial_extension
+│                                  + bootstrap-profile.py), grafts onto the fork
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
 │   └── womblex/redline.yaml       redline's pipeline config for the engine
@@ -313,8 +315,16 @@ redline/
   `git submodule update --init`; CI checks it out (`submodules: true`). The
   sidecar's `.[womblex]` extra pins the same version for its query embedder;
   `validate.sh` check #13 fails the build if the two drift apart.
-- **Numbatch** — vendored fork source under `services/numbatch` (materialised
-  from a pin; ADR-0013), run all-but-frontend (ADR-0005).
+- **Numbatch** — git **submodule** at `services/numbatch` (DeepCivic/Numbatch),
+  pinned to `72bcead`. Upstream has no tags, so the pin is a SHA rather than a
+  tag as womblex's is. The `numbatch` compose profile builds the fork's own
+  `infra/docker/*.Dockerfile`s; run all-but-frontend (ADR-0005). redline's
+  additive overlay is **not** in the submodule — it lives beside it in
+  `services/numbatch-extension/` and grafts onto the fork's `app/` + `alembic/`.
+  This supersedes [ADR-0013](./adr/0013-numbatch-fork-is-materialised-from-a-pin.adr.md),
+  which chose a build-time pin for consistency with Wayfinder; Wayfinder's pin
+  exists because a submodule drags its package set into the pnpm workspace, which
+  is a JavaScript problem Numbatch does not have (D14, ADR-0015).
 - **Wayfinder** — materialised read-only from `wayfinder.pin` into
   `vendor/wayfinder`, never committed (ADR-0012).
 

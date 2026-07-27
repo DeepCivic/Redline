@@ -47,10 +47,12 @@ The three `docs/dev-iteration-{1,2,3}.md` files are frozen delivery history and
 track nothing.
 
 Both upstream Python engines are **git submodules** consumed for their existing
-capabilities, not reimplemented (decision **D14**): `services/womblex` (pinned to
-`v0.2.0`) and, once Thread 53 lands, `services/numbatch`. Run
-`git submodule update --init` on a fresh clone. Wayfinder stays a build-time pin
-because a submodule would drag its package set into the pnpm workspace (ADR-0012).
+capabilities, not reimplemented (**ADR-0015**): `services/womblex` (`v0.2.0`) and
+`services/numbatch` (`72bcead`). A submodule holds upstream source only — redline's
+own code sits beside it (`services/womblex-ingest`, `services/numbatch-extension`).
+Run `git submodule update --init` on a fresh clone. Wayfinder stays a build-time
+pin because a submodule would drag its package set into the pnpm workspace
+(ADR-0012).
 
 > **Note:** the skill commands under `.claude/commands/` still reference
 > `docs/comprehension-lens-design.md` and `docs/threads/`, neither of which

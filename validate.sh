@@ -179,10 +179,13 @@ while IFS= read -r f; do
   lc=$(wc -l < "$f")
   [ "$lc" -lt 700 ] && continue
   if [ "$lc" -ge 800 ]; then SIZE_FAILURES+="  $lc  $f\n"; else SIZE_WARNINGS+="  $lc  $f\n"; fi
-# services/womblex is the vendored engine submodule — upstream source we never
-# modify, excluded from our own static guards exactly as vendor/wayfinder is.
+# services/womblex and services/numbatch are the vendored upstream submodules —
+# source we never modify, excluded from our own static guards exactly as
+# vendor/wayfinder is. redline's own overlay lives in services/numbatch-extension
+# and IS checked.
 done < <(find packages/*/src apps/*/src services/*/src -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.py" \) \
-  ! -path "services/womblex/*" ! -name "*.test.ts" ! -name "*.test.tsx" 2>/dev/null)
+  ! -path "services/womblex/*" ! -path "services/numbatch/*" \
+  ! -name "*.test.ts" ! -name "*.test.tsx" 2>/dev/null)
 [ -n "$SIZE_WARNINGS" ] && { warn "files ≥ 700 lines — split when next touched:"; printf '%b' "$SIZE_WARNINGS"; }
 if [ -z "$SIZE_FAILURES" ]; then pass "no source file ≥ 800 lines"; else
   fail "source files ≥ 800 lines — decompose:"; printf '%b' "$SIZE_FAILURES"
@@ -210,12 +213,14 @@ else
   find services/womblex-ingest -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
-# ── 11. Numbatch financial extension tests (services/numbatch/financial_extension) ─
+# ── 11. Numbatch financial extension tests (services/numbatch-extension) ─────
 # The Thread 6 overlay: financial_profiles/financial_extractions models, the
-# Alembic migration, and the config API. Provable standalone (SQLite; no fork,
-# no GPU). SKIPs cleanly when python3 is absent so the workspace checks still gate.
-section "11. services/numbatch/financial_extension pytest"
-FIN_EXT=services/numbatch/financial_extension
+# Alembic migration, and the config API. redline's OWN code, which is why it
+# lives beside the upstream submodule rather than inside it (services/numbatch is
+# the unmodified fork). Provable standalone (SQLite; no fork, no GPU). SKIPs
+# cleanly when python3 is absent so the workspace checks still gate.
+section "11. services/numbatch-extension/financial_extension pytest"
+FIN_EXT=services/numbatch-extension/financial_extension
 if [ ! -d "$FIN_EXT" ]; then
   skip "numbatch financial extension — not present"
 elif ! command -v python3 >/dev/null 2>&1; then

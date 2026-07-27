@@ -21,7 +21,8 @@ evaluation's `requirementId`s.
 
 ## Regenerating
 
-Against a running Numbatch stack (see `services/numbatch`), after bootstrapping a
+Against a running Numbatch stack (the `numbatch` compose profile, built from the
+`services/numbatch` submodule), after bootstrapping a
 profile and triggering a run over ingested chunks:
 
 ```sh
