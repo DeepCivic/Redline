@@ -57,7 +57,11 @@ redline/
 │   └── redline-shared/             # zod schemas shared with the UI
 ├── apps/
 │   └── redline-web/                # specialist control surface + review grid
-├── services/                    # womblex-ingest, numbatch (added in later threads)
+├── services/
+│   ├── womblex/                 # SUBMODULE: the womblex engine @ v0.2.0
+│   ├── womblex-ingest/          # redline's Parquet→JSON read sidecar
+│   ├── numbatch/                # SUBMODULE: the Numbatch fork @ 72bcead
+│   └── numbatch-extension/      # redline's additive overlay on the fork
 └── vendor/
     └── wayfinder/               # materialised at build time (never committed) — typed reuse only
 ```
@@ -81,9 +85,10 @@ Mirrors Wayfinder: pnpm 9, Node ≥ 20, Turborepo, TypeScript 5.6 (strict), Vite
 Prettier, ESLint 9.
 
 ```bash
+git submodule update --init   # services/womblex + services/numbatch (ADR-0015)
 pnpm install
 pnpm build      # turbo run build across @redline/* packages
-pnpm test       # vitest — includes the Wayfinder consumption spike
+pnpm test       # vitest across @redline/*
 pnpm typecheck
 pnpm lint
 ./validate.sh   # the full gate — also what CI runs

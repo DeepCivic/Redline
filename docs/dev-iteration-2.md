@@ -1,20 +1,26 @@
 # redline — Comprehension Lens Design
 # (Dev Iteration 2 — frozen history)
 
-> **Status:** ⚠️ DEPRECATED — frozen delivery history · **Date:** 2026-07-24
-> **Supersedes:** [`dev-iteration-1.md`](./dev-iteration-1.md)
-> (the original build plan; delivery history for Threads 1–15).
-> **Superseded by:** [`dev-iteration-3.md`](./dev-iteration-3.md) — the current living
-> delivery document.
+> **Status:** ⚠️ FROZEN — design rationale only · **Date:** 2026-07-24
 >
-> This doc introduced the **comprehension lens** track (Threads 17–25, all ✅ done)
-> and carried forward the outstanding procurement scope at the time. It is retained
-> as the authoritative design rationale (§1–§5, §7 decision register, §8 non-goals)
-> and as the delivery history for Threads 17–25. **Do not track new threads here** —
-> §6 sequencing and §10 build-state are frozen at the iteration-2 boundary. **No
-> outstanding work is tracked in this document**; every item still to be done now
-> lives in [`dev-iteration-3.md`](./dev-iteration-3.md). Only the design *rationale*
-> remains authoritative here.
+> **This document tracks nothing and is not a plan.** It is retained for one
+> reason: the **design rationale** behind the comprehension lens — §1–§5, the §7
+> decision register (D1–D13), §8 non-goals and §9 open questions — which is not
+> duplicated in the ADRs. Everything else in it is stale by construction.
+>
+> **Where the live documents are:**
+> - What redline **is** → [`architecture.md`](./architecture.md)
+> - What is **left to build** → [`delivery-plan.md`](./delivery-plan.md)
+> - Decisions → [`adr/`](./adr/)
+>
+> The sibling iteration documents it references (`dev-iteration-1.md`,
+> `dev-iteration-3.md`) have been **deleted**; their tracking role passed to
+> `delivery-plan.md` and their build logs live in git history. Links to them
+> below are dead and are left unrewritten because this file is frozen — follow
+> the three live documents above instead.
+>
+> **Do not track new threads here.** §6 sequencing and §10 build-state are frozen
+> at the iteration-2 boundary and several of their statuses are now wrong.
 
 ---
 
@@ -593,7 +599,7 @@ in real use.
 
 ## 10. Build state
 
-_These logs are frozen history. Threads 1–11 are in the [first-iteration plan](./dev-iteration-1.md) §10; remaining work is in [`dev-iteration-3.md`](./dev-iteration-3.md)._
+_Frozen at the iteration-2 boundary and **no longer accurate** — several rows here were later revised or retired. Current build state is in [`delivery-plan.md`](./delivery-plan.md) §5._
 
 | Thread                                  | Track | Package(s)            | Status         | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | --------------------------------------- | ----- | --------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

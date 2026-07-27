@@ -24,8 +24,8 @@ run `./validate.sh` and fix all failures before declaring done.
 | If the user is asking to…                                        | Run            |
 | ---------------------------------------------------------------- | -------------- |
 | Plan a new thread/track, design something, start a component     | `/new-thread`  |
-| Review a thread spec or the build plan before building           | `/doc-review`  |
-| Implement a thread from the build plan, write code               | `/build`       |
+| Review a planned thread before building it                       | `/doc-review`  |
+| Implement a thread from the delivery plan, write code            | `/build`       |
 | Change or extend something already built                         | `/enhance`     |
 | Fix something broken or not working                              | `/bugfix`      |
 | Anything else                                                    | Answer directly |

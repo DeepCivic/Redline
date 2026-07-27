@@ -1,7 +1,8 @@
 # redline — Architecture & Dataflow (target state)
 
-> **Status:** ground-truth reference · supersedes the per-thread docs (deleted) and
-> the "dev-iteration" delivery plans, which remain only as history in `docs/`.
+> **Status:** ground-truth reference · supersedes the per-thread docs and the
+> iteration delivery plans, all deleted except `dev-iteration-2.md`, which is
+> retained solely as frozen design rationale (D1–D13) and tracks nothing.
 >
 > This is the single source of truth for **what redline is, what it depends on,
 > and how data moves through it**. Its companion is
