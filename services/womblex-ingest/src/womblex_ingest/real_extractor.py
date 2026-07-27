@@ -1,6 +1,7 @@
 """Real womblex extractor — Thread 37b, the binding behind the seam.
 
-The **womblex pod** (Thread 37a, `Dockerfile.womblex`) runs the real pipeline
+The **womblex pod** (the `womblex` compose profile, which builds the engine's own
+image from the `services/womblex` submodule — ADR-0015) runs the real pipeline
 (`extract` → `chunk` → `embed`) and lands its Parquet shards in the shared MinIO
 under `proc/{evaluationId}/`. This module is the *binding*: with `WOMBLEX_MODE=
 real` it reads those pod-produced shards from object storage and maps womblex's
@@ -11,7 +12,7 @@ the binding only *reads* it — hence `ExtractionResult.shards` is empty here
 
 Why read the pod's shards rather than invoke womblex in-process: womblex's
 runtime (PyMuPDF, OCR, the Kanon tokeniser, model weights) is heavy and lives in
-its own pod (Thread 37a's whole point). The API sidecar stays light; its only
+its own pod. The API sidecar stays light; its only
 seam to the engine is object storage (ADR-0002). This keeps the two lifecycles
 decoupled and the production orchestration of the worker a free deployment
 choice.
@@ -30,7 +31,10 @@ the `.[womblex]` extra and only touched under `WOMBLEX_MODE=real`.
 from __future__ import annotations
 
 import io
-from typing import Dict, List, Optional, Sequence, Tuple
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from womblex_ingest.extraction import ExtractionResult
 from womblex_ingest.records import QueryEmbedding, make_query_embedding
@@ -77,7 +81,8 @@ class RealWomblexExtractor:
             # misleading state.
             raise ShardSchemaError(
                 f"no womblex Parquet shards under {prefix!r}: run the womblex pod "
-                "(Thread 37a) for this evaluation before ingesting in real mode"
+                "(the `womblex` compose profile) for this evaluation before ingesting "
+                "in real mode"
             )
 
         elements = self._read_shards(parquet_keys, _ELEMENTS_SUFFIX)
@@ -142,31 +147,92 @@ class RealWomblexExtractor:
         return rows, models_by_source_hash
 
 
+# womblex's own DEFAULT_TASK is "retrieval/document" — the *index* side. A query
+# must be embedded with the query task or it lands in a different space from the
+# chunk vectors it is ranked against, which degrades silently rather than failing
+# (womblex `analyse/embed.py`: "Isaacus task types matter").
+QUERY_TASK = "retrieval/query"
+
+# Where the deployment's womblex config lives, when the sidecar is given one. The
+# engine and the sidecar must agree on the embed model, so the model is read from
+# womblex's own config rather than restated here (see `_resolve_embedding_model`).
+_CONFIG_PATH_ENV = "WOMBLEX_CONFIG"
+
+
+@dataclass(frozen=True)
+class QueryEmbedStage:
+    """womblex's embed call, bound to a client and the chunk vectors' model.
+
+    Isolating the engine seam as data makes the binding's contract — one text, the
+    query task, the declared model — testable without installing womblex or
+    holding an Isaacus key, and keeps the lazy import in exactly one place.
+    """
+
+    embed_texts: Callable[..., List[List[float]]]
+    client: object
+    model: str
+
+
+def load_womblex_query_embed_stage(config_path: Optional[str] = None) -> QueryEmbedStage:
+    """Bind womblex's real embed call. Imports womblex — real mode only."""
+    from womblex.analyse.embed import embed_texts  # type: ignore[import-not-found]
+    from womblex.cli._shared import make_isaacus_client  # type: ignore[import-not-found]
+
+    return QueryEmbedStage(
+        embed_texts=embed_texts,
+        client=make_isaacus_client(),
+        model=_resolve_embedding_model(config_path or os.environ.get(_CONFIG_PATH_ENV)),
+    )
+
+
+def _resolve_embedding_model(config_path: Optional[str]) -> str:
+    """The embed model from womblex's own configuration — never a second copy.
+
+    With a config path, the deployment's actual `embedding.model` (the same file
+    the womblex worker runs with, mounted at `infra/womblex/redline.yaml`). Without
+    one, womblex's own declared default. Either way the value originates upstream,
+    so a self-consistent deployment cannot drift chunks into model A and queries
+    into model B — the one mismatch retrieval refuses.
+    """
+    from womblex.config import EmbeddingConfig, load_config  # type: ignore[import-not-found]
+
+    if not config_path:
+        return EmbeddingConfig().model
+    return load_config(Path(config_path)).embedding.model
+
+
 class RealWomblexTextEmbedder:
     """Embeds arbitrary text via womblex's embed operation (ADR-0014, Thread 20a).
 
     The query counterpart of `RealWomblexExtractor`: it must embed text with the
     *same* model womblex's embed stage used for chunk vectors, or Thread 22's
-    nearest-neighbour ranking is noise. It draws the model from womblex's own
-    configuration (never hard-codes a second copy) so a self-consistent
-    deployment cannot drift chunks into model A and queries into model B — the
-    one mismatch Thread 22 refuses.
+    nearest-neighbour ranking is noise.
     """
 
-    def __init__(self) -> None:
-        # Imported lazily so the base package installs without womblex.
-        from womblex import embed_query, embedding_model_id  # type: ignore[import-not-found]
-
-        self._embed_query = embed_query
-        self._model_id = embedding_model_id
+    def __init__(self, stage: Optional[QueryEmbedStage] = None) -> None:
+        # Resolved lazily so the base package installs — and the stub lane runs —
+        # without womblex or an Isaacus key.
+        self._stage = stage if stage is not None else load_womblex_query_embed_stage()
 
     def embed(self, text: str) -> QueryEmbedding:
-        model = self._model_id()
-        values = list(self._embed_query(text))
+        vectors = self._stage.embed_texts(
+            [text],
+            self._stage.client,
+            model=self._stage.model,
+            task=QUERY_TASK,
+        )
+        if not vectors:
+            raise ValueError(
+                "womblex returned no vector for the query text; a topic that cannot "
+                "be embedded cannot be matched against chunk vectors (ADR-0014)"
+            )
         # `make_query_embedding` declares the model and L2-normalises so a
         # query·chunk dot product is well-formed; a producer that already
         # normalised pays only an idempotent second pass.
-        return make_query_embedding(model=model, values=[float(value) for value in values])
+        return make_query_embedding(
+            model=self._stage.model,
+            values=[float(value) for value in vectors[0]],
+        )
 
 
 def _read_parquet_rows(body: bytes) -> List[Row]:
