@@ -110,9 +110,16 @@ limitation, recorded under Consequences rather than papered over.
   Carrying a currency code needs a field on `TableCellRecord`, a matching field on
   `FinancialExtraction` (replacing `estimateAud`), and a decision about what the
   pivots do with two denominations — a thread of its own.
-- **Locale ambiguity is unhandled.** `"1.234,56"` (European grouping) fails the
-  numeric test and maps to `False`. Acceptable for Australian procurement (D1);
-  wrong the moment the corpus is not.
+- **Locale ambiguity is unhandled, and the hazard lands on the consumer.** The
+  numeric test strips `,` and spaces as thousands separators, so a *marked*
+  European-format cell flags correctly as currency — `"$1.234,56"` and
+  `"$1 234,50"` are both `True` — but its digits are ambiguous. A consumer that
+  strips separators the same way reads `1.23456` and `1 23450` for two values that
+  are both 1234.56 and 1234.50. `isCurrency` is only a flag; **parsing `rawValue`
+  into a number is V3's (thread 58) job, and it must not assume Australian
+  grouping without checking.** Unmarked European values are `False` like any other
+  bare number. Acceptable for Australian procurement (D1); a correctness bug the
+  moment the corpus is not.
 - **The marker list is a fixed set.** A currency outside it reads as prose. Additive
   to extend; deliberately not open-ended, because a permissive matcher is how the
   bare-number failure gets back in.
