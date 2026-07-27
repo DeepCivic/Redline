@@ -96,13 +96,54 @@ matching in `ClassifyByRetrieval`. `womblex/analyse/query.py` is an internal
 enrichment-graph loader for PII, explicitly *"not an end-user query API"*; womblex
 produces embeddings, redline ranks them.
 
-**Open — the largest remaining reuse question:** womblex exposes
-`kanon-universal-classifier` (zero-shot classification) and
-`kanon-answer-extractor` (structured field extraction) via Isaacus. redline
-instead built a Numbatch fork extension for currency extraction (795 LOC + 7 test
-files, Threads 6–8), and Threads 49–50 exist solely to feed Numbatch's
-10-samples-per-topic training floor. `architecture.md` §7.6 already flags the
-overlap. **Thread 54 settles it before Track L builds on the assumption.**
+### What reading Numbatch changed
+
+Verified against `DeepCivic/Numbatch` @ `main`.
+
+**The `kanon-answer-extractor` overlap is not real — the financial extension
+stays.** `architecture.md` §7.6 raised the possibility that womblex's
+`kanon-answer-extractor` (structured field extraction) could retire redline's
+Numbatch financial extension. It cannot: **neither `kanon-answer-extractor` nor
+`kanon-universal-classifier` appears anywhere in womblex's source.** They are
+named only in its README, in a passage describing what the *Isaacus platform*
+offers. womblex does not wire them, so consuming them would mean redline calling
+Isaacus directly — which `architecture.md` §1 forbids. Numbatch has no
+currency/financial capability of its own either (verified by search across
+`backend/`), so Threads 6–8's extension is genuinely additive, exactly as
+ADR-0005 intended. **Close §7.6 as resolved: no change.**
+
+**Confirmed, so the design holds:** `MIN_SAMPLES_PER_TOPIC = 10`
+(`backend/app/models/profile.py:23`); Numbatch has **no** retrieval, embeddings
+or vector store (ADR-0008's premise); and its ingestion already accepts womblex
+shards natively — `POST /ingestion/womblex-configs/{id}/upload` takes a
+`*.chunks.parquet` straight into the feed's S3 prefix, with an
+`s3_womblex_bucket` setting. The seam redline assumed is real and already built.
+
+**Already provided upstream — three Track L threads shrink or change shape:**
+
+| Thread | Upstream capability | Effect |
+|---|---|---|
+| 44 — corrections push | `POST /profiles/{id}/feedback/single`, `GET /profiles/{id}/feedback/pending`, full-label replacement + scopes + append-only `feedback_corrections` audit (ADR-0020) | Becomes an adapter call over an existing API, not a build |
+| 49 — sample accrual | Topic-scoped partial unique indexes — `(topic_id, source_doc_id, chunk_id)` with provenance, `(topic_id, text_hash)` without (ADR-0011, ADR-0016) | Re-push idempotence is upstream's; redline only maps decisions to samples |
+| 50 — train/activate | `POST /profiles/{id}/activate-adapter` + replay comparison (ADR-0021) | **Needs redesign — see below** |
+
+**Thread 50 as planned works against upstream.** It reads: *"Crossing
+`MIN_SAMPLES_PER_TOPIC` triggers train → activate (upstream ADR-0021); the user
+never blocks on it."* ADR-0021 decided the **opposite**, and the ADR cited is the
+one that reversed it: Numbatch used to self-activate a succeeded training run and
+deliberately stopped, because it was *"a leap of faith… no way to see what a new
+adapter version would do to real documents before it went live — or to go back if
+it made things worse."* Activation is now *"a user-controlled pointer move"*,
+paired with `GET /batch-inference/jobs/{id}/compare/{other_id}` for an on-the-fly
+per-document diff between adapter versions, with documents whose corrections
+landed between runs flagged `fixed_by_correction`.
+
+Auto-activating would rebuild the behaviour upstream removed, and forfeit the
+comparison surface. Thread 50 should instead **surface** the upstream flow:
+auto-*train* on crossing the floor (that part is uncontroversial), then present
+the replay diff and let the specialist activate. That is also a better fit for
+procurement, where an unreviewed classifier change landing mid-evaluation is a
+defensibility problem, not just a technical one.
 
 ---
 
@@ -116,18 +157,18 @@ overlap. **Thread 54 settles it before Track L builds on the assumption.**
 | 39 | Pricing pivots | P | application, redline-web | ✅ **verified** — pivots match hand-computed totals and the frozen Wayfinder roll-up. |
 | 40 | Excel export | P | redline-web | ✅ **verified** — real `Number` cells, blank-not-zero, hyperlink source column; `write-excel-file@4.1.1` wired. "Workbook opens" → 41. |
 | 52 | womblex submodule wiring | H | infra, workspace | ✅ **done** (this change) — CI fetches submodules; `validate.sh` #13 guards pin drift; static guards exclude the vendored tree. |
-| 53 | Numbatch submodule + superseding ADR | H | infra, docs | 🔵 **next** |
-| 54 | Upstream capability audit | H | docs | 🔵 **next** |
+| 53 | Numbatch submodule + superseding ADR | H | infra, docs | 🔵 **next** — also fixes the four dead `infra/docker/*.Dockerfile` compose refs |
+| 54 | Upstream capability audit | H | docs | ✅ **done** (§3) — womblex and Numbatch both read; findings folded in |
 | 41 | Next.js shell | H | redline-web | ⚪ not started — closes the `/e2e` deviation and the browser half of 38–40. |
 | 42 | Collision selection, ordering & capping | L | domain | ⚪ not started |
 | 43 | `BoundaryDecision` entity | L | domain | ⚪ not started |
-| 44 | Decision persistence + corrections push | L | adapters | ⚪ not started |
+| 44 | Decision persistence + corrections push | L | adapters | ⚪ not started — **shrunk** (§3): upstream owns corrections + audit |
 | 45 | Lens persistence | L | adapters | ⚪ not started |
 | 46 | Lens portability | L | application | ⚪ not started |
 | 47 | Lens stage machine | L | redline-web | ⚪ not started |
 | 48 | Collision resolution surface | L | redline-web | ⚪ not started |
-| 49 | Sample accrual | L | adapters | ⚪ not started — **may be retired by Thread 54** |
-| 50 | Train/activate policy | L | adapters | ⚪ not started — **may be retired by Thread 54** |
+| 49 | Sample accrual | L | adapters | ⚪ not started — **shrunk** (§3): upstream dedupe indexes give idempotence |
+| 50 | Train/activate policy | L | adapters | ⚪ not started — **needs redesign** (§3): as written it contradicts upstream ADR-0021 |
 | 55 | Retire the air-gap machinery | H | womblex-ingest, redline-web | ⚪ not started (§6) |
 | 51 | Workspace extraction & release prep | H | workspace | ⚪ not started — last by nature |
 
@@ -202,11 +243,10 @@ work should not stack further on a stub.
 
 ## 7. Sequencing
 
-1. **53, 54** — finish D14. Add Numbatch as a submodule with its superseding ADR
-   (which also unblocks the four dead `infra/docker/*.Dockerfile` compose
-   references that have made the `numbatch` profile unstartable), then audit both
-   readable trees. 54 gates Track L: if `kanon-answer-extractor` covers
-   currency-with-provenance, Threads 6–8's overlay and Threads 49–50 shrink or go.
+1. **53** — finish D14. Add Numbatch as a submodule with its superseding ADR,
+   which also unblocks the four dead `infra/docker/*.Dockerfile` compose
+   references that have made the `numbatch` profile unstartable. (54 is done; its
+   findings are in §3 and are already reflected in the rows above.)
 2. **37b** — fix the embedder defect, then prove retrieval sorts a real corpus.
    Gates the semantic honesty of everything downstream.
 3. **41** — the shell; closes the browser half of 38–40 and the `/e2e` deviation.
