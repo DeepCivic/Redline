@@ -41,6 +41,12 @@ jobs:
     steps:
       - name: Checkout redline
         uses: actions/checkout@v5
+        with:
+          # services/womblex is a submodule pinned to the engine tag redline's
+          # Parquet mapping is written against. Without it the tree has an empty
+          # directory where the schema source of truth should be, and the
+          # womblex pin-drift guard in validate.sh cannot run.
+          submodules: true
 
       - name: Read the Wayfinder pin
         id: pin

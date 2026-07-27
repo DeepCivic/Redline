@@ -1,11 +1,11 @@
 # womblex-ingest — the lightweight FastAPI read seam (Parquet→JSON) for redline.
 #
 # This image stays LIGHT. The real womblex engine is a REQUIRED subsystem of
-# redline but lives in its OWN pod (Dockerfile.womblex / the `womblex` compose
-# service, Thread 37a) because its OCR/tokeniser/model runtime is heavy and its
-# resource profile is disparate from this API sidecar's. This image never
-# installs womblex; it reads the shards the womblex pod wrote and serves them as
-# JSON (ADR-0003).
+# redline but runs from its OWN image — the one the engine itself ships, built
+# from the services/womblex submodule by the `womblex` compose service — because
+# its OCR/tokeniser/model runtime is heavy and its resource profile is disparate
+# from this API sidecar's. This image never installs womblex; it reads the shards
+# the engine wrote and serves them as JSON (ADR-0003).
 #
 # WOMBLEX_MODE selects the extractor at runtime:
 #   - real (redline's deployment): the real extractor reads the womblex pod's

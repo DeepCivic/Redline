@@ -179,8 +179,10 @@ while IFS= read -r f; do
   lc=$(wc -l < "$f")
   [ "$lc" -lt 700 ] && continue
   if [ "$lc" -ge 800 ]; then SIZE_FAILURES+="  $lc  $f\n"; else SIZE_WARNINGS+="  $lc  $f\n"; fi
+# services/womblex is the vendored engine submodule — upstream source we never
+# modify, excluded from our own static guards exactly as vendor/wayfinder is.
 done < <(find packages/*/src apps/*/src services/*/src -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.py" \) \
-  ! -name "*.test.ts" ! -name "*.test.tsx" 2>/dev/null)
+  ! -path "services/womblex/*" ! -name "*.test.ts" ! -name "*.test.tsx" 2>/dev/null)
 [ -n "$SIZE_WARNINGS" ] && { warn "files ≥ 700 lines — split when next touched:"; printf '%b' "$SIZE_WARNINGS"; }
 if [ -z "$SIZE_FAILURES" ]; then pass "no source file ≥ 800 lines"; else
   fail "source files ≥ 800 lines — decompose:"; printf '%b' "$SIZE_FAILURES"
@@ -261,6 +263,32 @@ elif git diff --quiet -- pnpm-lock.yaml 2>/dev/null; then
   pass "lockfile has no Wayfinder importer, but matches HEAD — not a local rewrite"
 else
   fail "pnpm-lock.yaml was rewritten without the vendored Wayfinder tree (the vendor/wayfinder importer is gone). Do not commit it: run 'git checkout -- pnpm-lock.yaml', or vendor first ('scripts/vendor-wayfinder.sh && pnpm install') if you meant to change dependencies"
+fi
+
+# ── 13. the womblex submodule and the sidecar's pin agree ────────────────────
+# services/womblex is the engine build the Parquet mapping in shard_reader.py is
+# written against; the sidecar's `.[womblex]` extra pins the build its query
+# embedder runs. Those two drifting apart is the one mismatch nothing else
+# catches — the shards would map fine and the query vectors would come from a
+# different engine. SKIPs (never fails) on a clone without the submodule
+# initialised, so a Wayfinder-style "green on a clean clone" still holds; CI
+# checks out submodules, so CI is where this actually bites.
+section "13. womblex submodule tag matches the sidecar's pin"
+WOMBLEX_EXTRA_PIN="$(grep -oE '"womblex==[0-9]+\.[0-9]+\.[0-9]+"' services/womblex-ingest/pyproject.toml 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+if [ -z "$WOMBLEX_EXTRA_PIN" ]; then
+  skip "womblex pin — no womblex== pin found in the sidecar's pyproject.toml"
+elif [ ! -f services/womblex/pyproject.toml ]; then
+  skip "womblex pin — services/womblex not initialised (git submodule update --init)"
+else
+  WOMBLEX_SUBMODULE_TAG="$(git -C services/womblex describe --tags --exact-match 2>/dev/null | sed 's/^v//')"
+  if [ -z "$WOMBLEX_SUBMODULE_TAG" ]; then
+    warn "womblex submodule is not on an exact tag — cannot compare against the ${WOMBLEX_EXTRA_PIN} pin"
+    skip "womblex pin — submodule not on a tagged commit"
+  elif [ "$WOMBLEX_SUBMODULE_TAG" = "$WOMBLEX_EXTRA_PIN" ]; then
+    pass "womblex pin (submodule v${WOMBLEX_SUBMODULE_TAG} == sidecar pin ${WOMBLEX_EXTRA_PIN})"
+  else
+    fail "womblex pin drift: services/womblex is v${WOMBLEX_SUBMODULE_TAG} but the sidecar pins womblex==${WOMBLEX_EXTRA_PIN}. Move both together (see services/womblex-ingest/pyproject.toml)"
+  fi
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

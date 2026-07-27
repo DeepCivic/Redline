@@ -4,7 +4,12 @@
 > the "dev-iteration" delivery plans, which remain only as history in `docs/`.
 >
 > This is the single source of truth for **what redline is, what it depends on,
-> and how data moves through it**. It is written against the *actual* behaviour of
+> and how data moves through it**. Its companion is
+> [`delivery-plan.md`](./delivery-plan.md), the single source of truth for **what
+> is left to build** — design lives here, tracking lives there, and neither
+> restates the other.
+>
+> It is written against the *actual* behaviour of
 > the upstream engines (womblex is vendored as a submodule at `services/womblex`,
 > pinned to `v0.2.0`; Numbatch is vendored under `services/numbatch`), not against
 > aspiration. Where an earlier assumption proved false, the correction is stated
@@ -55,7 +60,8 @@ Womblex's stages split cleanly into offline and Isaacus-gated:
 | **`embed`** | **YES** — `kanon-2-embedder` via `client.embeddings.create` | **`*.embeddings.parquet`** |
 | `enrich` | **YES** — `kanon-2-enricher` | `*.enrichment_*`, `*.graph_edges`, `*.entity_links` parquet |
 
-**Consequence for redline's retrieval leg (ADR-0008, amended):** redline's
+**Consequence for redline's retrieval leg (ADR-0008, amendment PENDING —
+see `delivery-plan.md` Thread 55):** redline's
 cold-start classification path *is* nearest-neighbour matching over womblex's
 `*.embeddings.parquet`. The embed stage is Isaacus-only. Therefore:
 
@@ -66,7 +72,10 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
   an "Isaacus-optional / air-gapped" posture (a hangover from womblex's own edge
   modes and Wayfinder's air-gap validation). redline does not pursue it — a
   deployment that cannot reach Isaacus cannot retrieve, which is the whole
-  first-pass. (ADR-0008 amendment, 2026-08-08.)
+  first-pass. **This is a stated intent, not yet a ratified amendment:** ADR-0008
+  is unchanged from 2026-07-24 and the `EnrichmentMode.OFFLINE` machinery is
+  still live and tested. Thread 55 either writes the amendment and removes the
+  machinery, or drops this claim.
 - The only genuinely offline concern is **redline's own infra** (its MinIO/Postgres
   are its own, config-driven, never a hardcoded Wayfinder endpoint — ADR-0002).
   That is unrelated to the Isaacus dependency.
@@ -118,20 +127,25 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
                             ┌───────────────────────────────┘
                             │ writes shards
                   services/womblex  (submodule @ v0.2.0)
-                    the REAL engine, run as its OWN pod
-                    (Dockerfile.womblex): extract → chunk → (embed)
+                    the REAL engine, built from its OWN Dockerfile
+                    and run through its OWN cloud runner (Postgres
+                    job queue + scalable worker, native S3 staging):
+                    extract → chunk → (embed)
                     embed stage calls ──────────────────────► Isaacus API
                                                               (ISAACUS_API_KEY)
 ```
 
 ### Why womblex is split into a pod + a sidecar
 
-- **The engine** (`services/womblex`, the submodule) is heavy: PyMuPDF, PaddleOCR,
-  YOLO layout, the Kanon tokeniser, sentence-transformers, model weights
-  (multi-hundred-MB). It runs as its **own pod** (`Dockerfile.womblex`) so its
-  lifecycle and resource profile are decoupled from the API layer. Its only seam
-  to the rest of the stack is **object storage** (ADR-0002) — it writes shards to
-  MinIO and nothing reads back into it.
+- **The engine** (`services/womblex`, the submodule) is heavy: PyMuPDF, OCR
+  (`engine: paddleocr`, implemented by `rapidocr-onnxruntime`), YOLO layout, the
+  Kanon tokeniser, model weights (multi-hundred-MB). It runs from **its own
+  image**, built from the submodule's `Dockerfile`, so its lifecycle and resource
+  profile are decoupled from the API layer. Its only seam to the rest of the
+  stack is **object storage** (ADR-0002) — it writes shards to MinIO and nothing
+  reads back into it. redline does not wrap the engine: batching, retry,
+  horizontal scale-out and S3 staging are the engine's own (`cloud/worker.py`,
+  `store/remote.py`), driven through its `enqueue` / `worker` CLI.
 - **The sidecar** (`services/womblex-ingest`) is a lightweight FastAPI app that
   **reads** the pod's Parquet shards from MinIO and serves them as JSON so
   redline's TypeScript never links a Parquet reader (ADR-0003). `WOMBLEX_MODE`
@@ -274,13 +288,14 @@ redline/
 │   ├── womblex-ingest/            FastAPI read sidecar (reads MinIO Parquet → JSON)
 │   │   ├── src/womblex_ingest/    stub + real extractor, records (wire shape),
 │   │   │                          shard_reader (schema map), storage, embedding
-│   │   ├── Dockerfile             the light API image
-│   │   ├── Dockerfile.womblex     the heavy engine POD image (installs womblex==0.2.0)
-│   │   └── womblex-pod-entrypoint.sh   extract → chunk → (embed) → sync to MinIO
+│   │   └── Dockerfile             the light API image
 │   └── numbatch/                  vendored fork (backend financial_extension + bootstrap)
-├── infra/docker-compose.yml       profiles: ingest | womblex | numbatch | redline
+├── infra/
+│   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
+│   └── womblex/redline.yaml       redline's pipeline config for the engine
 ├── docs/
-│   ├── architecture.md            ◄ THIS FILE — the single source of truth
+│   ├── architecture.md            ◄ THIS FILE — what redline IS (the design truth)
+│   ├── delivery-plan.md           what is LEFT TO DO (the tracking truth)
 │   ├── adr/                       architecture decision records (still authoritative)
 │   ├── dev-iteration-{1,2,3}.md   frozen delivery history (not tracking)
 │   └── guides/
@@ -293,8 +308,11 @@ redline/
 
 - **womblex** — git **submodule** at `services/womblex`, pinned to tag `v0.2.0`
   (`2c40e65`). This is the on-disk source of truth for the Parquet schema the
-  sidecar maps. The pod image (`Dockerfile.womblex`) installs `womblex==0.2.0` to
-  match. Bump by moving the submodule and the Dockerfile pin together.
+  sidecar maps, **and the source the engine image is built from** — the `womblex`
+  compose profile builds the submodule's own `Dockerfile`. Initialise it with
+  `git submodule update --init`; CI checks it out (`submodules: true`). The
+  sidecar's `.[womblex]` extra pins the same version for its query embedder;
+  `validate.sh` check #13 fails the build if the two drift apart.
 - **Numbatch** — vendored fork source under `services/numbatch` (materialised
   from a pin; ADR-0013), run all-but-frontend (ADR-0005).
 - **Wayfinder** — materialised read-only from `wayfinder.pin` into
@@ -361,7 +379,7 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
 - `ISAACUS_API_KEY` is the single switch that turns retrieval on. Without it:
   extraction and chunk shards land, but there are no embeddings and no retrieval
   classification. redline treats that as a misconfiguration, not a supported mode
-  (§2; ADR-0008 amended).
+  (§2; ADR-0008 amendment pending — `delivery-plan.md` Thread 55).
 
 ---
 
@@ -372,6 +390,9 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
   (the submodule's own docs — authoritative for the engine).
 - **The wire shape redline serves:** `services/womblex-ingest/src/womblex_ingest/`
   (`records.py` = DTOs, `shard_reader.py` = the schema map, `real_extractor.py`).
-- **Decisions:** `docs/adr/` (still authoritative; ADR-0008 carries the amended
-  Isaacus/air-gap decision).
+- **Decisions:** `docs/adr/` (still authoritative). Note ADR-0008's
+  Isaacus/air-gap amendment is **pending**, not written — see `delivery-plan.md`
+  Thread 55.
+- **Outstanding work:** [`delivery-plan.md`](./delivery-plan.md) — the only
+  document that tracks what is left to build.
 - **Delivery history (frozen, non-tracking):** `docs/dev-iteration-{1,2,3}.md`.

@@ -40,11 +40,22 @@ lands sooner. Procurement is the purpose; the lens is the means (decision **D1**
 settled 2026-07-24). Generalising the lens beyond procurement is **not a goal**.
 
 Our own packages live under `@redline/*` in `packages/`. Wayfinder is consumed
-read-only under `@rbrasier/*` (see ADR-0001). The living delivery document is
-[`docs/comprehension-lens-design.md`](../docs/comprehension-lens-design.md);
-each thread links to its own technical doc/README on completion.
-[`docs/procurement-evaluation-plan.md`](../docs/procurement-evaluation-plan.md)
-is **deprecated** — retained as the delivery history for Threads 1–11.
+read-only under `@rbrasier/*` (see ADR-0001). Two documents govern:
+[`docs/architecture.md`](../docs/architecture.md) is what redline **is**, and
+[`docs/delivery-plan.md`](../docs/delivery-plan.md) is what is **left to build**.
+The three `docs/dev-iteration-{1,2,3}.md` files are frozen delivery history and
+track nothing.
+
+Both upstream Python engines are **git submodules** consumed for their existing
+capabilities, not reimplemented (decision **D14**): `services/womblex` (pinned to
+`v0.2.0`) and, once Thread 53 lands, `services/numbatch`. Run
+`git submodule update --init` on a fresh clone. Wayfinder stays a build-time pin
+because a submodule would drag its package set into the pnpm workspace (ADR-0012).
+
+> **Note:** the skill commands under `.claude/commands/` still reference
+> `docs/comprehension-lens-design.md` and `docs/threads/`, neither of which
+> exists. They need rewriting against the two documents above — see
+> `delivery-plan.md` §6.3.
 
 Publishing target: the **DeepCivic** org (not johntooth).
 

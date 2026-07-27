@@ -1,0 +1,78 @@
+# redline's womblex pipeline config.
+#
+# Derived from the engine's own `configs/example.yaml` (services/womblex, the
+# submodule) and trimmed to the stages redline consumes: extract -> chunk ->
+# embed. Everything redline does not read is left disabled so a run does not pay
+# for shards nothing consumes.
+#
+# `paths` are placeholders: under `womblex worker` the cloud runner stages each
+# batch into a throwaway scratch dir and publishes the resulting shards back to
+# WOMBLEX_STORE_URI, so these are only used by a local `womblex run`.
+#
+# Bump alongside the submodule — a config key the pinned engine does not know is
+# a silent no-op, not an error.
+
+dataset:
+  name: redline
+
+paths:
+  input_root: /work/input
+  output_root: /work/output
+  checkpoint_dir: /work/checkpoints
+
+detection:
+  min_text_coverage: 0.3
+  form_signal_threshold: 0.5
+  table_signal_threshold: 0.4
+
+extraction:
+  native:
+    # Tender responses carry pricing in tables; the table cells are what the
+    # financial path reads (architecture.md §4, the join keys).
+    include_tables: true
+  ocr:
+    engine: paddleocr
+    dpi: 300
+    lang: eng
+    engine_options: {}
+
+# redline never redacts — it evaluates tender responses it was given.
+redaction:
+  enabled: false
+
+chunking:
+  # Offline token chunking: the Kanon-2 tokeniser is free on Hugging Face, so
+  # this stage needs no Isaacus key. Only `chunking_model` (AI chunking) would.
+  tokenizer: "isaacus/kanon-2-tokenizer"
+  chunk_size: 480
+  enabled: true
+  chunk_tables: true
+
+# Downstream text layers redline does not read.
+normalise:
+  collapse_whitespace: false
+spellfix:
+  enabled: false
+pii:
+  enabled: false
+enrichment:
+  enabled: false
+linking:
+  enabled: false
+
+# The retrieval leg. `retrieval/document` is the task the chunk vectors must
+# carry so the sidecar's query vectors (`retrieval/query`) are comparable
+# (ADR-0014). Requires ISAACUS_API_KEY — without it no *.embeddings.parquet is
+# produced and redline cannot retrieve (architecture.md §2).
+embedding:
+  enabled: true
+  model: kanon-2-embedder
+  task: retrieval/document
+
+processing:
+  batch_size: 25
+  checkpoint_every: 25
+  text_source: elements
+  retention:
+    policy: rolling
+    keep: 2

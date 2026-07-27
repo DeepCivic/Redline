@@ -1,7 +1,7 @@
-# Thread 37a fixture corpus
+# womblex engine fixture corpus
 
-A tiny, redistributable document set the `womblex` compose pod extracts as its
-exit test (`scripts/thread-37a-womblex-pod.sh`). womblex routes by file
+A tiny, redistributable document set the `womblex` compose profile extracts as
+its smoke test (`scripts/womblex-engine-smoke.sh`). womblex routes by file
 extension; a CSV takes the pandas cell-grained ingest path (README "Other
 formats"), needs no binary blob in the repo, and is safe to redistribute.
 

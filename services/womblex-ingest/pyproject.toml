@@ -11,11 +11,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The real womblex engine. redline runs it as its OWN pod (Dockerfile.womblex /
-# the `womblex` compose service, Thread 37a) — a REQUIRED subsystem kept out of
-# the API image because its runtime is heavy. This extra is here so a real-lane
-# test environment can `pip install .[womblex]` to exercise the binding
-# (Thread 37b); it is pinned for reproducibility, mirroring wayfinder.pin.
+# The real womblex engine. redline runs it from the engine's OWN image, built
+# from the services/womblex submodule by the `womblex` compose service — a
+# REQUIRED subsystem kept out of the API image because its runtime is heavy.
+# This extra is here so a real-lane test environment can `pip install .[womblex]`
+# to exercise the query-embedding half of the binding.
+#
+# The version MUST track the services/womblex submodule tag — that submodule is
+# the schema the shard mapping is written against, and a sidecar embedding
+# against a different engine build is the one drift nothing else would catch.
+# validate.sh check #13 enforces the two stay equal.
 # womblex needs Python 3.11/3.12 (its OCR dep has no 3.10 wheel).
 #
 # `pyarrow` is what the binding uses to DECODE the Parquet shards the pod landed

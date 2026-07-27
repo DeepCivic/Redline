@@ -12,14 +12,14 @@
 #
 # Profiles:
 #   ingest    — womblex-ingest + minio (Thread 3; the ingestion path)
-#   womblex   — the real womblex engine as its OWN pod (Thread 37a), sharing
-#               MinIO. womblex is a REQUIRED subsystem (Finding 2 / D5), kept in
-#               a separate image because its OCR/tokeniser/model runtime is heavy
-#               and its resource profile is disparate from the API sidecar's.
-#               This pod is a LOCAL TEST HARNESS: it extracts + chunks (+ embeds
-#               when ISAACUS_API_KEY is set) a mounted corpus and lands the shards
-#               in the bucket under proc/{evaluationId}/. Production orchestration
-#               of the worker is a deployment choice (the seam is object storage).
+#   womblex   — the real womblex engine, built from the ../services/womblex
+#               submodule using ITS OWN Dockerfile and run through ITS OWN cloud
+#               runner (Postgres job queue + scalable `worker`), sharing MinIO.
+#               womblex is a REQUIRED subsystem (Finding 2 / D5) with a heavy
+#               OCR/tokeniser/model runtime, so it stays out of the API sidecar's
+#               image. It extracts + chunks (+ embeds when ISAACUS_API_KEY is set)
+#               an enqueued corpus and publishes the shards under
+#               proc/{evaluationId}/. Scale with `up --scale womblex=4 womblex`.
 #   numbatch  — the Numbatch stack, all-but-frontend: postgres + redis + minio +
 #               backend API + Arq worker + inference service + one-shot migrate
 #               (Thread 5; ADR-0004/ADR-0005 — the SvelteKit frontend is excluded,
@@ -37,6 +37,22 @@
 #   # backend API on :8080, inference on :8100 (frontend is NOT started)
 
 name: redline
+
+# The womblex engine's own env contract, lifted verbatim from the submodule's
+# docker-compose.yml so the two read side by side. WOMBLEX_STORE_URI is rooted at
+# redline's evaluation prefix, so the engine's native runs/<run_id>/documents/
+# layout lands *under* proc/{evaluationId}/ and the sidecar's suffix-based shard
+# discovery finds it unchanged (ADR-0002 keeps object storage the only seam).
+x-womblex-env: &womblex-env
+  WOMBLEX_DB_DSN: postgresql://womblex:womblex@womblex-queue:5432/womblex
+  WOMBLEX_STORE_URI: s3://${REDLINE_BUCKET:-redline}/proc/${WOMBLEX_EVAL_ID:-womblex-pod}
+  WOMBLEX_S3_ENDPOINT: http://minio:9000
+  AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-minioadmin}
+  AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-minioadmin}
+  AWS_REGION: us-east-1
+  # Engages the embed stage (kanon-2-embedder); *.embeddings.parquet — the
+  # retrieval sibling — is only produced when this is set.
+  ISAACUS_API_KEY: ${ISAACUS_API_KEY:-}
 
 services:
   minio:
@@ -81,32 +97,77 @@ services:
     ports:
       - "8000:8000"
 
-  # ── womblex engine (its own pod — Thread 37a) ─────────────────────────────
-  # The REAL womblex pipeline (extract → chunk → embed). A required subsystem,
-  # isolated in its own image (Dockerfile.womblex) because its runtime is heavy
-  # and unlike the API sidecar's. A local test harness: it runs over a mounted
-  # corpus and syncs shards to the shared bucket under proc/{evaluationId}/.
-  womblex:
-    build:
-      context: ../services/womblex-ingest
-      dockerfile: Dockerfile.womblex
+  # ── womblex engine (the submodule's OWN image) ────────────────────────────
+  # The REAL womblex pipeline (extract → chunk → embed), built from
+  # ../services/womblex (the submodule) using the ENGINE'S OWN Dockerfile and
+  # run through its OWN cloud runner: a Postgres job queue + `enqueue` + a
+  # horizontally scalable `worker` that stages each batch out of object storage,
+  # runs the pipeline, and publishes the shards back (womblex `cloud/worker.py`).
+  #
+  # redline deliberately does NOT wrap this. The engine already ships the image,
+  # the S3/MinIO staging (`store/remote.py`, fsspec) and the retry/scale-out
+  # semantics; an earlier redline-owned Dockerfile + shell entrypoint duplicated
+  # all three and is retired.
+  #
+  # The env contract is womblex's (see `x-womblex-env` above, copied from its own
+  # compose so the two stay readable side by side).
+
+  # The engine's job queue. Its own instance so `--profile womblex` still comes
+  # up standalone (see the credentials note in this file's header).
+  womblex-queue:
+    image: docker.io/library/postgres:16
     profiles: ["womblex"]
+    environment:
+      POSTGRES_USER: womblex
+      POSTGRES_PASSWORD: womblex
+      POSTGRES_DB: womblex
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U womblex"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: create the queue schema (`womblex jobs --create-schema`).
+  womblex-init:
+    build:
+      context: ../services/womblex
+    profiles: ["womblex"]
+    depends_on:
+      womblex-queue:
+        condition: service_healthy
+    environment: *womblex-env
+    command: ["jobs", "--create-schema"]
+
+  # General-purpose CLI entry — `enqueue` a corpus, `finalize` a run. Run on
+  # demand (`compose run --rm womblex-cli enqueue ...`), never `up`.
+  womblex-cli:
+    build:
+      context: ../services/womblex
+    profiles: ["womblex-cli"]
     depends_on:
       minio:
         condition: service_healthy
-    environment:
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
-      REDLINE_BUCKET: ${REDLINE_BUCKET:-redline}
-      EVALUATION_ID: ${WOMBLEX_EVAL_ID:-womblex-pod}
-      # Engages the embed stage (kanon-2-embedder); *.embeddings.parquet — the
-      # retrieval sibling — is only produced when this is set.
-      ISAACUS_API_KEY: ${ISAACUS_API_KEY:-}
+      womblex-queue:
+        condition: service_healthy
+    environment: *womblex-env
     volumes:
-      # Mount a local corpus to extract. Default points at the committed fixture
-      # corpus the exit test uses; override WOMBLEX_CORPUS for a real document set.
-      - ${WOMBLEX_CORPUS:-../services/womblex-ingest/tests/corpus}:/work/input:ro
+      - ./womblex:/app/redline-config:ro
+
+  # The engine itself. Scale horizontally: `up --scale womblex=4 womblex`.
+  womblex:
+    build:
+      context: ../services/womblex
+    profiles: ["womblex"]
+    depends_on:
+      womblex-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    environment: *womblex-env
+    volumes:
+      - ./womblex:/app/redline-config:ro
+    command: ["worker", "--config", "/app/redline-config/redline.yaml",
+              "--poll-interval", "5", "--stale-timeout", "900"]
 
   # ── Numbatch stack (all-but-frontend) ─────────────────────────────────────
   # Vendored fork under ../services/numbatch (DeepCivic/Numbatch). We run its
