@@ -146,69 +146,139 @@ defensibility problem, not just a technical one.
 
 ---
 
-## 4. Build state
+## 4. Track V — the lean vertical (current priority)
+
+**Goal: a real procurement corpus goes in, and the results come out on screen,
+delineated by topic and brand.** Nothing else. The comprehension-lens work
+(Track L, Threads 42–50) and the trained-classifier overlay are **deferred** —
+they are a second-order improvement on a product that does not yet render.
+
+**Numbatch is not on this path.** Classification runs cold-start over womblex
+embeddings (ADR-0008's first pass — no samples, no training, no adapter), and
+pricing comes from womblex's own currency-typed table cells, which already cross
+the JSON seam as `ExtractionTableCell.isCurrency`. The Numbatch stack is needed
+when a *trained* overlay is wanted, or when the financial extension's
+per-(document, requirement) roll-up is wanted in preference to raw cell typing.
+Neither is needed to see the grid.
+
+### What already exists (verified, not assumed)
+
+Far more of this slice is built than the thread list implied. All of the
+following is green under `./validate.sh`:
+
+- **Use cases** (`redline-application`): `IngestDocuments`,
+  `AssignDocumentsToGroups` (**the brand delineation**), `ClassifyByRetrieval`,
+  `ClassifyWithHardRules`, `AdjudicateUnclear`, `ClassifyResponseGroup`,
+  `ExtractFinancials`, `BuildEvaluationTable`, `BuildDocumentMap`.
+- **Adapters**: womblex extraction reader, embedding reader + text embedder,
+  Numbatch classifier, Drizzle persistence with migrations.
+- **Web core** (`apps/redline-web`, 63 tests): `WorkflowController` + container,
+  `ReviewGrid` + view, `PricingPivot` + view, Excel export, workflow manager.
+- **Infra**: the `womblex` compose profile (engine's own image + cloud runner),
+  `redline-postgres`, MinIO.
+
+So the slice is not a build-out. It is **four fixes and a shell.**
+
+### V1 (56) — Fix the womblex bindings against the real schema
+
+Three defects block the real lane. All share one cause: integration code written
+against an assumed schema, with the correction *documented in `architecture.md`
+§7 and never applied to the code*. The submodule makes all three checkable.
+
+| Where | Defect | Consequence |
+|---|---|---|
+| `real_extractor.py:159` | `from womblex import embed_query, embedding_model_id` — neither symbol exists (`womblex/__init__.py` exports nothing) | `ImportError` on construction; **no query embedding, so no retrieval** |
+| `shard_reader.py:131` | `_require(row, "elem_order", "element_order")` — womblex's `TABLE_CELLS_SCHEMA` writes `parent_elem_order` | `ShardSchemaError` on **every** real table-cell row |
+| `shard_reader.py:137` | `is_currency` / `currency` — no such column upstream; the schema is `row`/`col`/`value`/`value_type` | every currency cell arrives `isCurrency=False`; **no pricing anywhere** |
+
+Fixes: use `womblex.analyse.embed.embed_texts([text], make_isaacus_client(),
+model="kanon-2-embedder", task="retrieval/query")`; accept `parent_elem_order`;
+derive currency from `value_type` (and `number_format` for `sheet_cell`, which
+carries it). `architecture.md` §7.3–§7.5 are the specification.
+
+_Exit: a test constructs `RealWomblexTextEmbedder` and maps a real
+`table_cells` row; currency cells flag `isCurrency=true`._
+
+### V2 (57) — Retrieval-backed `IProcurementClassifier`
+
+`ClassifyResponseGroup` takes an `IProcurementClassifier`; the container wires
+whichever implementation a deployment supplies. Today the only one is Numbatch's,
+which needs 10 samples/topic and a trained adapter. ADR-0008 already settled that
+**both paths satisfy the same port** — so compose the cold-start path
+(hard rules → retrieval → adjudication, all built) behind that port in
+`lib/container.ts`, where the app layer may see both application and adapters.
+
+_Exit: `ClassifyResponseGroup` returns `RequirementClassification[]` for a real
+group with no Numbatch running and no samples curated._
+
+### V3 (58) — Currency from table cells, no Numbatch
+
+A `IFinancialExtractor` backed by `IProcurementExtractionReader.readTableCells()`
+— the currency-typed cells V1 unblocks — mapped to (document, requirement) via
+the classification's `sourceChunkId`. Cruder than the Numbatch financial
+extension and explicitly a first pass; `architecture.md` §7.4 notes the extension
+is the better long-term source. It costs one adapter and removes a whole stack
+from the critical path.
+
+_Exit: the review grid shows numeric AUD for a real tender's priced rows; the
+per-brand pivot totals them._
+
+### V4 (59) — The Next.js shell
+
+**The only genuinely missing piece.** React/Next matching Wayfinder's `apps/web`
+(ADR-0006), serving `/evaluations/:id/grouping`, `/evaluations/:id/review` (incl.
+Export to Excel) and `/evaluations/:id/pivots` over the existing
+`WorkflowController`. No new logic — the view models, sorting, filtering, deep
+links and export are all built and tested; this renders them. Wires the existing
+Playwright specs (`apps/redline-web/e2e/`) into CI, closing the `/e2e` deviation
+in `CLAUDE.md` and the browser half of Threads 38–40.
+
+_Exit: Playwright green in CI against served routes._
+
+### V5 (60) — Real corpus, end to end
+
+Run a real procurement corpus through: `womblex` profile ingests →
+sidecar serves JSON (`WOMBLEX_MODE=real`) → group documents by vendor → classify
+by retrieval → render. Needs `ISAACUS_API_KEY` (the embed stage is Isaacus-only;
+without it there are no embeddings and no retrieval — `architecture.md` §2) and a
+corpus in the git-ignored `services/womblex-ingest/tests/corpus-local/`.
+
+_Exit: a specialist opens the review grid for a real tender and sees each
+document delineated by topic and brand, with provenance back to source._
+
+---
+
+## 5. Build state
 
 | # | Thread | Track | Package(s) | Status |
 |---|---|---|---|---|
 | 37a | womblex pod (test harness) | H | infra | ⛔ **retired** — the engine ships its own image, runner and staging (§3). Replaced by the `womblex` compose profile building `services/womblex` + `scripts/womblex-engine-smoke.sh`. |
-| 37b | Real womblex binding | H | womblex-ingest | 🔴 **blocked — defect** (§5) |
+| 37b | Real womblex binding | H | womblex-ingest | ↪ **absorbed into V1 (56)** — the schema defects were its real content |
+| 56 | V1 — fix the womblex bindings | **V** | womblex-ingest | 🔵 **next** |
+| 57 | V2 — retrieval-backed classifier | **V** | redline-web | 🔵 next |
+| 58 | V3 — currency from table cells | **V** | adapters | 🔵 next |
+| 59 | V4 — Next.js shell | **V** | redline-web | 🔵 next (was 41) |
+| 60 | V5 — real corpus end to end | **V** | infra | 🔵 next |
 | 38 | In-app review grid | P | redline-web | ✅ **verified** — 63/63 green; currency sorts numerically, source deep-links carry element/page/chunk. Browser leg → 41. |
 | 39 | Pricing pivots | P | application, redline-web | ✅ **verified** — pivots match hand-computed totals and the frozen Wayfinder roll-up. |
 | 40 | Excel export | P | redline-web | ✅ **verified** — real `Number` cells, blank-not-zero, hyperlink source column; `write-excel-file@4.1.1` wired. "Workbook opens" → 41. |
 | 52 | womblex submodule wiring | H | infra, workspace | ✅ **done** (this change) — CI fetches submodules; `validate.sh` #13 guards pin drift; static guards exclude the vendored tree. |
 | 53 | Numbatch submodule + superseding ADR | H | infra, docs | ✅ **done** — submodule @ `72bcead`; overlay moved to `services/numbatch-extension/`; [ADR-0015](./adr/0015-upstream-python-engines-are-submodules.adr.md) supersedes ADR-0013; the four dead `infra/docker/*.Dockerfile` compose refs now resolve |
 | 54 | Upstream capability audit | H | docs | ✅ **done** (§3) — womblex and Numbatch both read; findings folded in |
-| 41 | Next.js shell | H | redline-web | ⚪ not started — closes the `/e2e` deviation and the browser half of 38–40. |
-| 42 | Collision selection, ordering & capping | L | domain | ⚪ not started |
-| 43 | `BoundaryDecision` entity | L | domain | ⚪ not started |
-| 44 | Decision persistence + corrections push | L | adapters | ⚪ not started — **shrunk** (§3): upstream owns corrections + audit |
-| 45 | Lens persistence | L | adapters | ⚪ not started |
-| 46 | Lens portability | L | application | ⚪ not started |
-| 47 | Lens stage machine | L | redline-web | ⚪ not started |
-| 48 | Collision resolution surface | L | redline-web | ⚪ not started |
-| 49 | Sample accrual | L | adapters | ⚪ not started — **shrunk** (§3): upstream dedupe indexes give idempotence |
-| 50 | Train/activate policy | L | adapters | ⚪ not started — **needs redesign** (§3): as written it contradicts upstream ADR-0021 |
+| 41 | Next.js shell | H | redline-web | ↪ **renumbered V4 (59)** |
+| 42 | Collision selection, ordering & capping | L | domain | ⏸ **deferred** — not on the lean vertical |
+| 43 | `BoundaryDecision` entity | L | domain | ⏸ **deferred** — not on the lean vertical |
+| 44 | Decision persistence + corrections push | L | adapters | ⏸ **deferred** — shrunk (§3): upstream owns corrections + audit |
+| 45 | Lens persistence | L | adapters | ⏸ **deferred** — not on the lean vertical |
+| 46 | Lens portability | L | application | ⏸ **deferred** — not on the lean vertical |
+| 47 | Lens stage machine | L | redline-web | ⏸ **deferred** — not on the lean vertical |
+| 48 | Collision resolution surface | L | redline-web | ⏸ **deferred** — not on the lean vertical |
+| 49 | Sample accrual | L | adapters | ⏸ **deferred** — shrunk (§3): upstream dedupe indexes give idempotence |
+| 50 | Train/activate policy | L | adapters | ⏸ **deferred** — needs redesign (§3): as written it contradicts upstream ADR-0021 |
 | 55 | Retire the air-gap machinery | H | womblex-ingest, redline-web | ⚪ not started (§6) |
 | 51 | Workspace extraction & release prep | H | workspace | ⚪ not started — last by nature |
 
 ---
-
-## 5. Thread 37b is blocked on a verified defect
-
-`RealWomblexTextEmbedder.__init__` (`services/womblex-ingest/src/womblex_ingest/real_extractor.py:159`) does:
-
-```python
-from womblex import embed_query, embedding_model_id
-```
-
-Neither symbol exists. `womblex/__init__.py` exports nothing, and
-`embed_query` / `embedding_model_id` appear nowhere in the engine's source.
-Constructing the embedder under `WOMBLEX_MODE=real` raises `ImportError`, so the
-query-embedding half of the binding cannot work — and therefore neither can
-retrieval, which is the whole cold-start classification path.
-
-`architecture.md` §7.5 **documented this exact gap** ("There is no
-`womblex.embed_query` / public embedding helper") but the correction was never
-applied to the code. The unit tests pass because they exercise the mapping with
-plain row dicts and never construct the real embedder.
-
-The verified call is:
-
-```python
-from womblex.analyse.embed import embed_texts
-from womblex.cli._shared import make_isaacus_client
-
-embed_texts([text], make_isaacus_client(),
-            model="kanon-2-embedder", task="retrieval/query")
-```
-
-Note `task="retrieval/query"` must pair with the chunk vectors'
-`task: retrieval/document` (set in `infra/womblex/redline.yaml`), and the model
-must match or ADR-0014 refuses the comparison.
-
-**Thread 37b's first task is this fix, with a test that actually constructs the
-embedder.** Sequenced before Track L, per the original plan's reasoning: the lens
-work should not stack further on a stub.
 
 ---
 
@@ -242,13 +312,31 @@ work should not stack further on a stub.
 
 ## 7. Sequencing
 
-1. **53** — finish D14. Add Numbatch as a submodule with its superseding ADR,
-   which also unblocks the four dead `infra/docker/*.Dockerfile` compose
-   references that have made the `numbatch` profile unstartable. (54 is done; its
-   findings are in §3 and are already reflected in the rows above.)
-2. **37b** — fix the embedder defect, then prove retrieval sorts a real corpus.
-   Gates the semantic honesty of everything downstream.
-3. **41** — the shell; closes the browser half of 38–40 and the `/e2e` deviation.
-4. **42–50** — Track L, in dependency order, scoped by 54's findings.
-5. **55** — the air-gap retirement, any time; it is cleanup, not a dependency.
-6. **51** — workspace extraction and release, last by nature.
+**Track V runs to completion before anything else starts.**
+
+1. **V1 (56)** — the three schema defects. Hard-blocks everything: no query
+   embedding means no retrieval, and the table-cell mapping raises on every real
+   row. Nothing downstream can be trusted until this is green against real shards.
+2. **V2 (57)** and **V3 (58)** — independent of each other, both depend on V1.
+   V2 unblocks classification without Numbatch; V3 unblocks pricing without
+   Numbatch. Either order, or in parallel.
+3. **V4 (59)** — the shell. The only piece that is genuinely new code, and the
+   only reason the product cannot be looked at today.
+4. **V5 (60)** — the real corpus run. The point of the exercise.
+
+Then, and only then:
+
+5. **55** — the air-gap retirement; cleanup, no dependency, any time.
+6. **42–50** — Track L, in dependency order, scoped by §3's findings. Revisit
+   *after* V5 has shown what the cold-start path actually gets right on a real
+   corpus — that evidence should shape the lens work rather than be assumed.
+7. **51** — workspace extraction and release, last by nature.
+
+### What Track V deliberately does not do
+
+- **No trained classifier, no samples, no adapter.** ADR-0008's first pass only.
+- **No Numbatch stack.** Not started, not built, not required. It re-enters when
+  a trained overlay or the financial extension's roll-up is wanted.
+- **No comprehension lens.** Collisions, boundary decisions, lens persistence and
+  portability all wait.
+- **No workspace extraction.** Ship-shape is a later concern than see-shape.
