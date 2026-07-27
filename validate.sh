@@ -179,7 +179,12 @@ while IFS= read -r f; do
   lc=$(wc -l < "$f")
   [ "$lc" -lt 700 ] && continue
   if [ "$lc" -ge 800 ]; then SIZE_FAILURES+="  $lc  $f\n"; else SIZE_WARNINGS+="  $lc  $f\n"; fi
+# services/womblex and services/numbatch are the vendored upstream submodules —
+# source we never modify, excluded from our own static guards exactly as
+# vendor/wayfinder is. redline's own overlay lives in services/numbatch-extension
+# and IS checked.
 done < <(find packages/*/src apps/*/src services/*/src -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.py" \) \
+  ! -path "services/womblex/*" ! -path "services/numbatch/*" \
   ! -name "*.test.ts" ! -name "*.test.tsx" 2>/dev/null)
 [ -n "$SIZE_WARNINGS" ] && { warn "files ≥ 700 lines — split when next touched:"; printf '%b' "$SIZE_WARNINGS"; }
 if [ -z "$SIZE_FAILURES" ]; then pass "no source file ≥ 800 lines"; else
@@ -208,12 +213,14 @@ else
   find services/womblex-ingest -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
-# ── 11. Numbatch financial extension tests (services/numbatch/financial_extension) ─
+# ── 11. Numbatch financial extension tests (services/numbatch-extension) ─────
 # The Thread 6 overlay: financial_profiles/financial_extractions models, the
-# Alembic migration, and the config API. Provable standalone (SQLite; no fork,
-# no GPU). SKIPs cleanly when python3 is absent so the workspace checks still gate.
-section "11. services/numbatch/financial_extension pytest"
-FIN_EXT=services/numbatch/financial_extension
+# Alembic migration, and the config API. redline's OWN code, which is why it
+# lives beside the upstream submodule rather than inside it (services/numbatch is
+# the unmodified fork). Provable standalone (SQLite; no fork, no GPU). SKIPs
+# cleanly when python3 is absent so the workspace checks still gate.
+section "11. services/numbatch-extension/financial_extension pytest"
+FIN_EXT=services/numbatch-extension/financial_extension
 if [ ! -d "$FIN_EXT" ]; then
   skip "numbatch financial extension — not present"
 elif ! command -v python3 >/dev/null 2>&1; then
@@ -261,6 +268,32 @@ elif git diff --quiet -- pnpm-lock.yaml 2>/dev/null; then
   pass "lockfile has no Wayfinder importer, but matches HEAD — not a local rewrite"
 else
   fail "pnpm-lock.yaml was rewritten without the vendored Wayfinder tree (the vendor/wayfinder importer is gone). Do not commit it: run 'git checkout -- pnpm-lock.yaml', or vendor first ('scripts/vendor-wayfinder.sh && pnpm install') if you meant to change dependencies"
+fi
+
+# ── 13. the womblex submodule and the sidecar's pin agree ────────────────────
+# services/womblex is the engine build the Parquet mapping in shard_reader.py is
+# written against; the sidecar's `.[womblex]` extra pins the build its query
+# embedder runs. Those two drifting apart is the one mismatch nothing else
+# catches — the shards would map fine and the query vectors would come from a
+# different engine. SKIPs (never fails) on a clone without the submodule
+# initialised, so a Wayfinder-style "green on a clean clone" still holds; CI
+# checks out submodules, so CI is where this actually bites.
+section "13. womblex submodule tag matches the sidecar's pin"
+WOMBLEX_EXTRA_PIN="$(grep -oE '"womblex==[0-9]+\.[0-9]+\.[0-9]+"' services/womblex-ingest/pyproject.toml 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+if [ -z "$WOMBLEX_EXTRA_PIN" ]; then
+  skip "womblex pin — no womblex== pin found in the sidecar's pyproject.toml"
+elif [ ! -f services/womblex/pyproject.toml ]; then
+  skip "womblex pin — services/womblex not initialised (git submodule update --init)"
+else
+  WOMBLEX_SUBMODULE_TAG="$(git -C services/womblex describe --tags --exact-match 2>/dev/null | sed 's/^v//')"
+  if [ -z "$WOMBLEX_SUBMODULE_TAG" ]; then
+    warn "womblex submodule is not on an exact tag — cannot compare against the ${WOMBLEX_EXTRA_PIN} pin"
+    skip "womblex pin — submodule not on a tagged commit"
+  elif [ "$WOMBLEX_SUBMODULE_TAG" = "$WOMBLEX_EXTRA_PIN" ]; then
+    pass "womblex pin (submodule v${WOMBLEX_SUBMODULE_TAG} == sidecar pin ${WOMBLEX_EXTRA_PIN})"
+  else
+    fail "womblex pin drift: services/womblex is v${WOMBLEX_SUBMODULE_TAG} but the sidecar pins womblex==${WOMBLEX_EXTRA_PIN}. Move both together (see services/womblex-ingest/pyproject.toml)"
+  fi
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 # ADR-0008 — The trained classifier is an optional overlay; the first pass needs no samples
 
-- **Status**: Accepted
+- **Status**: Accepted — **amended 2026-07-27** (Isaacus is a hard requirement; air-gap is a non-goal — see the amendment at the end)
 - **Date**: 2026-07-24
 
 ## Context
@@ -116,3 +116,61 @@ before Numbatch is usable at all*.
   first-pass path to remain available and interchangeable at the port.
 - ADR-0005's additive-only posture stays unamended — if a future change does
   require relaxing the floor, that needs its own ADR superseding this one.
+
+---
+
+## Amendment — Isaacus is a hard requirement; air-gap is a non-goal
+
+- **Status**: Accepted
+- **Date**: 2026-07-27
+
+### Context
+
+This ADR made the *trained classifier* optional. Earlier work then carried a
+second, separate optionality — an "Isaacus-optional / air-gapped" posture
+inherited from womblex's own edge modes and Wayfinder's air-gap validation —
+and the two were treated as one idea. They are not.
+
+Reading womblex's source settles the question. Its stage split is:
+
+- `detect` / `extract` — local (PyMuPDF, OCR, layout). No Isaacus.
+- `chunk` (default) — local. The Kanon-2 tokeniser is free on Hugging Face, so
+  plain token chunking needs no key. Only *AI* chunking calls the API.
+- **`embed` — Isaacus-only** (`kanon-2-embedder`). This produces
+  `*.embeddings.parquet`.
+
+The cold-start path this ADR defines *is* nearest-neighbour matching over those
+embeddings. So a deployment without `ISAACUS_API_KEY` gets extraction and chunks
+and then stops: no vectors, no retrieval, no first pass, and — since the overlay
+requires samples that only the first pass makes cheap to produce — no route to
+classification at all.
+
+An "air-gapped redline" was therefore never a degraded mode. It was a mode in
+which the product does not function.
+
+### Decision
+
+**Retrieval requires `ISAACUS_API_KEY`. A deployment that cannot reach Isaacus is
+misconfigured, not running in a supported mode.**
+
+- The optionality this ADR grants applies to the **trained Numbatch adapter**
+  only. It never applied to Isaacus, and the two must not be conflated again.
+- `/health` reports `isaacusEnabled` as a **diagnostic**, so a misconfigured
+  deployment is legible. It is not a mode selector.
+- The stub extractor remains, scoped to what it was always for: a
+  dependency-free test double for CI and the adapter contract. It is not an
+  offline product lane.
+
+### Consequences
+
+- Removed: `EnrichmentMode.OFFLINE` and the `enrichmentMode` field,
+  `scripts/thread-15-airgap.sh`, `tests/test_airgap_pipeline.py`,
+  `tests/test_enrichment_mode.py`, and the `ingest-config` UI core with its
+  Isaacus on/off toggle and e2e spec. A toggle that disengages a hard dependency
+  offers the operator a choice that produces a broken deployment.
+- `docs/architecture.md` §2, §7.1, §7.2 and §8 already describe this posture;
+  they cited an amendment that had not been written. This is that amendment, and
+  those citations are now accurate.
+- Air-gapped operation is a **non-goal**. Reinstating it would require replacing
+  the retrieval leg with a local embedding model — a different architecture, and
+  its own ADR superseding this one.

@@ -5,32 +5,19 @@ Wayfinder-hosted endpoint. `WOMBLEX_MODE` selects the extractor; it defaults to
 `stub` so the service starts (and the exit test passes) without the heavy womblex
 dependency or an Isaacus key.
 
-Thread 15 makes Isaacus-optionality explicit: womblex runs with or without Isaacus
-enrichment, so `enrichment_mode` derives the live path from `WOMBLEX_MODE` + the
-presence of an `ISAACUS_API_KEY`. The stub path is always offline; the real path
-is offline unless a non-blank key is supplied. `/health` surfaces the mode so a
-deployment (and the UI toggle) can read which path is live, and the air-gap exit
-test proves the whole pipeline runs with the key unset.
+Isaacus is a **hard requirement of the real lane**, not an optional enrichment:
+the retrieval leg is womblex's `*.embeddings.parquet`, and the embed stage is
+Isaacus-only. A deployment without a key cannot retrieve, which is the whole
+first pass — so `isaacus_enabled` is a **diagnostic**, surfaced on `/health` so a
+misconfigured deployment is legible, not a mode the product supports running in.
+See ADR-0008 (amended) and `docs/architecture.md` §2.
 """
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from enum import Enum
 from typing import Optional
-
-
-class EnrichmentMode(str, Enum):
-    """Whether womblex enrichment calls Isaacus or stays fully offline.
-
-    OFFLINE is the air-gapped default (Thread 15): no Isaacus API key required,
-    the whole pipeline runs disconnected. ISAACUS is opt-in and needs both the
-    real extractor and a key.
-    """
-
-    OFFLINE = "offline"
-    ISAACUS = "isaacus"
 
 
 @dataclass(frozen=True)
@@ -44,14 +31,14 @@ class Settings:
 
     @property
     def isaacus_enabled(self) -> bool:
-        """Isaacus is live only in real mode with a non-blank key present."""
+        """Isaacus is live only in real mode with a non-blank key present.
+
+        False on the real lane means retrieval cannot run — a misconfiguration
+        to surface, not a supported offline mode.
+        """
         if self.womblex_mode != "real":
             return False
         return bool(self.isaacus_api_key and self.isaacus_api_key.strip())
-
-    @property
-    def enrichment_mode(self) -> EnrichmentMode:
-        return EnrichmentMode.ISAACUS if self.isaacus_enabled else EnrichmentMode.OFFLINE
 
     @staticmethod
     def from_env() -> "Settings":

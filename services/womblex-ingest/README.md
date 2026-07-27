@@ -118,8 +118,10 @@ evaluation rather than re-fetching per run.
 
 **womblex is a required subsystem of redline**, not an optional extra: the
 retrieval leg *is* womblex's `*.embeddings.parquet`. redline runs it as its
-**own pod** (`Dockerfile.womblex` / the `womblex` compose service) —
-deliberately not folded into this lightweight API image, because womblex's
+**own image** — the one the engine itself ships, built from the
+`services/womblex` submodule by the `womblex` compose service and driven through
+the engine's own `enqueue` / `worker` cloud runner. It is deliberately not folded
+into this lightweight API image, because womblex's
 OCR/tokeniser/model runtime is heavy and its resource profile is disparate from
 the FastAPI sidecar's. The engine source is pinned as a submodule at
 `services/womblex` (tag `v0.2.0`).

@@ -1,15 +1,18 @@
-# numbatch (vendored fork)
+# numbatch-extension — redline's additive overlay on the Numbatch fork
 
-The **Numbatch** classification engine (DeepCivic/Numbatch), vendored as a fork.
+The **Numbatch** classification engine (DeepCivic/Numbatch) is a **git submodule**
+at [`../numbatch`](../numbatch), pinned to `72bcead`
+([ADR-0015](../../docs/adr/0015-upstream-python-engines-are-submodules.adr.md)).
 redline runs its **backend API + Arq worker + inference service** (plus Postgres +
 Redis, reusing redline's MinIO) and **never** its SvelteKit frontend — redline owns its
 own control surface and review grid ([ADR-0005](../../docs/adr/0005-numbatch-fork-all-but-frontend.adr.md)).
 
-> **Not committed here during the build phase.** Like `vendor/wayfinder`, the fork's
-> tree is large and lives in its own remote; it is added as a submodule / sibling
-> checkout, and its `infra/docker/*.Dockerfile`s are referenced by redline's compose
-> `numbatch` profile. Thread 16 finalises how the fork ships. This directory currently
-> holds only this README and the bootstrap script.
+> **This directory is redline's code, not upstream's.** The submodule tree stays
+> byte-identical to upstream so the pin means something and "we never modify the
+> fork" holds structurally. Everything redline adds lives here and grafts onto the
+> fork's `app/` + `alembic/`. Run `git submodule update --init` on a fresh clone;
+> the `numbatch` compose profile builds the fork's own
+> `infra/docker/*.Dockerfile`s.
 
 ## What Numbatch is (verified from its docs)
 

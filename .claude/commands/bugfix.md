@@ -24,12 +24,16 @@ approach. Do this as regular chat text — NOT inside `AskUserQuestion`. Then us
 
 ### Step 1 — Diagnose first, code second
 
-Write a short bug note at `docs/threads/` (or amend the relevant thread doc) with:
-- Root cause diagnosis (verified, not assumed)
+State in chat:
+- Root cause diagnosis (**verified, not assumed** — read the code, and if the bug
+  is at a seam, read the upstream submodule under `services/`; several redline
+  bugs have been bindings written against symbols and columns that upstream never
+  had)
 - Reproduction steps
 - Fix plan
 
-Do not write implementation code until the diagnosis is confirmed.
+Do not write implementation code until the diagnosis is confirmed, and do not
+create a bug document — `docs/threads/` was deleted deliberately.
 
 ### Step 2 — Write a failing test
 
@@ -48,14 +52,17 @@ Run `./validate.sh` (Podman-backed when no local Node) and fix all failures.
 ### Step 5 — Regression proof
 
 Confirm the test from Step 2 fails on the unfixed code and passes after the fix.
-For UI bugs (from Thread 11), add a Playwright e2e covering the exact repro.
+For UI bugs, add a Playwright e2e covering the exact repro.
 
 ### Step 6 — On completion
 
-- Record root cause, fix, and regression test in the relevant thread doc.
-- Note the fix in §6 of `docs/comprehension-lens-design.md` if it
-  affected a completed thread's exit criteria.
+- Record root cause, fix and regression test in the commit message.
+- Update the thread's row in `docs/delivery-plan.md` §5 if the bug affected a
+  completed thread's exit criteria.
+- If the bug was a wrong assumption about a seam, correct
+  `docs/architecture.md` §7 so it is not re-derived.
 - Apply a PATCH bump intent.
 - Run `./validate.sh` one final time.
-- Commit; open a PR against the DeepCivic remote's default branch via
-  `mcp__github__create_pull_request` when the remote exists.
+- Commit.
+- **Do NOT open a PR.** A PR is opened only when the user explicitly asks for
+  one. Offer it; do not act on the offer unasked.

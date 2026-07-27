@@ -15,12 +15,12 @@ Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
 ## Status
 
-Under construction. See the living delivery plan and build state at
-[`docs/dev-iteration-3.md`](./docs/dev-iteration-3.md). The two earlier
-iteration documents are **frozen history**, retained as delivery logs:
-[`dev-iteration-1.md`](./docs/dev-iteration-1.md) (Threads 1–15) and
-[`dev-iteration-2.md`](./docs/dev-iteration-2.md) (the comprehension-lens design
-+ Threads 17–25, and the still-authoritative architecture rationale).
+Under construction. Two documents govern:
+[`docs/architecture.md`](./docs/architecture.md) is what redline **is**, and
+[`docs/delivery-plan.md`](./docs/delivery-plan.md) is what is **left to build**.
+[`dev-iteration-2.md`](./docs/dev-iteration-2.md) is retained as frozen design
+rationale (the D1–D13 decision register and the three findings behind the lens
+architecture); it tracks nothing.
 
 Threads 1–15 and 17–25 are ✅ complete: scaffold, `redline-domain` (user-defined
 requirements + the lens domain), the `womblex-ingest` sidecar + embeddings seam,
@@ -28,8 +28,12 @@ the extraction/embedding reader adapters, the Numbatch classifier + service
 scaffold, the financial extension, the `redline_` persistence layer, the
 orchestration use-cases, the workflow-manager control surface, the review
 grid/pivots/Excel export, the first-pass classification path (hard-rule /
-retrieval / adjudication) and the comprehension read models. Current thread:
-**Thread 37 — real womblex binding** (see `dev-iteration-3.md` §4).
+retrieval / adjudication) and the comprehension read models.
+
+**Current focus — Track V, the lean vertical**: get a real procurement corpus
+ingested and rendered on screen, delineated by topic and brand. The
+comprehension-lens work is deferred until that exists. See
+[`delivery-plan.md`](./docs/delivery-plan.md) §4.
 
 ## Architecture
 
@@ -43,10 +47,9 @@ Publishing target: the **DeepCivic** org.
 redline/
 ├── docs/
 │   ├── adr/                     # architecture decision records (Wayfinder ADR model)
-│   ├── threads/                 # per-thread technical docs
-│   ├── dev-iteration-3.md       # the living delivery plan + build state
-│   ├── dev-iteration-2.md       # frozen; comprehension-lens design + Threads 17–25
-│   └── dev-iteration-1.md       # frozen; original build plan + Threads 1–15
+│   ├── architecture.md          # what redline IS (design truth)
+│   ├── delivery-plan.md         # what is LEFT TO BUILD (tracking truth)
+│   └── dev-iteration-2.md       # frozen; D1–D13 rationale behind the lens design
 ├── packages/
 │   ├── redline-domain/             # entities + ports (zero deps, Result pattern)
 │   ├── redline-application/        # use-cases
@@ -54,7 +57,11 @@ redline/
 │   └── redline-shared/             # zod schemas shared with the UI
 ├── apps/
 │   └── redline-web/                # specialist control surface + review grid
-├── services/                    # womblex-ingest, numbatch (added in later threads)
+├── services/
+│   ├── womblex/                 # SUBMODULE: the womblex engine @ v0.2.0
+│   ├── womblex-ingest/          # redline's Parquet→JSON read sidecar
+│   ├── numbatch/                # SUBMODULE: the Numbatch fork @ 72bcead
+│   └── numbatch-extension/      # redline's additive overlay on the fork
 └── vendor/
     └── wayfinder/               # materialised at build time (never committed) — typed reuse only
 ```
@@ -78,9 +85,10 @@ Mirrors Wayfinder: pnpm 9, Node ≥ 20, Turborepo, TypeScript 5.6 (strict), Vite
 Prettier, ESLint 9.
 
 ```bash
+git submodule update --init   # services/womblex + services/numbatch (ADR-0015)
 pnpm install
 pnpm build      # turbo run build across @redline/* packages
-pnpm test       # vitest — includes the Wayfinder consumption spike
+pnpm test       # vitest across @redline/*
 pnpm typecheck
 pnpm lint
 ./validate.sh   # the full gate — also what CI runs

@@ -1,7 +1,14 @@
 # ADR-0013 — The Numbatch fork is materialised from a pin, not a submodule
 
-- **Status**: Accepted
+- **Status**: **Superseded** by [ADR-0015](./0015-upstream-python-engines-are-submodules.adr.md) (2026-07-27)
 - **Date**: 2026-07-25
+
+> **Superseded.** The consistency argument below copies Wayfinder's mechanism
+> without its premise: Wayfinder is pinned because a submodule drags its package
+> set into the pnpm workspace, which is a JavaScript problem Numbatch does not
+> have. The pin this ADR deferred was never written, and the fork was never
+> fetched — leaving a `numbatch` compose profile that could not start. Both
+> Python engines are now submodules; see ADR-0015.
 - **Amends**: [ADR-0005](./0005-numbatch-fork-all-but-frontend.adr.md) (the Vendoring clause only)
 
 ## Context

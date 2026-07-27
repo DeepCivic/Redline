@@ -11,14 +11,14 @@ Current local set (not in git):
   tender responses.
 - `PIN_2026_0334 - Technology PoC REOI Document.pdf` — the REOI tender document.
 
-## Run the pod against this corpus
+## Run the engine against this corpus
 
 ```sh
 WOMBLEX_CORPUS=services/womblex-ingest/tests/corpus-local \
-  scripts/thread-37a-womblex-pod.sh
+  scripts/womblex-engine-smoke.sh
 ```
 
-`WOMBLEX_CORPUS` overrides the compose `womblex` service's default input mount
-(which points at the redistributable `corpus/`). The pod extracts → chunks →
-(embeds, when `ISAACUS_API_KEY` is set) every file here and lands the Parquet
-shards in MinIO under `proc/{evaluationId}/`.
+`WOMBLEX_CORPUS` overrides the corpus the smoke test stages into object storage
+(default: the redistributable `corpus/`). The engine extracts → chunks →
+(embeds, when `ISAACUS_API_KEY` is set) every file here and publishes the Parquet
+shards to MinIO under `proc/{evaluationId}/`.

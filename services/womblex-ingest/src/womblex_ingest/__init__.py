@@ -2,5 +2,5 @@
 
 HTTP wrapper around womblex: `POST /ingest` runs extraction for an evaluation's
 documents and writes Parquet shards to object storage under `proc/{evaluationId}/`;
-`GET /status/{run_id}` reports run state. See docs/threads/thread-03-*.md.
+`GET /status/{run_id}` reports run state. See services/womblex-ingest/README.md.
 """

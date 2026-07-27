@@ -1,15 +1,17 @@
 # /doc-review — Documentation Review
 
-Use this skill when the user asks to review, check, or validate docs before
-building, or when a thread spec exists in `docs/threads/` and the user says
-"let's build this."
+Use this skill when the user asks to review, check, or validate a plan before
+building, or when a thread has been planned and the user says "let's build this."
 
 ---
 
 ## Workflow
 
-1. Read the target thread in `docs/comprehension-lens-design.md` (§6), its thread
-   spec in `docs/threads/`, and any referenced ADR(s) in full.
+1. Read, in full: the target thread's entry in
+   [`docs/delivery-plan.md`](../../docs/delivery-plan.md) (§4 for scope and exit
+   test, §5 for status), the parts of
+   [`docs/architecture.md`](../../docs/architecture.md) it touches, and any
+   referenced ADR(s).
 2. Extract the key elements that would be implemented (entities, ports, DB
    changes, runtime seams, service work, UI changes). Output this as a bulleted
    list directly to the chat as regular text — do NOT embed it inside the
@@ -23,25 +25,32 @@ building, or when a thread spec exists in `docs/threads/` and the user says
 
 | # | Check | Fail condition |
 |---|-------|----------------|
-| 1 | Thread spec exists and is complete | Missing scope, entities/ports, or sub-components |
+| 1 | Thread entry is complete | Missing scope, entities/ports, or exit test |
 | 2 | Thread has a single, verifiable **exit test** | Missing or vague (`_Exit:_` not measurable) |
-| 3 | Spec matches the build-plan thread scope | Spec implements something outside the thread |
-| 4 | DB changes follow conventions | Wrong prefix (must be `redline_`), camelCase columns, missing `id`/timestamps |
-| 5 | Layering respected | Domain gains a dep; application imports an adapter; app reaches into Wayfinder internals |
-| 6 | Wayfinder reuse is read-only | Any plan to modify `vendor/wayfinder` |
-| 7 | ADRs consistent | Two ADRs make incompatible decisions, or a locked §8 decision is contradicted |
-| 8 | Version bump specified and correct | Missing, or PATCH when schema changes |
-| 9 | Risks identified | Non-trivial thread with no risk note |
+| 3 | Scope is one build step | Exit test joins two independently-testable behaviours; spans two languages; crosses three packages |
+| 4 | **Nothing upstream already does this** | The thread rebuilds a capability in `services/womblex` or `services/numbatch` (ADR-0015). Read the submodule to be sure — do not answer from memory |
+| 5 | DB changes follow conventions | Wrong prefix (must be `redline_`), camelCase columns, missing `id`/timestamps |
+| 6 | Layering respected | Domain gains a dep; application imports an adapter; app reaches into Wayfinder internals |
+| 7 | Wayfinder reuse is read-only | Any plan to modify `vendor/wayfinder`; likewise any plan to modify a submodule tree |
+| 8 | ADRs consistent | Two ADRs make incompatible decisions, or a settled decision is contradicted. Check against upstream ADRs too — `services/numbatch/docs/adr/` is authoritative for Numbatch's behaviour |
+| 9 | Claims are verifiable | The plan asserts an API shape, schema or upstream behaviour that has not been checked against the source |
+| 10 | Version bump specified and correct | Missing, or PATCH when schema changes |
+| 11 | Risks identified | Non-trivial thread with no risk note |
+
+Checks 4, 8 and 9 exist because redline has shipped all three failures: a
+container stack duplicating womblex's own, a plan to auto-activate adapters that
+contradicted Numbatch's ADR-0021, and bindings written against symbols and
+columns that do not exist upstream. Verify against the submodules, not memory.
 
 ---
 
 ## Output Format
 
 ```
-PASS — Thread spec exists and is complete
+PASS — Thread entry is complete
 PASS — Exit test is measurable (vitest suite asserting X)
 FAIL — DB table missing redline_ prefix
-WARN — Risk section is sparse; note the womblex JSON-vs-Parquet decision risk
+WARN — Risk section is sparse; note the content_type join-key gap (architecture.md §7.3)
 ```
 
 **Do NOT proceed to `/build` until all checks are PASS (WARNs are acceptable).**
