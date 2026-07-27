@@ -20,7 +20,7 @@ def test_health_reports_offline_enrichment_by_default(client: TestClient) -> Non
     body = client.get("/health").json()
 
     assert body["womblexMode"] == "stub"
-    assert body["enrichmentMode"] == "offline"
+    assert body["isaacusEnabled"] is False
     assert body["isaacusEnabled"] is False
 
 
@@ -33,14 +33,14 @@ def test_health_reports_isaacus_when_enabled(storage: FakeObjectStorage) -> None
             extractor=StubExtractor(),
             bucket="redline",
             womblex_mode="real",
-            enrichment_mode="isaacus",
+            isaacus_enabled=True,
         )
     )
 
     body = client.get("/health").json()
 
     assert body["womblexMode"] == "real"
-    assert body["enrichmentMode"] == "isaacus"
+    assert body["isaacusEnabled"] is True
     assert body["isaacusEnabled"] is True
 
 

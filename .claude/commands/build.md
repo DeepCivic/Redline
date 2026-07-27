@@ -1,23 +1,33 @@
-# /build — Build a Thread from the Design Doc
+# /build — Build a Thread
 
-Use this skill when the design doc's next thread is ready to implement and the
+Use this skill when the delivery plan's next thread is ready to implement and the
 user confirms, or when the user explicitly asks to implement a specific thread.
 
-**Pre-flight:** Read the target thread in
-[`docs/comprehension-lens-design.md`](../../docs/comprehension-lens-design.md)
-(§6 Delivery for scope + exit test, §10 Build state for status)
-in full, plus any ADR(s) it references and any thread doc under `docs/threads/`.
-**ADR gate — before writing any code.** Check §7's decision register. If the
-thread rests on a decision that is not yet settled, or requires a new
-architectural decision to proceed:
+**Pre-flight — read before writing anything:**
+
+1. The thread's entry in [`docs/delivery-plan.md`](../../docs/delivery-plan.md)
+   — §4 for the current track's scope and exit tests, §5 Build state for status.
+2. [`docs/architecture.md`](../../docs/architecture.md) for the seams the thread
+   touches. It is the design truth; the plan never restates it.
+3. Any ADR(s) either references, in `docs/adr/`.
+
+**Upstream gate — ADR-0015.** If the thread builds anything an upstream engine
+might already provide, read that engine's source first: `services/womblex` and
+`services/numbatch` are submodules and are on disk (`git submodule update
+--init`). This is not optional diligence — redline has already shipped a
+duplicate container stack, an import of functions that do not exist, and a schema
+mapping against columns upstream never writes, all by integrating against a
+dependency nobody had opened.
+
+**ADR gate — before writing any code.** If the thread rests on a decision that is
+not yet settled, or needs a new architectural decision:
 
 1. Draft the ADR in `docs/adr/` (`NNNN-<decision>.adr.md`, status **Proposed**).
 2. Present it for review and **stop**.
-3. Build only once the user approves; flip the status to **Accepted** in the
-   thread's commit.
+3. Build only once the user approves; flip to **Accepted** in the thread's commit.
 
-Do not build past an unapproved precondition decision. A thread whose shape
-depends on an open question is not ready — its ADR is the gate.
+Do not build past an unapproved precondition decision.
+
 Confirm the thread's **exit test** before writing a line of code. Read the
 relevant `@rbrasier/*` source in `vendor/wayfinder/packages/*` for any Wayfinder
 helper you intend to reuse — do not trust training data for its shape.
@@ -43,8 +53,9 @@ chat before starting so the user can see the plan.
 **B. Implement**
 - Make the tests pass with the minimum code required
 - Follow all architecture and code writing rules from `.claude/CLAUDE.md`
-- Before calling any third-party or Wayfinder API: verify the signature in
-  `node_modules/<package>/` or `vendor/wayfinder/packages/<pkg>/src/` — not training data
+- Before calling any third-party, upstream-engine or Wayfinder API: verify the
+  signature in `node_modules/<package>/`, `services/{womblex,numbatch}/`, or
+  `vendor/wayfinder/packages/<pkg>/src/` — not training data
 
 **C. Validate**
 - Run `./validate.sh` (uses Podman when no local Node — see
@@ -54,30 +65,26 @@ chat before starting so the user can see the plan.
 
 ### Step 3 — Integration proof (thread-appropriate)
 
-Every thread's exit test in the build plan is the acceptance gate. Satisfy it
-explicitly and paste the passing output:
+The thread's exit test in the plan is the acceptance gate. Satisfy it explicitly
+and paste the passing output:
 - Pure package threads → a passing vitest suite exercising the exit criterion.
 - Service threads (womblex/Numbatch) → a compose-up + real-request proof.
-- UI threads (from Thread 11) → a Playwright e2e test under `apps/redline-web/e2e/`.
-  (Add the `/e2e` skill at that point — see the deviations table in `CLAUDE.md`.)
+- UI threads → a Playwright e2e test under `apps/redline-web/e2e/`. These run in
+  CI once the Next.js shell serves the routes (Track V, thread 59).
 
 ### Step 4 — On completion
 
-- Write/refresh the thread's technical doc at
-  `docs/threads/thread-<NN>-<slug>.md` (or a package README) covering: what was
-  built, files created/modified, migrations, the exit-test evidence, known
-  limitations, and any decision that should become an ADR.
-- **Discovered decisions** — if the build itself forced an architectural choice
-  that could not have been known at planning time (the seam turned out different,
-  a library constrained the shape), record it as an ADR now, in this thread's
-  commit, and update the matching row in §7 of the design doc's decision register.
-  This is the retrospective half of the ADR model; the gate above is the
-  precondition half. Precedent: ADR-0002 and ADR-0003 were both locked mid-build.
-- **Update the design doc** (`docs/comprehension-lens-design.md`):
-  - Flip the thread's row in §10 Build state to ✅ with a one-line note.
-  - Append the thread doc link to the thread's §6 entry, in the form
-    `— docs: [thread-<NN>](./threads/thread-<NN>-<slug>.md)`.
-  - Never write to `docs/procurement-evaluation-plan.md` — deprecated and frozen.
+- **Update the build state** in `docs/delivery-plan.md` §5: flip the thread's row
+  to ✅ with a one-line note carrying the exit-test evidence.
+- **Update `docs/architecture.md`** only if the build changed what redline *is* —
+  a new seam, a changed contract, a corrected assumption (§7). Routine
+  implementation does not touch it.
+- **Discovered decisions** — if the build forced an architectural choice that
+  could not have been known at planning time, record it as an ADR now, in this
+  thread's commit. Precedent: ADR-0002 and ADR-0003 were both locked mid-build.
+- There is **no per-thread doc**. `docs/threads/` does not exist and is not to be
+  recreated; a package README is the right home for anything longer than a
+  build-state note.
 - State the version bump intent (MAJOR / MINOR / PATCH).
 - Run `./validate.sh` one final time — fix all failures before declaring done.
 - **One thread = one commit.** Commit all the thread's changes together.
@@ -89,10 +96,10 @@ explicitly and paste the passing output:
 ## Scope discipline
 
 A thread is **one build step including its test** (see the thread contract in
-`/new-thread`). If, mid-build, the thread turns out to be larger than that:
+`docs/delivery-plan.md` §2). If, mid-build, the thread turns out to be larger:
 
 - Build the part that satisfies the stated exit test, and stop.
 - Report what you left out and why, and propose the follow-up thread(s).
 
 Do not widen a thread mid-flight. An overrunning thread is a planning defect to
-be fixed in the design doc, not absorbed into the current context.
+be fixed in the plan, not absorbed into the current context.

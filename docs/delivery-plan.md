@@ -7,12 +7,12 @@
 > redline is and how data moves through it*; [`adr/`](./adr/) holds the decisions.
 > This file holds *what is left to do* and nothing else.
 >
-> **Supersedes** the tracking half of
-> [`dev-iteration-3.md`](./dev-iteration-3.md). The three `dev-iteration-*.md`
-> files are now frozen delivery history in full, exactly as `architecture.md` §6
-> already described them — they track nothing. That resolves a standing conflict
-> in which `architecture.md` and `dev-iteration-3.md` each claimed to be the
-> single source of truth.
+> **Supersedes** `dev-iteration-3.md`, which is deleted along with
+> `dev-iteration-1.md`. [`dev-iteration-2.md`](./dev-iteration-2.md) is retained
+> as frozen design rationale — the D1–D13 register and the three findings behind
+> the lens architecture — and tracks nothing. That resolves a standing conflict in
+> which `architecture.md` and `dev-iteration-3.md` each claimed to be the single
+> source of truth.
 
 ---
 
@@ -62,8 +62,8 @@ shipped capabilities rather than reimplementing them.**
 - One package where possible.
 
 Numbering continues monotonically so a number never collides with a historical
-reference. Threads 37–51 keep the numbers `dev-iteration-3.md` gave them; new
-work starts at **52**.
+reference. Threads 37–51 keep the numbers the retired iteration-3 plan gave
+them; new work starts at **52**.
 
 ---
 
@@ -275,7 +275,7 @@ document delineated by topic and brand, with provenance back to source._
 | 48 | Collision resolution surface | L | redline-web | ⏸ **deferred** — not on the lean vertical |
 | 49 | Sample accrual | L | adapters | ⏸ **deferred** — shrunk (§3): upstream dedupe indexes give idempotence |
 | 50 | Train/activate policy | L | adapters | ⏸ **deferred** — needs redesign (§3): as written it contradicts upstream ADR-0021 |
-| 55 | Retire the air-gap machinery | H | womblex-ingest, redline-web | ⚪ not started (§6) |
+| 55 | Retire the air-gap machinery | H | womblex-ingest, redline-web | ✅ **done** — ADR-0008 amended; machinery removed (§6) |
 | 51 | Workspace extraction & release prep | H | workspace | ⚪ not started — last by nature |
 
 ---
@@ -284,15 +284,13 @@ document delineated by topic and brand, with provenance back to source._
 
 ## 6. Carried-forward items
 
-1. **Air-gap retirement (Thread 55).** `dev-iteration-3.md` §5 and
-   `architecture.md` §2/§7/§8/§9 all declare the Isaacus-optional / air-gap
-   posture retired and cite "ADR-0008 (amended)". **ADR-0008 is not amended** —
-   it is unchanged from 2026-07-24 and never mentions air-gap or `OFFLINE`. The
-   machinery is meanwhile live and green: `EnrichmentMode.OFFLINE`
-   (`config.py`/`main.py`/`extraction.py`), `test_airgap_pipeline.py`,
-   `test_enrichment_mode.py`, `scripts/thread-15-airgap.sh`, `ingest-config.ts`
-   and its e2e spec. Thread 55 either writes the amendment and deletes the
-   machinery, or drops the claim. It must not stay half-declared.
+1. **Air-gap retirement (Thread 55) — ✅ done.** ADR-0008 now carries its
+   2026-07-27 amendment (Isaacus is a hard requirement; air-gap is a non-goal),
+   and the machinery is gone: `EnrichmentMode.OFFLINE` and the `enrichmentMode`
+   field, `scripts/thread-15-airgap.sh`, `test_airgap_pipeline.py`,
+   `test_enrichment_mode.py`, and the `ingest-config` UI core with its Isaacus
+   on/off toggle and e2e spec. `/health` now reports `isaacusEnabled` as a
+   diagnostic only.
 2. **The `content_type` join-key gap** (`architecture.md` §7.3). womblex joins
    vectors to chunks on `(source_hash, chunk_index, content_type)`; redline's
    `chunkId` collapses that to two keys, so narrative and table chunks at the same
@@ -326,11 +324,10 @@ document delineated by topic and brand, with provenance back to source._
 
 Then, and only then:
 
-5. **55** — the air-gap retirement; cleanup, no dependency, any time.
-6. **42–50** — Track L, in dependency order, scoped by §3's findings. Revisit
+5. **42–50** — Track L, in dependency order, scoped by §3's findings. Revisit
    *after* V5 has shown what the cold-start path actually gets right on a real
    corpus — that evidence should shape the lens work rather than be assumed.
-7. **51** — workspace extraction and release, last by nature.
+6. **51** — workspace extraction and release, last by nature.
 
 ### What Track V deliberately does not do
 

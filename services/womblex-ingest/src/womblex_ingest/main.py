@@ -70,7 +70,7 @@ def build_app(
     bucket: str,
     embedder: Optional[TextEmbedder] = None,
     womblex_mode: str = "stub",
-    enrichment_mode: str = "offline",
+    isaacus_enabled: bool = False,
 ) -> FastAPI:
     app = FastAPI(title="womblex-ingest", version="0.1.0")
     registry = RunRegistry()
@@ -83,15 +83,14 @@ def build_app(
 
     @app.get("/health")
     def health() -> dict:
-        # Surfaces the live extraction + enrichment path (Thread 15) so a
-        # deployment or the UI config toggle can read whether Isaacus is engaged
-        # or the sidecar is running fully offline (air-gapped).
+        # Surfaces the live extraction path and whether Isaacus is reachable.
+        # On the real lane `isaacusEnabled: false` means retrieval cannot run —
+        # a misconfiguration to surface, not a supported offline mode (ADR-0008).
         return {
             "status": "ok",
             "bucket": bucket,
             "womblexMode": womblex_mode,
-            "enrichmentMode": enrichment_mode,
-            "isaacusEnabled": enrichment_mode == "isaacus",
+            "isaacusEnabled": isaacus_enabled,
         }
 
     @app.post("/ingest")
@@ -229,5 +228,5 @@ def build_app_from_env() -> FastAPI:
         bucket=settings.bucket,
         embedder=embedder,
         womblex_mode=settings.womblex_mode,
-        enrichment_mode=settings.enrichment_mode.value,
+        isaacus_enabled=settings.isaacus_enabled,
     )

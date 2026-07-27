@@ -1,7 +1,8 @@
 # /new-thread — Plan a New Thread or Track
 
 Use this skill when the user wants to plan something new that isn't already a
-thread in the design doc: a new thread, a new track, or a substantial component.
+thread in [`docs/delivery-plan.md`](../../docs/delivery-plan.md): a new thread, a
+new track, or a substantial component.
 
 **Important:** This skill produces documentation only. Do NOT write code.
 
@@ -33,12 +34,23 @@ context.
 
 ---
 
+## Before planning: check upstream first (ADR-0015)
+
+If the thread would build a capability an upstream engine may already provide,
+read that engine's source before writing the thread — `services/womblex` and
+`services/numbatch` are submodules on disk. redline has already built a
+duplicate container stack, orchestration and object-storage staging that womblex
+shipped. A thread that reimplements an upstream capability is a planning defect,
+and this is where it is cheapest to catch.
+
+---
+
 ## Required Clarifying Questions
 
 Ask via `AskUserQuestion` — but only for what you genuinely cannot derive from
-the design doc and the code. Derive the rest and state your assumptions instead.
-If the user declines to answer, proceed on stated assumptions rather than
-stalling.
+the plan, `architecture.md`, and the code. Derive the rest and state your
+assumptions instead. If the user declines to answer, proceed on stated
+assumptions rather than stalling.
 
 1. What problem does this solve, and where does it sit (existing track, or new)?
 2. What are the key entities and ports involved?
@@ -48,38 +60,40 @@ stalling.
 6. Version bump intent (MAJOR / MINOR / PATCH)?
 
 **After gathering answers:** Output a bulleted summary to the chat covering: the
-docs to be generated (thread doc, ADR(s) if needed), the entities/ports, DB
-changes and confirmation of the `redline_` prefix, the runtime seams, the exit
-test, **and the sizing check above**. Do this as regular chat text — NOT inside
-`AskUserQuestion`. Then use `AskUserQuestion` to ask: "Does this look right
-before I generate the docs?" Wait for confirmation before starting the workflow.
+entities/ports, DB changes and confirmation of the `redline_` prefix, the runtime
+seams, any ADR needed, the exit test, **and the sizing check above**. Do this as
+regular chat text — NOT inside `AskUserQuestion`. Then use `AskUserQuestion` to
+ask: "Does this look right before I update the plan?" Wait for confirmation.
 
 ---
 
 ## Workflow
 
-1. Add (or refine) the thread in `docs/comprehension-lens-design.md`
-   (§6 Delivery — pick the right track: L lens / P procurement / H shell &
-   hardening). `docs/procurement-evaluation-plan.md` is **deprecated and frozen**
-   — never add threads there:
-   - Insert it into the right track in §7 with a one-line description **and its
-     explicit exit test** (`_Exit: …_`).
-   - Add its row to the §10 progress log as ⚪ not started.
+1. Add (or refine) the thread in `docs/delivery-plan.md`:
+   - Put it in the right track — **V** (the lean vertical, current priority),
+     **L** (comprehension lens, deferred), **H** (infra/shell/release).
+   - Give it a one-line description **and an explicit exit test** (`_Exit: …_`).
+   - Add its row to the §5 Build state table as ⚪ not started, continuing the
+     monotonic numbering so a number never collides with a historical reference.
 2. If the thread rests on an architectural decision that is not already settled,
-   draft the ADR in `docs/adr/` at status **Proposed**, following the Wayfinder
-   ADR format (see `docs/adr/README.md`). The ADR is a **precondition** — it is
-   drafted here, reviewed via `/doc-review`, and approved before `/build` writes
-   code. Do not pre-write ADRs for decisions the build will discover; those are
-   recorded retrospectively in the thread's own commit.
-3. Write a thread spec at `docs/threads/thread-<NN>-<slug>.md`: scope, entities,
-   ports, seams, DB changes, sub-component breakdown, and acceptance criteria.
+   draft the ADR in `docs/adr/` at status **Proposed**, following the format in
+   `docs/adr/README.md`. The ADR is a **precondition** — drafted here, reviewed
+   via `/doc-review`, approved before `/build` writes code. Do not pre-write ADRs
+   for decisions the build will discover; those are recorded retrospectively.
+3. If the thread changes what redline *is* — a new seam, a changed contract —
+   note the intended change to `docs/architecture.md`. Do not edit it
+   speculatively; `/build` updates it when the change is real.
+
+There is **no per-thread spec document.** `docs/threads/` was deleted
+deliberately and is not to be recreated: the thread's row plus its exit test is
+the spec, and anything longer belongs in a package README or an ADR.
 
 ---
 
 ## Output
 
-- Updated `docs/comprehension-lens-design.md` (§6 track entry with its exit test)
+- Updated `docs/delivery-plan.md` (track entry with its exit test, plus a
+  Build state row)
 - ADR file(s): `docs/adr/<NNNN>-<decision>.adr.md` (if needed)
-- Thread spec: `docs/threads/thread-<NN>-<slug>.md`
 
 Do not proceed to `/build` automatically — route the user to `/doc-review` first.

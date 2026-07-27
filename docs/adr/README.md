@@ -54,7 +54,7 @@ none, so they were written once, ahead of the track.
 | [0005](./0005-numbatch-fork-all-but-frontend.adr.md) | Numbatch is a vendored fork; run all-but-frontend, bootstrap via API | Accepted — Vendoring clause amended by [0015](./0015-upstream-python-engines-are-submodules.adr.md) |
 | [0006](./0006-inherit-wayfinder-auth-roles.adr.md) | Auth/roles: inherit Wayfinder's, do not build our own | Accepted |
 | [0007](./0007-procurement-purpose-lens-means.adr.md) | Procurement is the purpose; the comprehension lens is the means | Accepted |
-| [0008](./0008-trained-classifier-is-an-optional-overlay.adr.md) | The trained classifier is an optional overlay; the first pass needs no samples | Accepted |
+| [0008](./0008-trained-classifier-is-an-optional-overlay.adr.md) | The trained classifier is an optional overlay; the first pass needs no samples | Accepted — amended 2026-07-27 (Isaacus required; air-gap a non-goal) |
 | [0009](./0009-numbatch-library-is-system-of-record.adr.md) | Numbatch's topic library is the system of record for topics, samples and corrections | Accepted |
 | [0010](./0010-topic-identity-carries-into-the-requirement-projection.adr.md) | A topic's identity carries into the requirement it projects to | Accepted |
 | [0011](./0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md) | Hard-rule precedence is specificity, then declaration order | Accepted |

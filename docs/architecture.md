@@ -60,8 +60,7 @@ Womblex's stages split cleanly into offline and Isaacus-gated:
 | **`embed`** | **YES** — `kanon-2-embedder` via `client.embeddings.create` | **`*.embeddings.parquet`** |
 | `enrich` | **YES** — `kanon-2-enricher` | `*.enrichment_*`, `*.graph_edges`, `*.entity_links` parquet |
 
-**Consequence for redline's retrieval leg (ADR-0008, amendment PENDING —
-see `delivery-plan.md` Thread 55):** redline's
+**Consequence for redline's retrieval leg (ADR-0008, amended 2026-07-27):** redline's
 cold-start classification path *is* nearest-neighbour matching over womblex's
 `*.embeddings.parquet`. The embed stage is Isaacus-only. Therefore:
 
@@ -72,10 +71,9 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
   an "Isaacus-optional / air-gapped" posture (a hangover from womblex's own edge
   modes and Wayfinder's air-gap validation). redline does not pursue it — a
   deployment that cannot reach Isaacus cannot retrieve, which is the whole
-  first-pass. **This is a stated intent, not yet a ratified amendment:** ADR-0008
-  is unchanged from 2026-07-24 and the `EnrichmentMode.OFFLINE` machinery is
-  still live and tested. Thread 55 either writes the amendment and removes the
-  machinery, or drops this claim.
+  first-pass. Ratified in ADR-0008's 2026-07-27 amendment; the
+  `EnrichmentMode.OFFLINE` machinery, the air-gap tests and the Isaacus on/off
+  toggle have been removed.
 - The only genuinely offline concern is **redline's own infra** (its MinIO/Postgres
   are its own, config-driven, never a hardcoded Wayfinder endpoint — ADR-0002).
   That is unrelated to the Isaacus dependency.
@@ -299,7 +297,7 @@ redline/
 │   ├── architecture.md            ◄ THIS FILE — what redline IS (the design truth)
 │   ├── delivery-plan.md           what is LEFT TO DO (the tracking truth)
 │   ├── adr/                       architecture decision records (still authoritative)
-│   ├── dev-iteration-{1,2,3}.md   frozen delivery history (not tracking)
+│   ├── dev-iteration-2.md         frozen design rationale (D1–D13; not tracking)
 │   └── guides/
 ├── scripts/                       vendor-wayfinder, womblex-pod smoke, etc.
 ├── vendor/wayfinder/              materialised from wayfinder.pin (never committed)
@@ -389,7 +387,7 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
 - `ISAACUS_API_KEY` is the single switch that turns retrieval on. Without it:
   extraction and chunk shards land, but there are no embeddings and no retrieval
   classification. redline treats that as a misconfiguration, not a supported mode
-  (§2; ADR-0008 amendment pending — `delivery-plan.md` Thread 55).
+  (§2; ADR-0008, amended 2026-07-27).
 
 ---
 
@@ -400,9 +398,8 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
   (the submodule's own docs — authoritative for the engine).
 - **The wire shape redline serves:** `services/womblex-ingest/src/womblex_ingest/`
   (`records.py` = DTOs, `shard_reader.py` = the schema map, `real_extractor.py`).
-- **Decisions:** `docs/adr/` (still authoritative). Note ADR-0008's
-  Isaacus/air-gap amendment is **pending**, not written — see `delivery-plan.md`
-  Thread 55.
+- **Decisions:** `docs/adr/` (authoritative).
 - **Outstanding work:** [`delivery-plan.md`](./delivery-plan.md) — the only
   document that tracks what is left to build.
-- **Delivery history (frozen, non-tracking):** `docs/dev-iteration-{1,2,3}.md`.
+- **Design rationale (frozen, non-tracking):** `docs/dev-iteration-2.md` — the
+  D1–D13 register and the three findings behind the lens architecture.

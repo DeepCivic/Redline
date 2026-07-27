@@ -26,8 +26,9 @@ look right?" Wait for confirmation before starting.
 
 ## Workflow
 
-1. Write a short revision note at `docs/threads/thread-<NN>-<slug>.md` (or amend
-   the existing thread doc) describing what changes and why — do not code yet.
+1. State the revision in chat — what changes and why, and which thread's exit
+   test it affects. Do not code yet, and do not create a thread document:
+   `docs/threads/` was deleted deliberately and is not to be recreated.
 2. Run `/doc-review` on the revision before building.
 3. Once review passes, follow the `/build` workflow exactly:
    - Decompose into sub-components
@@ -36,9 +37,12 @@ look right?" Wait for confirmation before starting.
 4. Satisfy the affected thread's exit test again (add a regression test for the
    specific behaviour changed). For UI threads, update/add the Playwright e2e.
 5. On completion:
-   - Refresh the thread doc and, if a decision changed, add/supersede an ADR.
-   - Update `docs/comprehension-lens-design.md` (§6 track entry noting the revision).
+   - Update the thread's row in `docs/delivery-plan.md` §5 noting the revision.
+   - Update `docs/architecture.md` only if the revision changed what redline *is*
+     — a seam, a contract, a corrected assumption.
+   - If a decision changed, add or supersede an ADR in `docs/adr/`.
    - State the version bump intent.
-   - Run `./validate.sh`.
-   - Commit; open a PR against the DeepCivic remote's default branch via
-     `mcp__github__create_pull_request` when the remote exists.
+   - Run `./validate.sh` — fix all failures before declaring done.
+   - **One revision = one commit.**
+   - **Do NOT open a PR.** A PR is opened only when the user explicitly asks for
+     one. Offer it; do not act on the offer unasked.
