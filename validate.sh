@@ -296,6 +296,35 @@ else
   fi
 fi
 
+# ── 14. Python lint (ruff) over redline's own Python ─────────────────────────
+# The Python half of check #3's lint pass. Rules and exclusions live in ruff.toml
+# at the root — including the two upstream submodules, which we never modify
+# (ADR-0015). Unlike the pytest checks above, ruff's output is NOT silenced: a
+# lint failure is only actionable with its diagnostics. SKIPs cleanly when python3
+# is absent or ruff cannot be installed, so an offline host still gates on the
+# rest, matching checks #10 and #11.
+section "14. ruff lint (redline's own Python)"
+RUFF_TARGETS=()
+[ -d services/womblex-ingest ] && RUFF_TARGETS+=(services/womblex-ingest)
+[ -d services/numbatch-extension ] && RUFF_TARGETS+=(services/numbatch-extension)
+if [ ${#RUFF_TARGETS[@]} -eq 0 ]; then
+  skip "ruff lint — no Python services present"
+elif ! command -v python3 >/dev/null 2>&1; then
+  skip "ruff lint — no python3 on host"
+else
+  PY_VENV="$(mktemp -d)/venv"
+  if ! ( python3 -m venv "$PY_VENV" >/dev/null 2>&1 \
+    && "$PY_VENV/bin/pip" install -q ruff >/dev/null 2>&1 ); then
+    skip "ruff lint — could not install ruff"
+  elif "$PY_VENV/bin/ruff" check "${RUFF_TARGETS[@]}"; then
+    pass "ruff lint"
+  else
+    fail "ruff lint — fix the diagnostics above (config: ruff.toml)"
+  fi
+  rm -rf "$PY_VENV" 2>/dev/null || true
+  find services -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo; echo "──────────────────────────────────────────"
 echo "Passed:  $PASS"; echo "Failed:  $FAIL"; echo "Skipped: ${#SKIPPED_CHECKS[@]}"

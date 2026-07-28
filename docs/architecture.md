@@ -355,25 +355,52 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    `content_type`-aware `chunkId` or an ADR-0014 amendment before real
    table-heavy corpora are trusted. (Not yet resolved.)
 
-4. **Table cells carry no currency flag.** womblex's `table_cells` schema is
-   `row`/`col`/`value`/`value_type` joined on `parent_elem_order`. redline's
-   `TableCellRecord.isCurrency`/`rawValue` must be **derived** (currency inferred
-   from `value_type`), not read directly. The financial figures redline needs come
-   primarily from the **Numbatch financial extension**, not from raw cell typing.
+4. **Table cells carry no currency flag, and `value_type` cannot supply one.**
+   womblex's `TABLE_CELLS_SCHEMA` is `(source_hash, parent_elem_order, row, col,
+   value, rowspan, colspan, value_type)` — joined on `parent_elem_order`, with no
+   page column. redline's `TableCellRecord.isCurrency` must be **derived**.
 
-5. **There is no `womblex.embed_query` / public embedding helper.** The real query
-   embed path is `womblex.analyse.embed.embed_texts([text], isaacus_client,
-   model="kanon-2-embedder", task="retrieval/query")`. The sidecar's
-   `RealWomblexTextEmbedder` must construct an Isaacus client (as
-   `womblex.cli._shared.make_isaacus_client` does) — it cannot embed offline.
+   An earlier revision of this section said to infer it from `value_type`. That is
+   **falsified**: `value_type` is always `"text"` at `v0.2.0`
+   (`ingest/spreadsheet.py:13`, and the only literal ever assigned in the engine's
+   source), `number_format` is a column of `ELEMENT_SCHEMA` rather than of
+   `table_cells` and is left unset, and womblex has no currency capability
+   anywhere in `src/`. Currency is therefore derived from the **verbatim `value`
+   string**, and requires an explicit currency marker — a bare number is not
+   currency. See [ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md),
+   which owns the rule and its limits. Both columns are still read first, so a
+   future openpyxl-based reader upgrades the signal with no redline change.
 
-6. **womblex overlaps Numbatch.** womblex exposes `kanon-universal-classifier`
-   (zero-shot classification) and `kanon-answer-extractor` (structured field
-   extraction) via Isaacus. redline currently routes classification and financial
-   extraction through **Numbatch** (ADR-0004/0005/0008). This overlap is a
-   deliberate architecture choice (Numbatch gives a *trainable* overlay and keeps
-   redline model-agnostic), not an oversight — but it should be revisited if the
-   Numbatch training floor proves too costly at cold start.
+   The financial figures redline needs come primarily from the **Numbatch
+   financial extension**, not from raw cell typing; the derivation above is what
+   the lean vertical (Track V, thread 58) uses to stay off that stack.
+
+5. **There is no `womblex.embed_query` / public embedding helper.**
+   `womblex/__init__.py` exports only a docstring and `__version__`. The real query
+   embed path is `womblex.analyse.embed.embed_texts([text], isaacus_client, model=…,
+   task="retrieval/query")`, with the client from
+   `womblex.cli._shared.make_isaacus_client` — it cannot embed offline. The `task`
+   matters and is redline's to choose: womblex's own default is
+   `retrieval/document`, the *index* side, and a query embedded with it lands in a
+   different space from the chunk vectors it is ranked against — degrading silently
+   rather than failing. The `model` is read from womblex's own configuration
+   (`EmbeddingConfig`, or the deployment's `redline.yaml` via `WOMBLEX_CONFIG`), never
+   restated redline-side, so chunks and queries cannot drift onto different models.
+   Built in thread 56.
+
+6. **The womblex/Numbatch overlap is not real — closed, no change.** This section
+   previously said womblex *exposes* `kanon-universal-classifier` (zero-shot
+   classification) and `kanon-answer-extractor` (structured field extraction), and
+   asked whether they could retire redline's Numbatch financial extension.
+
+   Reading the engine settles it: **neither model appears anywhere in womblex's
+   source.** They are named only in its `README.md` (lines 237–238), in a passage
+   describing what the *Isaacus platform* offers. womblex does not wire them, so
+   consuming them would mean redline calling Isaacus directly — which §1 forbids.
+   Numbatch has no currency capability of its own either. redline's classification
+   and financial extraction therefore stay where ADR-0004/0005/0008 put them, and
+   the Numbatch financial extension is genuinely additive, exactly as ADR-0005
+   intended.
 
 ---
 

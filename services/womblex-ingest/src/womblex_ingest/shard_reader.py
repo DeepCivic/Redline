@@ -1,10 +1,17 @@
 """Thread 37b — the womblex-schema → JSON-seam mapping.
 
-This module is the **one place** that understands womblex's real Parquet schema
-(the vocabulary named in `dev-iteration-2.md` / ADR-0008: `source_hash`,
-`elem_order`, `chunk_index`, currency cells, and the `(source_hash, chunk_index,
-content_type)` embedding join). It maps that schema into the `records.py`
-dataclasses the Parquet→JSON boundary serves; everything downstream sees JSON.
+This module is the **one place** that understands womblex's real Parquet schema —
+`source_hash`, `elem_order` on elements but `parent_elem_order` on table cells,
+`chunk_index`, and the `(source_hash, chunk_index, content_type)` embedding join.
+It maps that schema into the `records.py` dataclasses the Parquet→JSON boundary
+serves; everything downstream sees JSON.
+
+The schema here is the one `services/womblex` @ `v0.2.0` actually writes
+(`src/womblex/store/output.py`), read from the submodule rather than assumed.
+An earlier version of this mapping was written against invented column names —
+`elem_order`/`col_index`/`is_currency` on table cells — which raised on every
+real row; `tests/test_real_extractor.py` now pins the mirror against the engine's
+own schema object so that cannot recur silently.
 
 Why it is separate from `real_extractor.py`: the *mapping* is pure and testable
 with plain Python row dicts, so the schema contract can be proven without the
@@ -13,12 +20,12 @@ supplies the rows (by reading the Parquet shards the womblex pod landed in
 MinIO); this module turns rows into records. The seam between them is the
 `ShardRows` bundle below — a per-document collection of already-decoded rows.
 
-Column names are read defensively: womblex's provenance keys are pinned by the
-design docs, but a producer may spell a nullable field either of two documented
-ways (e.g. a currency-typed cell as `sheet_cell` vs `table_cells`). Anything the
-mapping cannot honour is a *finding* to be raised as its own thread + ADR
-amendment (thread-37b scope note), not silently coerced — so a missing required
-key raises rather than emitting a half-populated record.
+Column names are read defensively, but only across spellings womblex genuinely
+writes: a table cell arrives from `table_cells` (`parent_elem_order`) or from a
+`sheet_cell` element (`elem_order`), and one mapping serves both. Anything the
+mapping cannot honour is a *finding* to be raised as its own thread + ADR, not
+silently coerced — so a missing required key raises rather than emitting a
+half-populated record.
 """
 
 from __future__ import annotations
@@ -87,16 +94,95 @@ def _optional(row: Row, *keys: str) -> Optional[Any]:
     return None
 
 
-def _as_bool(value: Any) -> bool:
-    # Parquet may decode a boolean column as a real bool, or a producer may carry
-    # currency-typing as an int/str flag; normalise without inventing truthiness.
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return value != 0
-    if isinstance(value, str):
-        return value.strip().lower() in {"true", "1", "yes", "y"}
-    return bool(value)
+# Currency derivation (ADR-0016). womblex writes cell values verbatim and has no
+# currency capability at all: `value_type` is always "text" at v0.2.0 and
+# `number_format` is left unset, so `isCurrency` is derived here from the text.
+# Both columns are still read first, so a future openpyxl-based reader upgrades
+# the signal without a redline change.
+_CURRENCY_SYMBOLS = ("$", "€", "£", "¥")
+_CURRENCY_CODES = ("AUD", "USD", "EUR", "GBP", "NZD", "SGD", "CAD", "JPY")
+_CURRENCY_VALUE_TYPES = frozenset({"currency", "money"})
+# "A$", "AU$", "US$", "NZ$" — longer prefixes are prose that contains a symbol.
+_MAX_SYMBOL_PREFIX = 2
+
+
+def derive_is_currency(
+    raw_value: str,
+    *,
+    value_type: Optional[Any] = None,
+    number_format: Optional[Any] = None,
+) -> bool:
+    """Is this cell a currency amount? (ADR-0016)
+
+    Requires an explicit marker: a bare number is **not** currency. redline cannot
+    distinguish a price from a quantity or a weighting without one, and a tender's
+    response tables carry all three — so the permissive reading would sum unrelated
+    columns into a pricing pivot that looks entirely plausible.
+    """
+    if value_type is not None and str(value_type).strip().lower() in _CURRENCY_VALUE_TYPES:
+        return True
+    if number_format is not None and _format_declares_currency(str(number_format)):
+        return True
+    return _text_declares_currency(raw_value)
+
+
+def _format_declares_currency(number_format: str) -> bool:
+    if any(symbol in number_format for symbol in _CURRENCY_SYMBOLS):
+        return True
+    upper = number_format.upper()
+    return any(code in upper for code in _CURRENCY_CODES)
+
+
+def _text_declares_currency(raw_value: str) -> bool:
+    text = raw_value.strip()
+    if not text:
+        return False
+    if text.startswith("(") and text.endswith(")"):
+        # Accounting notation for a negative amount: ($1,234.56).
+        text = text[1:-1].strip()
+    text = text.lstrip("+-").strip()
+    # A cell may carry a code *and* a symbol ("AUD $1,234.56"), so strip at most
+    # two markers. Bounded deliberately: "AUD price" must still not be currency.
+    for _ in range(2):
+        remainder = _without_currency_marker(text)
+        if remainder is None:
+            return False
+        if _is_plain_number(remainder):
+            return True
+        text = remainder
+    return False
+
+
+def _without_currency_marker(text: str) -> Optional[str]:
+    """The text after removing one leading/trailing currency marker, else ``None``."""
+    upper = text.upper()
+    for code in _CURRENCY_CODES:
+        if upper.startswith(code):
+            return text[len(code) :].strip()
+        if upper.endswith(code):
+            return text[: -len(code)].strip()
+    for symbol in _CURRENCY_SYMBOLS:
+        position = text.find(symbol)
+        if position < 0:
+            continue
+        prefix = text[:position]
+        if prefix and not (prefix.isalpha() and len(prefix) <= _MAX_SYMBOL_PREFIX):
+            return None
+        return text[position + 1 :].strip()
+    return None
+
+
+def _is_plain_number(text: str) -> bool:
+    """Is the whole string a plain decimal number, ignoring thousands separators?
+
+    Deliberately not `float()`: that accepts "nan", "inf" and "1e5", none of which
+    is a tender price, and each of which would flag a prose cell as currency.
+    """
+    candidate = text.replace(",", "").replace(" ", "").lstrip("+-")
+    if not candidate or candidate.count(".") > 1:
+        return False
+    digits = candidate.replace(".", "")
+    return digits.isascii() and digits.isdigit()
 
 
 def map_element(source_hash: str, row: Row) -> ElementRecord:
@@ -126,15 +212,28 @@ def map_chunk(source_hash: str, row: Row) -> ChunkRecord:
 
 
 def map_table_cell(source_hash: str, row: Row) -> TableCellRecord:
-    """A currency-typed (or plain) cell from `table_cells` / `sheet_cell`."""
+    """A cell from `table_cells`, or from a `sheet_cell` element.
+
+    womblex's `TABLE_CELLS_SCHEMA` is `(source_hash, parent_elem_order, row, col,
+    value, rowspan, colspan, value_type)` — note `parent_elem_order`, not
+    `elem_order`, and no page and no currency column anywhere. A `sheet_cell`
+    *element* carries the same payload under `elem_order`/`row`/`col`/`value` and
+    does have a page, so both spellings are accepted here and nowhere else.
+    `isCurrency` is derived, never read — see `derive_is_currency` (ADR-0016).
+    """
+    raw_value = str(_require(row, "value", "raw_value", "text"))
     return TableCellRecord(
         documentId=source_hash,
-        elementOrder=int(_require(row, "elem_order", "element_order")),
+        elementOrder=int(_require(row, "parent_elem_order", "elem_order", "element_order")),
         page=_optional(row, "page", "page_number"),
-        rowIndex=int(_require(row, "row_index", "row")),
-        columnIndex=int(_require(row, "col_index", "column_index", "column")),
-        rawValue=str(_require(row, "raw_value", "value", "text")),
-        isCurrency=_as_bool(_optional(row, "is_currency", "currency") or False),
+        rowIndex=int(_require(row, "row", "row_index")),
+        columnIndex=int(_require(row, "col", "col_index", "column_index", "column")),
+        rawValue=raw_value,
+        isCurrency=derive_is_currency(
+            raw_value,
+            value_type=_optional(row, "value_type"),
+            number_format=_optional(row, "number_format"),
+        ),
     )
 
 

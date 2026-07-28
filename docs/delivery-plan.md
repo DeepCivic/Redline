@@ -172,7 +172,7 @@ following is green under `./validate.sh`:
   `ExtractFinancials`, `BuildEvaluationTable`, `BuildDocumentMap`.
 - **Adapters**: womblex extraction reader, embedding reader + text embedder,
   Numbatch classifier, Drizzle persistence with migrations.
-- **Web core** (`apps/redline-web`, 63 tests): `WorkflowController` + container,
+- **Web core** (`apps/redline-web`, 58 tests): `WorkflowController` + container,
   `ReviewGrid` + view, `PricingPivot` + view, Excel export, workflow manager.
 - **Infra**: the `womblex` compose profile (engine's own image + cloud runner),
   `redline-postgres`, MinIO.
@@ -189,15 +189,60 @@ against an assumed schema, with the correction *documented in `architecture.md`
 |---|---|---|
 | `real_extractor.py:159` | `from womblex import embed_query, embedding_model_id` — neither symbol exists (`womblex/__init__.py` exports nothing) | `ImportError` on construction; **no query embedding, so no retrieval** |
 | `shard_reader.py:131` | `_require(row, "elem_order", "element_order")` — womblex's `TABLE_CELLS_SCHEMA` writes `parent_elem_order` | `ShardSchemaError` on **every** real table-cell row |
+| `shard_reader.py:135` | `_require(row, "col_index", "column_index", "column")` — the schema column is `col` | `ShardSchemaError` on **every** real table-cell row |
 | `shard_reader.py:137` | `is_currency` / `currency` — no such column upstream; the schema is `row`/`col`/`value`/`value_type` | every currency cell arrives `isCurrency=False`; **no pricing anywhere** |
+| `tests/test_real_extractor.py:89` | the fixtures write the *invented* schema (`elem_order`, `col_index`, `is_currency`) | the suite stays green while the mapping raises on every real row — this is *why* all four survived |
 
 Fixes: use `womblex.analyse.embed.embed_texts([text], make_isaacus_client(),
-model="kanon-2-embedder", task="retrieval/query")`; accept `parent_elem_order`;
-derive currency from `value_type` (and `number_format` for `sheet_cell`, which
-carries it). `architecture.md` §7.3–§7.5 are the specification.
+model=…, task="retrieval/query")`, drawing the model from womblex's own
+`EmbeddingConfig` rather than restating it; accept `parent_elem_order` and `col`;
+rebuild the fixtures against womblex's real `TABLE_CELLS_SCHEMA` and pin them to
+it. `architecture.md` §7.3–§7.5 are the specification.
 
-_Exit: a test constructs `RealWomblexTextEmbedder` and maps a real
-`table_cells` row; currency cells flag `isCurrency=true`._
+**Currency needed respecifying.** The route above — "derive currency from
+`value_type` (and `number_format` for `sheet_cell`, which carries it)" — is
+falsified by the engine: `value_type` is always `"text"` at `v0.2.0`,
+`number_format` belongs to `ELEMENT_SCHEMA` rather than to `table_cells` and is
+unset, and womblex has no currency capability at all. Currency is derived from the
+verbatim `value` string and **requires an explicit marker — a bare number is not
+currency**, because redline cannot tell a price from a quantity and summing them
+would make V3's pivots confidently wrong. Settled as
+[ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md).
+
+_Exit: a test maps a real `table_cells` row — real column names, pinned to
+`TABLE_CELLS_SCHEMA` — and a marked currency cell flags `isCurrency=true` while
+the bare number beside it does not; the query embedder calls womblex's
+`embed_texts` with `task="retrieval/query"` and the configured model._
+
+### V1a (61) — Map non-text elements instead of raising on them
+
+**Found by QA on thread 56; it blocks the real lane exactly as V1's four defects
+did, and V1 does not fix it.** `map_element` reads `text` with `_require`, but
+womblex's `Element.text` is `str | None` and only text-bearing kinds populate it.
+`table`, `image`, `figure`, `form`, `page_break`, `sheet_meta` and `sheet_cell` all
+serialise `text: None` (`store/output.py:262` writes `e.text` verbatim; the
+constructors at `orchestrator.py:263` and `strategies_file.py:90` pass no `text=`
+at all). `map_document_extraction` maps every element row, so **one such element
+raises `ShardSchemaError` and the entire document's extraction is lost.**
+
+The two are inseparable: `table_cells` rows are only emitted under
+`if e.kind == "table"` (`output.py:275`), so every `parent_elem_order` that V1 now
+maps correctly points at a `table` element that kills the document first. V1's
+currency derivation is therefore unreachable on any real table-bearing shard —
+which is the only corpus it exists to serve. V1's exit test does not catch this
+because its fixture elements are all text-bearing: the fixtures now use the right
+*columns*, but still describe a document shape womblex never produces.
+
+Needs a contract decision, which is why it is its own thread rather than a patch:
+`ExtractionElement.text` is non-nullable `string` in `redline-domain`, so the
+options are `text: ""`, an `alt_text` fallback for `image`/`figure`, or skipping
+non-text kinds entirely — and they serve materially different things to
+`BuildDocumentMap`. Recommendation: `alt_text` then `""`, keeping every element so
+`elementOrder` provenance stays contiguous.
+
+_Exit: a shard whose elements include `table`, `image` and `page_break` rows maps
+to a `DocumentExtraction` with every element present and no raise; the fixture
+carries at least one non-text element in every element shard._
 
 ### V2 (57) — Retrieval-backed `IProcurementClassifier`
 
@@ -254,12 +299,13 @@ document delineated by topic and brand, with provenance back to source._
 |---|---|---|---|---|
 | 37a | womblex pod (test harness) | H | infra | ⛔ **retired** — the engine ships its own image, runner and staging (§3). Replaced by the `womblex` compose profile building `services/womblex` + `scripts/womblex-engine-smoke.sh`. |
 | 37b | Real womblex binding | H | womblex-ingest | ↪ **absorbed into V1 (56)** — the schema defects were its real content |
-| 56 | V1 — fix the womblex bindings | **V** | womblex-ingest | 🔵 **next** |
+| 56 | V1 — fix the womblex bindings | **V** | womblex-ingest | ✅ **done** — sidecar pytest 118 passed, 1 skipped (the schema drift guard, which needs the `[womblex]` extra). All four defects fixed (the `col` miss was found during review); currency respecified as [ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md) after `value_type` proved always `"text"`. Fixtures rebuilt on womblex's real `TABLE_CELLS_SCHEMA` and pinned to it by a drift guard; `pyarrow` moved into `[dev]` so the real-shard lane actually runs instead of skipping. |
+| 61 | V1a — map non-text elements | **V** | womblex-ingest | 🔵 **next** — found by QA on 56 (§4 V1a). `map_element` requires `text`, but womblex writes `text: None` for every non-text kind; one such element raises and the **whole document's extraction is lost**. Blocks the real lane. |
 | 57 | V2 — retrieval-backed classifier | **V** | redline-web | 🔵 next |
 | 58 | V3 — currency from table cells | **V** | adapters | 🔵 next |
 | 59 | V4 — Next.js shell | **V** | redline-web | 🔵 next (was 41) |
 | 60 | V5 — real corpus end to end | **V** | infra | 🔵 next |
-| 38 | In-app review grid | P | redline-web | ✅ **verified** — 63/63 green; currency sorts numerically, source deep-links carry element/page/chunk. Browser leg → 41. |
+| 38 | In-app review grid | P | redline-web | ✅ **verified** — 58/58 green (was recorded as 63/63; `vitest run` reports 58). Currency sorts numerically, source deep-links carry element/chunk — **page is null for real table cells**, which `TABLE_CELLS_SCHEMA` does not carry. Browser leg → 59. |
 | 39 | Pricing pivots | P | application, redline-web | ✅ **verified** — pivots match hand-computed totals and the frozen Wayfinder roll-up. |
 | 40 | Excel export | P | redline-web | ✅ **verified** — real `Number` cells, blank-not-zero, hyperlink source column; `write-excel-file@4.1.1` wired. "Workbook opens" → 41. |
 | 52 | womblex submodule wiring | H | infra, workspace | ✅ **done** (this change) — CI fetches submodules; `validate.sh` #13 guards pin drift; static guards exclude the vendored tree. |
@@ -295,7 +341,13 @@ document delineated by topic and brand, with provenance back to source._
    vectors to chunks on `(source_hash, chunk_index, content_type)`; redline's
    `chunkId` collapses that to two keys, so narrative and table chunks at the same
    index collide. Unresolved, and it bites on exactly the table-heavy tender
-   corpora redline targets. Fold into Thread 37b's real-corpus proof.
+   corpora redline targets. **Owner: V5 (60)**, the real-corpus run — the earlier
+   text folded it into Thread 37b, which §5 has since retired into V1, leaving the
+   gap with no owner. V1 did not close it: `EMBEDDINGS_SCHEMA` and `CHUNKS_SCHEMA`
+   both carry `content_type`, and resolving it means either a `content_type`-aware
+   `chunkId` or an ADR-0014 amendment — a change to the seam's identity, not a
+   binding fix. The V1 fixtures now write `content_type` so the collision is
+   visible in the shard rather than implied.
 3. **The skill layer points at deleted paths.** `.claude/CLAUDE.md` and all five
    `.claude/commands/*.md` reference `docs/comprehension-lens-design.md`,
    `docs/procurement-evaluation-plan.md` and `docs/threads/` — none of which
@@ -312,22 +364,25 @@ document delineated by topic and brand, with provenance back to source._
 
 **Track V runs to completion before anything else starts.**
 
-1. **V1 (56)** — the three schema defects. Hard-blocks everything: no query
-   embedding means no retrieval, and the table-cell mapping raises on every real
-   row. Nothing downstream can be trusted until this is green against real shards.
-2. **V2 (57)** and **V3 (58)** — independent of each other, both depend on V1.
+1. **V1 (56)** — ✅ done. The four schema defects: no query embedding meant no
+   retrieval, and the table-cell mapping raised on every real row.
+2. **V1a (61)** — the element mapping. V1 left the real lane still unable to read
+   a table-bearing document, so this inherits V1's "nothing downstream can be
+   trusted until it is green against real shards" and must land before V3 has
+   anything to price.
+3. **V2 (57)** and **V3 (58)** — independent of each other, both depend on V1.
    V2 unblocks classification without Numbatch; V3 unblocks pricing without
    Numbatch. Either order, or in parallel.
-3. **V4 (59)** — the shell. The only piece that is genuinely new code, and the
+4. **V4 (59)** — the shell. The only piece that is genuinely new code, and the
    only reason the product cannot be looked at today.
-4. **V5 (60)** — the real corpus run. The point of the exercise.
+5. **V5 (60)** — the real corpus run. The point of the exercise.
 
 Then, and only then:
 
-5. **42–50** — Track L, in dependency order, scoped by §3's findings. Revisit
+6. **42–50** — Track L, in dependency order, scoped by §3's findings. Revisit
    *after* V5 has shown what the cold-start path actually gets right on a real
    corpus — that evidence should shape the lens work rather than be assumed.
-6. **51** — workspace extraction and release, last by nature.
+7. **51** — workspace extraction and release, last by nature.
 
 ### What Track V deliberately does not do
 

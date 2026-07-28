@@ -11,12 +11,15 @@ reads them from object storage and maps womblex's schema into the JSON read mode
 These write *real* Parquet (via pyarrow, the same decoder the binding uses) into
 an in-memory `FakeObjectStorage`, so the read + decode + map path is the
 production code path with only the MinIO seam faked — the same posture Thread 19
-took for the embeddings seam. Skipped when pyarrow is absent (the default
-stub-only CI lane); run where the `.[womblex]` extra is installed.
+took for the embeddings seam.
+
+pyarrow is in the `[dev]` extra, so this suite **runs in the default validate
+lane**. It used to sit behind the `[womblex]` extra alone, which meant every test
+here skipped under `validate.sh` — a mapping written against columns womblex never
+writes reported green for as long as that held (thread 56).
 
 The engine-produced-shards proof (real corpus → real pod → these same reads) is
-the compose-level smoke owed to a runtime with Podman, exactly as Thread 37a's
-own exit test is a compose smoke rather than a unit test.
+the compose-level smoke owed to a runtime with Podman, and remains V5 (thread 60).
 """
 
 from __future__ import annotations
@@ -39,14 +42,55 @@ OTHER_HASH = "aaaa000011112222"
 MODEL = "kanon-2-embedder"
 
 
-def _parquet(rows: List[Mapping[str, object]], metadata: Optional[dict] = None) -> bytes:
-    table = pa.Table.from_pylist(rows)
+# womblex's `TABLE_CELLS_SCHEMA`, mirrored exactly from `services/womblex` @
+# `v0.2.0` (`src/womblex/store/output.py:82`). Mirrored rather than imported
+# because this suite runs without the engine installed;
+# `test_the_mirrored_table_cells_schema_matches_the_engines` asserts the mirror
+# against the real object whenever womblex IS importable, so the two cannot drift
+# in silence. That guard is the point: the previous fixtures here invented
+# `elem_order` / `col_index` / `is_currency`, so the suite stayed green while the
+# mapping raised on every row a real shard contains.
+TABLE_CELLS_SCHEMA = pa.schema(
+    [
+        ("source_hash", pa.string()),
+        ("parent_elem_order", pa.int32()),
+        ("row", pa.int32()),
+        ("col", pa.int32()),
+        ("value", pa.string()),
+        ("rowspan", pa.int32()),
+        ("colspan", pa.int32()),
+        ("value_type", pa.string()),
+    ]
+)
+
+
+def _parquet(
+    rows: List[Mapping[str, object]],
+    metadata: Optional[dict] = None,
+    schema: Optional["pa.Schema"] = None,
+) -> bytes:
+    table = pa.Table.from_pylist(rows, schema=schema)
     if metadata:
         merged = {**(table.schema.metadata or {}), **metadata}
         table = table.replace_schema_metadata(merged)
     buffer = io.BytesIO()
     pq.write_table(table, buffer)
     return buffer.getvalue()
+
+
+def _table_cell(row: int, col: int, value: str) -> dict:
+    """One `table_cells` row with every column womblex writes, real spellings."""
+    return {
+        "source_hash": SOURCE_HASH,
+        "parent_elem_order": 2,
+        "row": row,
+        "col": col,
+        "value": value,
+        "rowspan": 1,
+        "colspan": 1,
+        # Always "text" at v0.2.0 — currency is derived from the value (ADR-0016).
+        "value_type": "text",
+    }
 
 
 def _put(storage: FakeObjectStorage, evaluation_id: str, name: str, body: bytes) -> None:
@@ -73,8 +117,18 @@ def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
         "batch-0000.chunks.parquet",
         _parquet(
             [
-                {"source_hash": SOURCE_HASH, "chunk_index": 1, "text": "network security controls"},
-                {"source_hash": SOURCE_HASH, "chunk_index": 0, "text": "heading"},
+                {
+                    "source_hash": SOURCE_HASH,
+                    "chunk_index": 1,
+                    "text": "network security controls",
+                    "content_type": "narrative",
+                },
+                {
+                    "source_hash": SOURCE_HASH,
+                    "chunk_index": 0,
+                    "text": "heading",
+                    "content_type": "narrative",
+                },
             ]
         ),
     )
@@ -84,16 +138,12 @@ def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
         "batch-0000.table_cells.parquet",
         _parquet(
             [
-                {
-                    "source_hash": SOURCE_HASH,
-                    "elem_order": 2,
-                    "page": 1,
-                    "row_index": 0,
-                    "col_index": 1,
-                    "raw_value": "80000",
-                    "is_currency": True,
-                }
-            ]
+                _table_cell(row=0, col=1, value="$80,000.00"),
+                # An unmarked number in the next column: a quantity, a weighting or
+                # an unlabelled price — indistinguishable, so not currency.
+                _table_cell(row=0, col=2, value="80000"),
+            ],
+            schema=TABLE_CELLS_SCHEMA,
         ),
     )
     if with_embeddings:
@@ -103,10 +153,25 @@ def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
             "batch-0000.embeddings.parquet",
             _parquet(
                 [
-                    {"source_hash": SOURCE_HASH, "chunk_index": 0, "embedding": [0.9, 0.1, 0.0]},
-                    {"source_hash": SOURCE_HASH, "chunk_index": 1, "embedding": [0.0, 0.1, 0.9]},
-                ],
-                metadata={b"model": MODEL.encode()},
+                    {
+                        "source_hash": SOURCE_HASH,
+                        "chunk_index": 0,
+                        "content_type": "narrative",
+                        "model": MODEL,
+                        "task": "retrieval/document",
+                        "dim": 3,
+                        "vector": [0.9, 0.1, 0.0],
+                    },
+                    {
+                        "source_hash": SOURCE_HASH,
+                        "chunk_index": 1,
+                        "content_type": "narrative",
+                        "model": MODEL,
+                        "task": "retrieval/document",
+                        "dim": 3,
+                        "vector": [0.0, 0.1, 0.9],
+                    },
+                ]
             ),
         )
     return storage
@@ -128,8 +193,14 @@ def test_reads_the_pod_shards_into_a_json_read_model() -> None:
     ]
     # Chunks come back ordered by chunk_index, with the recomposed join key.
     assert [c.chunkId for c in document.chunks] == [f"{SOURCE_HASH}:0", f"{SOURCE_HASH}:1"]
-    cell = document.tableCells[0]
-    assert (cell.rawValue, cell.isCurrency) == ("80000", True)
+    # Thread 56's exit test, on a shard carrying womblex's real column names:
+    # `parent_elem_order` maps, `col` maps, and the marked cell flags as currency
+    # while the bare number beside it does not (ADR-0016).
+    assert [(c.columnIndex, c.rawValue, c.isCurrency) for c in document.tableCells] == [
+        (1, "$80,000.00", True),
+        (2, "80000", False),
+    ]
+    assert document.tableCells[0].elementOrder == 2
 
 
 def test_embeddings_declare_womblexs_real_model_not_the_stub() -> None:
@@ -191,3 +262,37 @@ def test_retrieval_sorts_a_query_onto_its_nearest_chunk() -> None:
         return sum(q * c for q, c in zip(query, vectors[chunk_index]))
 
     assert cosine(1) > cosine(0)
+
+
+def test_the_embed_stage_model_falls_back_to_shard_metadata() -> None:
+    # womblex records the model as a column; a producer that records it only in
+    # the file's key/value metadata is still readable, so vectors are not refused
+    # for want of a declaration that is present in the other place.
+    storage = _corpus_storage(with_embeddings=False)
+    _put(
+        storage,
+        "eval-real",
+        "batch-0000.embeddings.parquet",
+        _parquet(
+            [{"source_hash": SOURCE_HASH, "chunk_index": 0, "vector": [1.0, 0.0]}],
+            metadata={b"model": MODEL.encode()},
+        ),
+    )
+
+    result = RealWomblexExtractor(storage, "redline").extract("eval-real", ["x.pdf"])
+
+    assert result.embeddings[0].model == MODEL
+
+
+def test_the_mirrored_table_cells_schema_matches_the_engines() -> None:
+    """redline's assumed `table_cells` schema is womblex's actual one.
+
+    The guard that would have caught this thread's defect at the source. It runs
+    only where the `.[womblex]` extra is installed — but where it runs, a submodule
+    bump that changes the shard schema fails here rather than three layers
+    downstream as an empty pricing column. `validate.sh` #13 pins the submodule tag
+    to the sidecar's declared version, so the two checks close the loop together.
+    """
+    output = pytest.importorskip("womblex.store.output")
+
+    assert TABLE_CELLS_SCHEMA.equals(output.TABLE_CELLS_SCHEMA)

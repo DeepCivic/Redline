@@ -147,6 +147,14 @@ checkout is never written to. Point `WAYFINDER_DIR` at your Wayfinder checkout
 | 11 | `services/numbatch-extension/financial_extension` pytest (isolated venv) | needs Python 3 |
 | 12 | `pnpm-lock.yaml` carries the vendored Wayfinder importer | no |
 | 13 | `services/womblex` submodule tag matches the sidecar's `womblex==` pin | needs the submodule |
+| 14 | `ruff check` over redline's own Python (config: `ruff.toml`) | needs Python 3 |
+
+Check 14 is the Python counterpart of check 2. Rules live in `ruff.toml` at the
+root and are deliberately a floor — pyflakes plus pycodestyle's error classes, no
+style regime — because the repo has no Python formatter and a lint pass that
+arrives with hundreds of cosmetic findings gets switched off. The two upstream
+submodules are excluded there; redline's own overlays beside them are not. To run
+it alone: `pipx run ruff check services/womblex-ingest services/numbatch-extension`.
 
 Static checks (4–9, 12–13) always run on the host. If neither local Node nor Podman
 is available, the Node-dependent checks (1–3) `SKIP` — and the run **exits 2**,
