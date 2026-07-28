@@ -18,8 +18,9 @@
   `services/womblex` and `services/numbatch` submodules initialised and
   Wayfinder vendored from `wayfinder.pin`: **13 of 14 checks pass** —
   typecheck, lint, all TS suites, both pytest suites, the purity guards and
-  the womblex pin guard (`v0.2.0 == 0.2.0`) are green. The one failure is
-  finding F1.
+  the womblex pin guard (`v0.2.0 == 0.2.0`) are green. The one failure was
+  finding F1, fixed in this PR; the gate is green here as of the fix.
+  Note the pin guard passes *locally* and skips in CI — see F12.
 - All four `@redline/*` packages, `apps/redline-web/src/lib`, and both Python
   services read end to end. Submodules were read as schema references only.
 - Currency behaviour was verified **empirically** — every parse/derivation
@@ -49,17 +50,19 @@ what thread 58 (V3) is about to build.
 
 ## Findings
 
-### F1 — CI on `main` is red: one unused import fails the new ruff gate (high)
+### F1 — CI on `main` is red: one unused import fails the new ruff gate (high) — ✅ fixed in this PR
 
 `services/numbatch-extension/financial_extension/src/numbatch_financial/api.py:24`
-imports `Awaitable` and never uses it (ruff F401). The ruff gate was wired in
+imported `Awaitable` and never used it (ruff F401). The ruff gate was wired in
 `a107769` — the same change that introduced the failure it now reports — and
 CI run #48 for merge `40487fc` concluded **failure**, the first red `main`
-after 8 consecutive green merges. Every PR based on `main` now starts red.
+after 8 consecutive green merges, so every PR based on `main` started red.
 
-Fix is one line (delete `Awaitable` from the import). Deliberately **not**
-fixed in this review PR so the review stays a review; it should land as its
-own trivial commit.
+The run's log confirms this was the *only* failing check (12 passed, 1 failed,
+1 skipped). Fixed here on request: `Awaitable` removed from the import.
+`AsyncIterator` and `Callable` are both still used (`api.py:39`, `api.py:51`),
+and the extension's 28 tests pass unchanged, so the import was dead rather
+than load-bearing.
 
 ### F2 — the financial extension mis-parses European-formatted and negative amounts (high)
 
@@ -244,13 +247,45 @@ trustworthy.
   Harmless today (the registry docstring owns this), but 200 would describe
   the actual behaviour; 202 implies an async run that never exists.
 
+### F12 — the womblex pin-drift guard never runs in CI, which is where it was meant to bite (medium)
+
+Found while reading run #48's log to confirm F1's cause. `validate.sh` check
+#13 compares the `services/womblex` submodule's tag against the sidecar's
+`womblex==` pin, and its comment states the intent plainly: it "SKIPs (never
+fails) on a clone without the submodule initialised … **CI checks out
+submodules, so CI is where this actually bites**."
+
+It does not bite. Run #48 reports:
+
+```
+WARN — womblex submodule is not on an exact tag — cannot compare against the 0.2.0 pin
+SKIP — womblex pin — submodule not on a tagged commit
+```
+
+`actions/checkout@v5` with `submodules: true` fetches the submodule at its
+pinned **SHA** without tags, so `git describe --tags --exact-match` finds
+nothing and the check skips — silently, because a skip is non-blocking by
+design. The guard therefore runs *only* on a local clone that happened to
+fetch tags (which is why it passed in this review's local run), and never in
+the one place the comment nominates. The drift it exists to catch — the engine
+the Parquet mapping is written against diverging from the engine the query
+embedder runs — would ship green.
+
+Fix is small: fetch tags for the submodule in CI (a `git -C services/womblex
+fetch --tags --depth=1` step, or `fetch-depth: 0` on the checkout), and
+consider making the check *fail* rather than skip when `REQUIRE_WAYFINDER`-style
+CI strictness is set, so a future regression is loud. Worth doing before V5
+(thread 60), since that run is the first to depend on engine/sidecar agreement
+against a real corpus.
+
 ## What is in notably good shape
 
 Recorded so the review is calibrated, not just critical: the ADR-0016
 derivation itself (marker-required, bounded two-marker strip, non-`float()`
 number test) matches its ADR everywhere tested except F3's trailing-symbol
-edge; validate.sh is honest about what it did and didn't prove (runner
-report, `WS_SKIPPED` exit 2, submodule-pin guard); the embeddings seam
+edge; validate.sh is honest about what it did and didn't prove (the runner
+report and the `WS_SKIPPED` exit-2 path are exactly right — F12 is a gap in
+where one guard *runs*, not in how it reports); the embeddings seam
 enforces model declaration and L2-normalisation at construction; the
 review-grid/pivot/export trio is genuinely pure and its blank-not-zero
 posture is consistent across display, sort and export; and the lockfile
@@ -259,8 +294,10 @@ discover in CI.
 
 ## Recommended order
 
-1. **F1** — one line; unblocks every future PR's CI signal. Do first.
-2. **F5, F7** — small, self-contained correctness fixes; each is a
+1. **F1** — ✅ done in this PR; unblocks every future PR's CI signal.
+2. **F12** — restore the pin guard in CI while CI is being thought about;
+   a green check that never runs is worse than no check.
+3. **F5, F7** — small, self-contained correctness fixes; each is a
    `/bugfix`-sized thread.
 3. **F4** — cheap fixture fix; do before thread 58 starts so V3 is built
    against ADR-0016-true stubs.
