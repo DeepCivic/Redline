@@ -21,7 +21,7 @@ womblex sidecar and map cleanly into the Thread 8 adapter's ``DomainError``.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 
 from fastapi import APIRouter, Depends, FastAPI, Response, status
 from fastapi.responses import JSONResponse
