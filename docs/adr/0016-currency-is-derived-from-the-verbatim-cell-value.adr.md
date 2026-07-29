@@ -1,7 +1,19 @@
 # ADR-0016 — Currency is derived from the verbatim cell value, not from womblex's `value_type`
 
-- **Status**: Proposed
+- **Status**: Proposed — **premises falsified upstream 2026-07-29; supersession recommended**
 - **Date**: 2026-07-27
+
+> **2026-07-29.** All three premises below are false against `services/womblex`
+> upstream `main` (42 commits past the `v0.2.0` pin this ADR was written from):
+> `value_type` is no longer constant and `number_format` is no longer unset
+> (`b24368c`), and womblex now ships a full money/currency op — `process/money.py`,
+> `money_columns.py`, `money_vocab.py`, `money_stage.py` (`7b767d5` and follow-ups).
+> The *conclusion* (require an explicit marker) is also now measurably too narrow:
+> womblex measures its column-evidenced path as carrying ~98.7% of amounts, which
+> a marker requirement cannot see. See
+> [`../reviews/2026-07-29-womblex-upstream-drift-review.md`](../reviews/2026-07-29-womblex-upstream-drift-review.md).
+> Nothing is unwound here — this ADR was never accepted — but it should be
+> superseded rather than promoted.
 - **Corrects**: [`architecture.md`](../architecture.md) §7.4, which records the
   opposite ("currency inferred from `value_type`"). That correction was written
   before `services/womblex` was initialised and is falsified by the engine's

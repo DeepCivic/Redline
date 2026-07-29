@@ -72,6 +72,17 @@ them; new work starts at **52**.
 Verified against `services/womblex` @ `v0.2.0` (`2c40e65`), readable in-tree for
 the first time.
 
+> **Drift, 2026-07-29.** Upstream `main` is now **42 commits** ahead of the pin.
+> The delta is reviewed in
+> [`reviews/2026-07-29-womblex-upstream-drift-review.md`](./reviews/2026-07-29-womblex-upstream-drift-review.md).
+> Headline: **womblex now ships a money/currency op**, so V3 (58) and ADR-0016
+> build something upstream provides — contrary to ADR-0015 — and ADR-0016's three
+> stated premises are all falsified. OCR'd PDFs also emit real table cells now,
+> where the pin emitted a `[TABLE]` placeholder. Every schema V1 and V1a were
+> written against is byte-identical, so 56, 61, 57 and 59 are unaffected. The
+> review's recommendations are **not yet adopted** — the rows below carry
+> pointers, not decisions.
+
 **Already provided upstream — redline should not build these:**
 
 | Capability | Where, upstream | What redline had built |
@@ -268,6 +279,17 @@ from the critical path.
 _Exit: the review grid shows numeric AUD for a real tender's priced rows; the
 per-brand pivot totals them._
 
+> **Respecification recommended (2026-07-29 drift review).** Upstream now ships
+> `womblex money`, writing `*.money_spans.parquet` whose `table_cell` locus is
+> anchored on `(source_hash, parent_elem_order, row, col)` — the join key
+> `map_table_cell` already produces — with an exact `decimal128(38,4)` value, a
+> resolved `currency`, and a column-evidenced path for bare numbers. womblex
+> measures that path as carrying **~98.7%** of its corpus's amounts; redline's
+> marker-requiring `derive_is_currency` is by construction blind to all of it, so
+> a tender schedule headed `Unit Price ($)` with bare cells totals zero today.
+> Read the sidecar rather than deriving. Blocked on the submodule bump, which is
+> blocked on an upstream `v0.3.0` tag.
+
 ### V4 (59) — The Next.js shell
 
 **The only genuinely missing piece.** React/Next matching Wayfinder's `apps/web`
@@ -302,9 +324,11 @@ document delineated by topic and brand, with provenance back to source._
 | 56 | V1 — fix the womblex bindings | **V** | womblex-ingest | ✅ **done** — sidecar pytest 118 passed, 1 skipped (the schema drift guard, which needs the `[womblex]` extra). All four defects fixed (the `col` miss was found during review); currency respecified as [ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md) after `value_type` proved always `"text"`. Fixtures rebuilt on womblex's real `TABLE_CELLS_SCHEMA` and pinned to it by a drift guard; `pyarrow` moved into `[dev]` so the real-shard lane actually runs instead of skipping. |
 | 61 | V1a — map non-text elements | **V** | womblex-ingest | 🔵 **next** — found by QA on 56 (§4 V1a). `map_element` requires `text`, but womblex writes `text: None` for every non-text kind; one such element raises and the **whole document's extraction is lost**. Blocks the real lane. |
 | 57 | V2 — retrieval-backed classifier | **V** | redline-web | 🔵 next |
-| 58 | V3 — currency from table cells | **V** | adapters | 🔵 next |
+| 58 | V3 — currency from table cells | **V** | adapters | 🔵 next — ⚠️ **respecification recommended** (§4 V3): upstream now ships the money op; read `*.money_spans.parquet` instead of deriving. Supersedes ADR-0016. |
+| 62 | Bump the womblex submodule to `v0.3.0` | **V** | infra, womblex-ingest | ⚪ **proposed** — blocked on upstream cutting the tag (`__version__` is still `0.2.0` after 42 commits, and `validate.sh` #13 needs an exact tag or it degrades to warn+skip). Enables 58 and the OCR table cells. |
+| 63 | Run the money stage | **V** | infra | ⚪ **proposed** — `money:` section in `redline.yaml` + a `womblex money --shards` step. Not part of `womblex run`/`worker`, and `money_shards()` takes a local `Path` while the distributed lane publishes to S3 — needs a stage-in/stage-out decision. |
 | 59 | V4 — Next.js shell | **V** | redline-web | 🔵 next (was 41) |
-| 60 | V5 — real corpus end to end | **V** | infra | 🔵 next |
+| 60 | V5 — real corpus end to end | **V** | infra | 🔵 next — measure the three new OCR-table gates (paddleocr-only, deskew refusal, precision refusal) on the real corpus; still owns the `content_type` join-key gap (§6.2, unchanged upstream) |
 | 38 | In-app review grid | P | redline-web | ✅ **verified** — 58/58 green (was recorded as 63/63; `vitest run` reports 58). Currency sorts numerically, source deep-links carry element/chunk — **page is null for real table cells**, which `TABLE_CELLS_SCHEMA` does not carry. Browser leg → 59. |
 | 39 | Pricing pivots | P | application, redline-web | ✅ **verified** — pivots match hand-computed totals and the frozen Wayfinder roll-up. |
 | 40 | Excel export | P | redline-web | ✅ **verified** — real `Number` cells, blank-not-zero, hyperlink source column; `write-excel-file@4.1.1` wired. "Workbook opens" → 41. |
@@ -373,6 +397,11 @@ document delineated by topic and brand, with provenance back to source._
 3. **V2 (57)** and **V3 (58)** — independent of each other, both depend on V1.
    V2 unblocks classification without Numbatch; V3 unblocks pricing without
    Numbatch. Either order, or in parallel.
+
+   > **2026-07-29 drift review.** V3 now sits behind **62** (submodule bump) and
+   > **63** (run the money stage), and 62 is itself gated on an upstream tag. If
+   > that tag is slow, run **61, 57 and 59 first** rather than blocking the track
+   > — V3 is the only thread that needs the newer engine.
 4. **V4 (59)** — the shell. The only piece that is genuinely new code, and the
    only reason the product cannot be looked at today.
 5. **V5 (60)** — the real corpus run. The point of the exercise.
