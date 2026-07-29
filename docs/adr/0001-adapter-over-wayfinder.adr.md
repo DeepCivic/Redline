@@ -62,7 +62,7 @@ schemas. This mirrors Wayfinder ADR-001/ADR-003.
 - Heavy Python runtimes stay out of the TypeScript packages.
 - Typed reuse of Wayfinder's tabular/XLSX helpers with zero drift while the
   submodule is present.
-- A clean, pre-planned path (Thread 16) to a standalone workspace: only the
+- A clean, pre-planned path to a standalone workspace: only the
   minimum typed seam must be vendored or reimplemented.
 
 **Negative**

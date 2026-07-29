@@ -29,8 +29,8 @@ export interface WayfinderPivotColumn {
   readonly memberKeys: string[];
 }
 
-// Upstream's measure union. redline uses `sum` for pricing (Thread 13) and
-// `count` for the Document Map's per-topic tally (Thread 25); `avg` is declared
+// Upstream's measure union. redline uses `sum` for pricing and
+// `count` for the Document Map's per-topic tally; `avg` is declared
 // to match `computePivot`'s real signature so the drift check exercises the
 // whole shape, not a subset.
 export type WayfinderPivotMeasure =
@@ -145,7 +145,7 @@ export const WAYFINDER_PIVOT_CONTRACT = {
   expectedGrandTotal: { value: 6500, sampleCount: 4 },
 } as const;
 
-// The Document Map (Thread 25) rolls the corpus up per topic with a *count*
+// The Document Map rolls the corpus up per topic with a *count*
 // measure, ranked by descending count with an alphabetical tiebreak. Its
 // `buildDocumentMap` reimplements that shape over redline's own `MappedDocument`
 // (Thread 13's precedent: reuse the algorithm, not the types); this fixture

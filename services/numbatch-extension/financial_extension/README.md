@@ -47,7 +47,7 @@ Mounted onto the fork's FastAPI app (`app.include_router(build_router(...))`);
 Errors are Result-shaped (`{"error": {"code", "message"}}`) to mirror the womblex
 sidecar and map cleanly into the Thread 8 adapter's `DomainError`.
 
-## Extraction worker (Thread 7)
+## Extraction worker
 
 The new Arq worker stage that *writes* `financial_extractions` (build plan §6).
 For each topic a document matched, it reads womblex's currency-typed table cells
@@ -64,10 +64,10 @@ duplication.
 | `worker.py` | `extract_financials_for_document` (the orchestration) + `financial_extraction_task` (the Arq entrypoint the fork registers; `ctx` carries the `session_factory` + `womblex_source`). Topics without a live `financial_profile` are skipped. |
 
 No `arq` runtime dependency: the entrypoint takes a plain `ctx` dict, so Arq stays
-a deployment concern wired in the fork (Thread 16). The stage is proven standalone
+a deployment concern wired in the fork. The stage is proven standalone
 against SQLite + the in-memory womblex fake — no MinIO, no GPU.
 
-## Wiring into the fork (Thread 16)
+## Wiring into the fork
 
 The overlay is written to graft onto Numbatch unchanged:
 
@@ -86,7 +86,7 @@ The overlay is written to graft onto Numbatch unchanged:
    schema — the compose `numbatch-migrate` one-shot already runs `alembic upgrade
    head`.
 
-Until the fork is vendored (Thread 16), this overlay is the source of truth for
+Until the fork is vendored, this overlay is the source of truth for
 the extension and is validated by its own pytest suite.
 
 ## Test / validate

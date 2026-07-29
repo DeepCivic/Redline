@@ -98,7 +98,7 @@ export class WorkflowController {
     return this.buildEvaluationTable.execute(input);
   }
 
-  // Opens the in-app review grid (Thread 12) for an evaluation that has reached
+  // Opens the in-app review grid for an evaluation that has reached
   // the review stage: reads the persisted ProcurementResponse[] (built by
   // BuildEvaluationTable) and wraps them in a ReviewGrid the shell renders. Read
   // side only — the grid never mutates, so this returns the grid, not a stage
@@ -109,7 +109,7 @@ export class WorkflowController {
     return ok(new ReviewGrid(responses.data));
   }
 
-  // Opens the pricing pivots (Thread 13) over the persisted ProcurementResponse[]:
+  // Opens the pricing pivots over the persisted ProcurementResponse[]:
   // reads the same built responses the review grid does and wraps them in a
   // PricingPivot the shell rolls up per brand / per requirement / brand×requirement.
   // Read side only — pivots never mutate.
@@ -119,7 +119,7 @@ export class WorkflowController {
     return ok(new PricingPivot(responses.data));
   }
 
-  // Builds the Excel export workbook (Thread 14) for an evaluation at the review
+  // Builds the Excel export workbook for an evaluation at the review
   // stage: reads the persisted ProcurementResponse[] once and shapes them into
   // one review sheet plus one sheet per pivot, all with numeric currency cells
   // and source deep-link hyperlinks. Read side only — export never mutates. The

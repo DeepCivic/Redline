@@ -4,7 +4,7 @@ import { canAdvanceIntakeStage, type IntakeStage } from "./evaluation-structure"
 
 // The evaluation aggregate root: the unit a specialist runs end to end. It owns
 // the intake stage; vendors, response groups and responses hang off it by
-// evaluationId. Persisted via IEvaluationRepository (Thread 9).
+// evaluationId. Persisted via IEvaluationRepository.
 export interface Evaluation {
   readonly id: string;
   readonly name: string;

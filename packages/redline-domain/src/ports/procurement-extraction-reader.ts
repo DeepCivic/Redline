@@ -1,6 +1,6 @@
 import type { Result } from "../result";
 
-// Read-only view of a womblex extraction run. Adapters (Thread 4) implement this
+// Read-only view of a womblex extraction run. Adapters implement this
 // over Parquet/JSON in object storage; the domain only sees typed provenance.
 // Shapes mirror womblex keys (build plan §2): source_hash, elem_order, chunk_id.
 

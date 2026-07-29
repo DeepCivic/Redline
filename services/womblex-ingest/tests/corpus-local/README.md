@@ -1,7 +1,7 @@
 # Local (non-redistributable) test corpus
 
 This directory holds **real / non-redistributable** documents used to exercise the
-womblex pod (Thread 37a) locally. Its contents are **git-ignored** (see the root
+womblex pod locally. Its contents are **git-ignored** (see the root
 `.gitignore`) — only this README is tracked. Do not commit documents here; if a
 fixture is safe to redistribute it belongs in the sibling `corpus/` instead.
 

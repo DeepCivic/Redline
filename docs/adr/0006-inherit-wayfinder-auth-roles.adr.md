@@ -6,7 +6,7 @@
 ## Context
 
 Build-plan §8 decision #5 was left open: *does the review surface reuse Wayfinder
-auth/roles, or its own?* — to be decided before the control surface (Thread 11)
+auth/roles, or its own?* — to be decided before the control surface
 grew a real user-facing route. Thread 11 landed the control-surface *logic* as a
 framework-free core with no identity layer yet, so this is the moment to lock the
 decision before the Next.js shell that serves it is built.

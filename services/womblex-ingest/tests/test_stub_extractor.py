@@ -1,6 +1,6 @@
 """Tests for the built-in deterministic (non-womblex) extractor.
 
-The stub path is what the Isaacus-optional / air-gap mode (Thread 15) leans on and
+The stub path is what the Isaacus-optional / air-gap mode leans on and
 what the Thread 3 exit test exercises when the real womblex dependency is absent.
 """
 

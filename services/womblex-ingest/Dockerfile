@@ -1,15 +1,18 @@
 # womblex-ingest — the lightweight FastAPI read seam (Parquet→JSON) for redline.
 #
-# This image stays LIGHT. The real womblex engine is a REQUIRED subsystem of
-# redline but runs from its OWN image — the one the engine itself ships, built
-# from the services/womblex submodule by the `womblex` compose service — because
-# its OCR/tokeniser/model runtime is heavy and its resource profile is disparate
-# from this API sidecar's. This image never installs womblex; it reads the shards
-# the engine wrote and serves them as JSON (ADR-0003).
+# This image stays LIGHT and never installs womblex: it reads the shards the
+# engine wrote (from object storage) and serves them as JSON (ADR-0003). The real
+# womblex engine is a REQUIRED subsystem of redline; it runs from the engine's OWN
+# image (shipped by the submodule, built by the `womblex` compose service). That
+# split is a DEPLOYMENT choice for resource/lifecycle isolation, not a hard
+# requirement — the engine can equally be co-located with this sidecar (this image
+# is python:3.12-slim, inside womblex's 3.11/3.12 support). Keeping this image
+# womblex-free is what lets the sidecar stay light either way; the seam is object
+# storage, and neither imports the other.
 #
 # WOMBLEX_MODE selects the extractor at runtime:
-#   - real (redline's deployment): the real extractor reads the womblex pod's
-#     shards from MinIO.
+#   - real (redline's deployment): the real extractor reads the engine's shards
+#     from object storage.
 #   - stub (the dependency-free TEST DOUBLE): deterministic shards for fast CI and
 #     the Thread 4 adapter contract. NOT a shipping mode — a test double.
 FROM python:3.12-slim

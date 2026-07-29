@@ -6,10 +6,10 @@ import type {
 } from "@redline/redline-domain";
 
 // ExtractFinancials — pull the currency figures (or description fallback) the
-// Numbatch financial worker (Thread 7) wrote for one response group's documents.
+// Numbatch financial worker wrote for one response group's documents.
 // A thin use-case mirroring ClassifyResponseGroup so the orchestration and a UI
 // name the step; the read seam + topic→requirement mapping live in the adapter
-// (Thread 8).
+//.
 export interface ExtractFinancialsDependencies {
   readonly financialExtractor: IFinancialExtractor;
 }

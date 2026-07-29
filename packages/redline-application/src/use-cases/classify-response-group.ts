@@ -7,8 +7,8 @@ import type {
 
 // ClassifyResponseGroup — run Numbatch over one response group and return the
 // per-(document, requirement) roll-ups. A thin use-case: the topic→requirement
-// mapping and batch polling live in the adapter (Thread 5); the application
-// layer just names the step so a UI (Thread 11) can (re)run classification per
+// mapping and batch polling live in the adapter; the application
+// layer just names the step so a UI can (re)run classification per
 // group and BuildEvaluationTable can compose over it.
 export interface ClassifyResponseGroupDependencies {
   readonly classifier: IProcurementClassifier;

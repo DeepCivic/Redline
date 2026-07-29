@@ -44,7 +44,7 @@ describe("ReviewGrid", () => {
     const cell = grid.all()[0].cells.estimateAud;
 
     // The exit criterion — currency is numeric, consistent with the Wayfinder
-    // helper the export path (Thread 14) needs. That the helper still agrees is
+    // helper the export path needs. That the helper still agrees is
     // asserted once, in redline-adapters' wayfinder-contract.test.ts (ADR-0012).
     expect(cell.isNumeric).toBe(true);
     expect(cell.sortValue).toBe(1500.5);

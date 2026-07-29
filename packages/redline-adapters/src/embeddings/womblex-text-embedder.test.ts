@@ -9,7 +9,7 @@ import {
 import fixture from "./__fixtures__/query-embedding.json";
 
 // A captured POST /embeddings/query response from the womblex-ingest sidecar
-// (Thread 20a). The contract: this adapter turns that JSON into the domain's
+//. The contract: this adapter turns that JSON into the domain's
 // QueryEmbedding, parsing `values` into a Float32Array in the *same* declared
 // space as the chunk vectors the extraction reader returns (ADR-0014), so
 // Thread 22 can match a topic definition against a document by dot product.

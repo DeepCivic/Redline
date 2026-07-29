@@ -1,8 +1,9 @@
 # redline — Architecture & Dataflow (target state)
 
 > **Status:** ground-truth reference · supersedes the per-thread docs and the
-> iteration delivery plans, all deleted except `dev-iteration-2.md`, which is
-> retained solely as frozen design rationale (D1–D13) and tracks nothing.
+> iteration delivery plans, all deleted. Durable design rationale that is not a
+> single decision lives in [`design-principles.md`](./design-principles.md); the
+> decisions themselves are in [`adr/`](./adr/).
 >
 > This is the single source of truth for **what redline is, what it depends on,
 > and how data moves through it**. Its companion is
@@ -136,23 +137,31 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
 
 ### Why womblex is split into a pod + a sidecar
 
-- **The engine** (`services/womblex`, the submodule) is heavy: PyMuPDF, OCR
-  (`engine: paddleocr`, implemented by `rapidocr-onnxruntime`), YOLO layout, the
-  Kanon tokeniser, model weights (multi-hundred-MB). It runs from **its own
-  image**, built from the submodule's `Dockerfile`, so its lifecycle and resource
-  profile are decoupled from the API layer. Its only seam to the rest of the
-  stack is **object storage** (ADR-0002) — it writes shards to MinIO and nothing
-  reads back into it. redline does not wrap the engine: batching, retry,
-  horizontal scale-out and S3 staging are the engine's own (`cloud/worker.py`,
-  `store/remote.py`), driven through its `enqueue` / `worker` CLI.
+- **The engine** (`services/womblex`, the submodule) is heavier than the API
+  layer: PyMuPDF, OCR (`engine: paddleocr`, implemented by `rapidocr-onnxruntime`),
+  YOLO layout, the Kanon tokeniser, model weights (multi-hundred-MB). It **can**
+  run from its own image, built from the submodule's `Dockerfile`, so its
+  lifecycle and resource profile *can* be decoupled from the API layer when a
+  deployment wants that. It **is not required to be** — co-locating the engine and
+  the sidecar on one appropriately-sized host is a valid topology (the sidecar
+  image is `python:3.12-slim`, inside womblex's own 3.11/3.12 support, so the
+  engine installs alongside it). Its only seam to the rest of the stack is
+  **object storage** (ADR-0002) either way — it writes shards, nothing reads back
+  into it. redline does not wrap the engine: batching, retry, horizontal scale-out
+  and staging are the engine's own (`cloud/worker.py`, `store/remote.py`), driven
+  through its `enqueue` / `worker` CLI, and are there to be used *if* the corpus
+  justifies scaling out — not a precondition for running at all.
 - **The sidecar** (`services/womblex-ingest`) is a lightweight FastAPI app that
-  **reads** the pod's Parquet shards from MinIO and serves them as JSON so
-  redline's TypeScript never links a Parquet reader (ADR-0003). `WOMBLEX_MODE`
-  selects `stub` (a deterministic, dependency-free test double for fast CI + the
-  adapter contract) or `real` (reads the pod's actual shards).
-- **How the pod is scheduled in production** (a one-shot job, a scaled worker
-  fleet, a GPU node) is a deployment choice, not a code choice — the seam is
-  object storage.
+  **reads** the engine's Parquet shards from object storage and serves them as
+  JSON so redline's TypeScript never links a Parquet reader (ADR-0003).
+  `WOMBLEX_MODE` selects `stub` (a deterministic, dependency-free test double for
+  fast CI + the adapter contract) or `real` (reads the engine's actual shards).
+- **Whether the engine and sidecar are one deployment or two** (a one-shot job, a
+  scaled worker fleet, a co-located process) is a **deployment choice, not a code
+  choice** — the seam is object storage, and what backs that storage (an S3
+  bucket, or an AWS-managed equivalent) is itself config, per ADR-0002. The code
+  is architected to make co-location *possible*, not to *require* a shared local
+  filesystem.
 
 ---
 
@@ -251,8 +260,12 @@ consumer's cosine similarity is a dot product (ADR-0014). See §7 for the
    `source_hash`/`elem_order`/`chunk_index`/cells/vectors into camelCase JSON
    DTOs. The TypeScript adapters are thin, allocation-only mappings. (ADR-0003)
 
-2. **Object storage is the only seam to the womblex engine.** The pod writes;
-   the sidecar reads. Neither imports the other. (ADR-0002)
+2. **Object storage is the only seam to the womblex engine.** The engine writes;
+   the sidecar reads. Neither imports the other — which is what keeps them
+   *separately deployable and freely co-locatable*: the coupling is a storage API
+   (S3-shaped), never an in-process link, so the same code runs whether the two
+   share a host or not, and what backs the storage (an S3 bucket or an
+   AWS-managed equivalent) is config. (ADR-0002)
 
 3. **Embeddings declare their model and cross L2-normalised.** Vectors from
    different models are incomparable; a query vector and the chunk vectors it is
@@ -298,7 +311,7 @@ redline/
 │   ├── architecture.md            ◄ THIS FILE — what redline IS (the design truth)
 │   ├── delivery-plan.md           what is LEFT TO DO (the tracking truth)
 │   ├── adr/                       architecture decision records (still authoritative)
-│   ├── dev-iteration-2.md         frozen design rationale (D1–D13; not tracking)
+│   ├── design-principles.md       adopted principles + non-goals (durable, not tracking)
 │   └── guides/
 ├── scripts/                       vendor-wayfinder, womblex-pod smoke, etc.
 ├── vendor/wayfinder/              materialised from wayfinder.pin (never committed)
@@ -407,11 +420,20 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
 ## 8. Runtime & environment notes
 
 - womblex requires **Python 3.11/3.12** (its OCR dep `rapidocr-onnxruntime` has no
-  wheel on 3.10 or 3.13). The engine runs only in its pod image; do not expect to
-  `pip install womblex` into the API sidecar's environment or a 3.13 host.
+  wheel on 3.10 or 3.13). The **sidecar image is `python:3.12-slim`** — inside that
+  window — so nothing stops `pip install .[womblex]` co-locating the engine with
+  the sidecar. The engine **can** run from its own image for resource/lifecycle
+  isolation (heavy OCR/YOLO/tokeniser/model runtime, its own cloud runner for
+  scale-out), and **can** equally run co-located with the sidecar on one
+  appropriately-sized host — the split is a deployment choice, not a code
+  constraint. The one interpreter caveat that remains is that a developer's
+  `validate.sh` box may run a *newer* interpreter (e.g. 3.13) that womblex's OCR
+  wheel does not cover, which is why the engine-touching tests `importorskip` the
+  `[womblex]` extra rather than assuming it is present.
 - The womblex-ingest sidecar's **real binding** decodes Parquet with `pyarrow`
-  (light) — that half runs anywhere pyarrow resolves. But producing the shards
-  (and any query embedding) requires the engine pod and, for embeddings, Isaacus.
+  (light) — that half runs anywhere pyarrow resolves, independent of whether the
+  engine is installed in the same environment. Producing the shards (and any query
+  embedding) requires the engine and, for embeddings, Isaacus.
 - `ISAACUS_API_KEY` is the single switch that turns retrieval on. Without it:
   extraction and chunk shards land, but there are no embeddings and no retrieval
   classification. redline treats that as a misconfiguration, not a supported mode
@@ -429,5 +451,6 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
 - **Decisions:** `docs/adr/` (authoritative).
 - **Outstanding work:** [`delivery-plan.md`](./delivery-plan.md) — the only
   document that tracks what is left to build.
-- **Design rationale (frozen, non-tracking):** `docs/dev-iteration-2.md` — the
-  D1–D13 register and the three findings behind the lens architecture.
+- **Design rationale (durable, non-tracking):** [`design-principles.md`](./design-principles.md)
+  — the composable-operations principles redline adopted from its upstreams and
+  the non-goals it holds.

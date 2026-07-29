@@ -24,7 +24,7 @@ import { ExtractFinancials } from "./extract-financials";
 //   • a one-paragraph AI summary over the matched passages,
 // into one ProcurementResponse per (group, document, matched requirement) — the
 // review grid's natural row (build plan §5) — persists them, and advances the
-// stage to `review`. Currency stays a real number end-to-end (ADR / Thread 8).
+// stage to `review`. Currency stays a real number end-to-end (ADR).
 export interface BuildEvaluationTableDependencies {
   readonly repository: IEvaluationRepository;
   readonly classifier: IProcurementClassifier;

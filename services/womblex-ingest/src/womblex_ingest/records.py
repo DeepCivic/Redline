@@ -17,7 +17,7 @@ stage is an optional overlay — the two resources are absent independently.
 
 Thread 20a adds `QueryEmbedding`: an arbitrary piece of text embedded into the
 *same* space as the chunk vectors, so a topic definition can be matched against
-them (Thread 22). It declares the same `model`/`dimensions` and crosses the same
+them. It declares the same `model`/`dimensions` and crosses the same
 L2-normalised wire, but it is chunk-free — it is not tied to any document.
 """
 
@@ -119,7 +119,7 @@ class DocumentEmbeddings:
 
 @dataclass(frozen=True)
 class QueryEmbedding:
-    """An arbitrary piece of text embedded for retrieval (ADR-0014, Thread 20a).
+    """An arbitrary piece of text embedded for retrieval (ADR-0014).
 
     Not a document resource: it carries no `chunkId` and is never persisted. It
     exists so a topic definition can be matched against the chunk vectors, which

@@ -13,7 +13,7 @@
 // evaluation — ADR-0014).
 // Thread 22: WomblexTextEmbedder implements ITextEmbedder over the same
 // sidecar's query-embedding seam (POST /embeddings/query), so a topic
-// definition embeds in the same space as the chunk vectors (ADR-0014, Thread 20a).
+// definition embeds in the same space as the chunk vectors (ADR-0014).
 export {
   WomblexExtractionReader,
   type HttpClient,

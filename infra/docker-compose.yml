@@ -11,7 +11,7 @@
 # ship the dev defaults.
 #
 # Profiles:
-#   ingest    — womblex-ingest + minio (Thread 3; the ingestion path)
+#   ingest    — womblex-ingest + minio (the ingestion path)
 #   womblex   — the real womblex engine, built from the ../services/womblex
 #               submodule using ITS OWN Dockerfile and run through ITS OWN cloud
 #               runner (Postgres job queue + scalable `worker`), sharing MinIO.
@@ -22,11 +22,11 @@
 #               proc/{evaluationId}/. Scale with `up --scale womblex=4 womblex`.
 #   numbatch  — the Numbatch stack, all-but-frontend: postgres + redis + minio +
 #               backend API + Arq worker + inference service + one-shot migrate
-#               (Thread 5; ADR-0004/ADR-0005 — the SvelteKit frontend is excluded,
+#               (ADR-0004/ADR-0005 — the SvelteKit frontend is excluded,
 #               redline owns its own control surface). Builds from the
 #               ../services/numbatch submodule using ITS OWN infra/docker/*.Dockerfile
 #               — run `git submodule update --init` first (see services/README.md).
-#   redline   — redline's own Postgres for the redline_ schema (Thread 9; ADR-0002).
+#   redline   — redline's own Postgres for the redline_ schema (ADR-0002).
 #
 # Usage (Thread 3 exit test):
 #   podman compose -f infra/docker-compose.yml --profile ingest up -d
@@ -76,7 +76,7 @@ services:
 
   # The lightweight FastAPI read seam (Parquet→JSON). It stays light: the real
   # womblex engine is its own pod (the `womblex` service below), never baked into
-  # this image. WOMBLEX_MODE=real selects the real extractor (Thread 37b), which
+  # this image. WOMBLEX_MODE=real selects the real extractor, which
   # reads the shards the womblex pod produced.
   womblex-ingest:
     build:

@@ -1,12 +1,12 @@
 import type { ProcurementResponse } from "@redline/redline-domain";
 
 // ReviewGrid — the specialist review surface's brain (build plan §1 / §5 /
-// Thread 12). A pure, framework-free model of the sortable, filterable review
+/). A pure, framework-free model of the sortable, filterable review
 // table: it turns the BuildEvaluationTable output (one ProcurementResponse per
 // (group, document, matched requirement)) into typed, sortable rows a Next.js/
 // React shell binds to. Currency stays a real number end-to-end (the domain
 // already carries estimateAud: number | null — Thread 8/10), so it sorts
-// numerically and exports numeric (Thread 14); the exit test pins that against
+// numerically and exports numeric; the exit test pins that against
 // Wayfinder's typedDisplayCell, matching the Thread 8 adapter's posture. The
 // source column carries provenance for a deep-link to the exact document
 // location. Holds no ports; the container hands it the already-built responses.
@@ -49,7 +49,7 @@ export const REVIEW_COLUMNS: readonly ReviewColumn[] = [
 // A resolved cell: `display` is what the DOM shows, `sortValue` is what a sort
 // compares (numeric for currency/number, lowercased string otherwise), and
 // `isNumeric` is true for a parseable currency/number cell so the shell can
-// right-align / the export can write a real numeric cell (Thread 14).
+// right-align / the export can write a real numeric cell.
 export interface ReviewCell {
   readonly display: string;
   readonly sortValue: number | string;
@@ -120,12 +120,12 @@ const numberCell = (value: number): ReviewCell => {
 
 const currencyCell = (estimateAud: number | null): ReviewCell => {
   if (estimateAud === null) {
-    // A null estimate is the description-fallback signal (Thread 10). It sorts
+    // A null estimate is the description-fallback signal. It sorts
     // as the lowest number so all "no figure" rows cluster together, and is
     // never marked numeric (there is no figure to right-align or export).
     return { display: "", sortValue: Number.NEGATIVE_INFINITY, isNumeric: false };
   }
-  // The domain already carries a real number (Thread 8/10), so the sort key is
+  // The domain already carries a real number, so the sort key is
   // the figure itself — a numeric sort, not a lexical one.
   return {
     display: currencyDisplay(estimateAud),

@@ -1,6 +1,6 @@
 import type { PivotAxis, PivotMeasureKind, PricingPivotResult } from "./pricing-pivot";
 
-// View model for the pricing pivots (Thread 13). A pure PricingPivotResult →
+// View model for the pricing pivots. A pure PricingPivotResult →
 // presentation-ready table the Next.js/React shell binds to: a header row (the
 // group axis label + one column per secondary group, or a single measure
 // column), a body row per primary group with formatted currency cells + a row

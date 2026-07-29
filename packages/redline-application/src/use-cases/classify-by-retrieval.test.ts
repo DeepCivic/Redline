@@ -12,7 +12,7 @@ import {
 } from "@redline/redline-domain";
 import { ClassifyByRetrieval } from "./classify-by-retrieval";
 
-// Retrieval classification (Thread 22) — the lens's first-pass model-free stage
+// Retrieval classification — the lens's first-pass model-free stage
 // (design doc §3, "retrieval → clear match"). It ranks a document's chunk
 // vectors against each topic definition's query vector by cosine similarity
 // (a dot product, since both cross L2-normalised — ADR-0014) and emits the same

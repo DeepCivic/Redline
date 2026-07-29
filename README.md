@@ -18,9 +18,8 @@ Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 Under construction. Two documents govern:
 [`docs/architecture.md`](./docs/architecture.md) is what redline **is**, and
 [`docs/delivery-plan.md`](./docs/delivery-plan.md) is what is **left to build**.
-[`dev-iteration-2.md`](./docs/dev-iteration-2.md) is retained as frozen design
-rationale (the D1–D13 decision register and the three findings behind the lens
-architecture); it tracks nothing.
+Durable design rationale lives in [`docs/design-principles.md`](./docs/design-principles.md)
+and the [ADRs](./docs/adr/); neither tracks work.
 
 Threads 1–15 and 17–25 are ✅ complete: scaffold, `redline-domain` (user-defined
 requirements + the lens domain), the `womblex-ingest` sidecar + embeddings seam,
@@ -49,7 +48,7 @@ redline/
 │   ├── adr/                     # architecture decision records (Wayfinder ADR model)
 │   ├── architecture.md          # what redline IS (design truth)
 │   ├── delivery-plan.md         # what is LEFT TO BUILD (tracking truth)
-│   └── dev-iteration-2.md       # frozen; D1–D13 rationale behind the lens design
+│   └── design-principles.md     # durable adopted-principles + non-goals (not tracking)
 ├── packages/
 │   ├── redline-domain/             # entities + ports (zero deps, Result pattern)
 │   ├── redline-application/        # use-cases

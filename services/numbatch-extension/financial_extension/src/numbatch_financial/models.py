@@ -7,11 +7,11 @@ a new Arq worker stage), designed to drop into the forked Numbatch backend's
 - ``financial_profiles`` — per Numbatch topic (= a redline requirement/criterion,
   ADR-0004), a config declaring *what* monetary facts to pull and *how* to
   normalise them. This is the Thread 6 config surface.
-- ``financial_extractions`` — the financial worker's output (Thread 7): one extracted
+- ``financial_extractions`` — the financial worker's output: one extracted
   figure (or description fallback) per ``(source_doc_id, topic_id)`` pair, with
   provenance back to womblex's ``elem_order``. Declared in Thread 6 so the
   migration creates both tables in one additive step; written by
-  ``worker.py``/``extraction_repository.py`` (Thread 7).
+  ``worker.py``/``extraction_repository.py``.
 
 Keyed on ``(source_doc_id, topic_id)`` so a figure attaches to a (document,
 requirement) pair via the batch-inference roll-up's matched-chunk provenance —
@@ -47,7 +47,7 @@ class Base(DeclarativeBase):
     """Local declarative base.
 
     Mirrors the fork's convention so these models graft onto Numbatch's own
-    ``Base`` unchanged when vendored (Thread 16): a uuid string ``id`` and
+    ``Base`` unchanged when vendored: a uuid string ``id`` and
     server-defaulted ``created_at`` / ``updated_at`` on every table.
     """
 

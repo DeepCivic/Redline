@@ -33,7 +33,7 @@ print(json.dumps(result.embeddings[0].to_json(), indent=2))
 
 ## `query-embedding.json`
 
-A capture of the sidecar's **query** seam (ADR-0014, Thread 20a) — the body of
+A capture of the sidecar's **query** seam (ADR-0014) — the body of
 
 ```
 POST /embeddings/query  {"text": "network security controls"}

@@ -1,7 +1,7 @@
 import type { Result } from "../result";
 
 // Classifies a response group's chunks against the evaluation's user-defined
-// requirement set (a Numbatch profile of ≤10 topics). Numbatch (Thread 5)
+// requirement set (a Numbatch profile of ≤10 topics). Numbatch
 // implements this over its batch-inference + document-rollup surface; the
 // adapter maps Numbatch `topic_id` → `requirementId` (ADR-0004).
 

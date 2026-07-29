@@ -1,21 +1,25 @@
 """Real womblex extractor — Thread 37b, the binding behind the seam.
 
-The **womblex pod** (the `womblex` compose profile, which builds the engine's own
-image from the `services/womblex` submodule — ADR-0015) runs the real pipeline
-(`extract` → `chunk` → `embed`) and lands its Parquet shards in the shared MinIO
-under `proc/{evaluationId}/`. This module is the *binding*: with `WOMBLEX_MODE=
-real` it reads those pod-produced shards from object storage and maps womblex's
+The **womblex engine** (the `womblex` compose profile, which builds the engine's
+own image from the `services/womblex` submodule — ADR-0015) runs the real pipeline
+(`extract` → `chunk` → `embed`) and lands its Parquet shards in object storage
+under `proc/{evaluationId}/` — the redline-owned bucket, whatever backs it
+(ADR-0002). This module is the *binding*: with `WOMBLEX_MODE=real` it reads those
+engine-produced shards from object storage and maps womblex's
 schema into the JSON read model (`records.py`), so the TypeScript adapter never
 links a Parquet reader (ADR-0003 / ADR-0014). The pod owns the durable Parquet;
 the binding only *reads* it — hence `ExtractionResult.shards` is empty here
 (re-writing shards the pod already wrote would duplicate the record).
 
-Why read the pod's shards rather than invoke womblex in-process: womblex's
-runtime (PyMuPDF, OCR, the Kanon tokeniser, model weights) is heavy and lives in
-its own pod. The API sidecar stays light; its only
-seam to the engine is object storage (ADR-0002). This keeps the two lifecycles
-decoupled and the production orchestration of the worker a free deployment
-choice.
+Why read the engine's shards rather than invoke womblex in-process: the seam is
+object storage (ADR-0002), so the sidecar and the engine stay *separately
+deployable and freely co-locatable* — neither imports the other, which is what
+lets the engine be a version-pinned submodule swapped without relinking the
+sidecar. womblex's runtime (PyMuPDF, OCR, the Kanon tokeniser, model weights) is
+also heavier than this API layer, so keeping the coupling to storage means the
+sidecar image stays light whether or not the engine is deployed beside it. The
+production orchestration of the worker (one-shot, scaled fleet, or co-located)
+is then a free deployment choice.
 
 The schema mapping itself lives in `shard_reader.py` (the one place that
 understands `source_hash` / `elem_order` / `chunk_index` / currency cells / the
@@ -47,7 +51,7 @@ from womblex_ingest.shard_reader import (
 )
 from womblex_ingest.storage import ObjectStorage
 
-# The womblex shard-name suffixes the pod writes (dev-iteration-1 §upstream tools;
+# The womblex shard-name suffixes the engine writes (see `architecture.md` §4 and
 # ADR-0008). We discover shards by suffix rather than by an assumed run-directory
 # name, because the batch/run segment is womblex's, not ours.
 _ELEMENTS_SUFFIX = ".elements.parquet"
@@ -202,7 +206,7 @@ def _resolve_embedding_model(config_path: Optional[str]) -> str:
 
 
 class RealWomblexTextEmbedder:
-    """Embeds arbitrary text via womblex's embed operation (ADR-0014, Thread 20a).
+    """Embeds arbitrary text via womblex's embed operation (ADR-0014).
 
     The query counterpart of `RealWomblexExtractor`: it must embed text with the
     *same* model womblex's embed stage used for chunk vectors, or Thread 22's

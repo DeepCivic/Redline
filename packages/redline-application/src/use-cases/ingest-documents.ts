@@ -15,7 +15,7 @@ import {
 // documents_uploaded → grouping). womblex extraction has already run (the
 // sidecar wrote its shards); this use-case confirms every document reads back
 // through the extraction port, persists the evaluation, and advances the stage.
-// It does not trigger womblex itself — that is the sidecar's job (Thread 3).
+// It does not trigger womblex itself — that is the sidecar's job.
 export interface IngestDocumentsDependencies {
   readonly repository: IEvaluationRepository;
   readonly extractionReader: IProcurementExtractionReader;

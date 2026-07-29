@@ -117,14 +117,16 @@ evaluation rather than re-fetching per run.
 ## Extraction modes & the womblex pod
 
 **womblex is a required subsystem of redline**, not an optional extra: the
-retrieval leg *is* womblex's `*.embeddings.parquet`. redline runs it as its
-**own image** — the one the engine itself ships, built from the
+retrieval leg *is* womblex's `*.embeddings.parquet`. redline runs it from the
+engine's **own image** — the one the engine itself ships, built from the
 `services/womblex` submodule by the `womblex` compose service and driven through
-the engine's own `enqueue` / `worker` cloud runner. It is deliberately not folded
-into this lightweight API image, because womblex's
-OCR/tokeniser/model runtime is heavy and its resource profile is disparate from
-the FastAPI sidecar's. The engine source is pinned as a submodule at
-`services/womblex` (tag `v0.2.0`).
+the engine's own `enqueue` / `worker` cloud runner. Running it as its own image
+is a **deployment choice** for resource/lifecycle isolation, not a hard
+requirement: the sidecar image is `python:3.12-slim` (inside womblex's 3.11/3.12
+support), so the engine can equally be co-located with the sidecar on one host.
+Either way the seam is object storage (ADR-0002), and what backs it — an S3
+bucket or an AWS-managed equivalent — is config. The engine source is pinned as a
+submodule at `services/womblex` (tag `v0.2.0`).
 
 `WOMBLEX_MODE` selects which extractor this API sidecar uses:
 
@@ -212,7 +214,12 @@ pip install -e '.[dev,womblex]'   # adds pyarrow (real lane) + the womblex engin
 python -m pytest -q                # now also runs the real-extractor lane
 ```
 
-The womblex **engine** itself only runs in its own Python-3.12 pod (its OCR dep
-has no wheel on newer interpreters), so the engine-produced-shards proof (real
-corpus → real pod → these reads) is the compose-level smoke, exactly as the
-"shards actually land in MinIO" proof is.
+The womblex **engine** can run from its own image (resource/lifecycle isolation,
+its own cloud runner for scale-out) or co-located with the sidecar — the split is
+a deployment choice, not a constraint: the sidecar image is `python:3.12-slim`,
+inside womblex's own 3.11/3.12 support, so `.[womblex]` installs cleanly here. The
+`importorskip` in `tests/test_real_extractor.py` guards only against a
+`validate.sh` box on a *newer* interpreter (e.g. 3.13, which the OCR wheel does
+not cover) or one that simply did not install the extra. The
+engine-produced-shards proof (real corpus → real engine → these reads) is still
+the compose-level smoke, exactly as the "shards actually land in MinIO" proof is.

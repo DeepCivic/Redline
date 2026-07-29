@@ -4,13 +4,13 @@ import type { ProcurementResponse } from "@redline/redline-domain";
 // per brand (vendor); pricing per requirement/criterion", §7 Thread 13). A
 // pure, framework-free model that rolls the Thread 10/12 ProcurementResponse[]
 // up per brand, per requirement, or brand×requirement, summing or averaging the
-// real-number estimateAud (Thread 8/10). It mirrors the algorithm of
+// real-number estimateAud. It mirrors the algorithm of
 // Wayfinder's computePivot (§9) — first-appearance distinct groups, ranked by
 // descending measure total with an alphabetical tiebreak, sum/avg tracking the
 // numeric sample count so a null estimate (the description-fallback signal)
 // degrades gracefully — but over redline's own domain type, so production app
 // code imports nothing from Wayfinder (the parity is pinned test-only, matching
-// Thread 12's typedDisplayCell posture). The Excel export (Thread 14) writes one
+// Thread 12's typedDisplayCell posture). The Excel export writes one
 // sheet per PricingPivotResult.
 
 // The axes the plan names: pricing per brand, per requirement/criterion, and the

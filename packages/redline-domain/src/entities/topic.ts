@@ -7,7 +7,7 @@ import { err, ok, type Result } from "../result";
 // A topic carries no evaluation binding (ADR-0009). It outlives any evaluation
 // that uses it, which is what lets a lens compound; an evaluation-scoped
 // criterion is a `Requirement`, projected from a topic in lens-projection.ts.
-// The Numbatch `topic_id` binding is a separate record (Thread 29), not a field
+// The Numbatch `topic_id` binding is a separate record, not a field
 // here — Numbatch's library is the system of record and redline holds
 // references, not copies.
 export interface Topic {

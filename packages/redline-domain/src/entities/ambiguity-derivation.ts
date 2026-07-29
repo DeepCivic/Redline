@@ -14,7 +14,7 @@ import { implementedSignals, type RankedCandidate } from "./ambiguity-signal";
 // This is a pure, total function — no clock, store or model — and one leg of
 // §3's composable design, called by whoever assembled the candidates (no
 // orchestrator, D4). What it marks Ambiguous is what feeds the bounded collision
-// surface (Threads 26–27) and, before that, the LLM adjudicator (Thread 23),
+// surface (Threads 26–27) and, before that, the LLM adjudicator,
 // whose "unclear" set is precisely the Ambiguous bucket here.
 
 export interface ComprehensionInput {

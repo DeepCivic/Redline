@@ -6,7 +6,7 @@ import {
   type MappedDocument,
 } from "./build-document-map";
 
-// Document Map read model (Thread 25) — a *derived, never-stored* roll-up of the
+// Document Map read model — a *derived, never-stored* roll-up of the
 // corpus classification (design doc §2 step 2 "Map the corpus", §3). It reuses
 // `computePivot`'s count-measure algorithm — first-appearance distinct groups,
 // ranked by descending count with an alphabetical tiebreak — over redline's own
@@ -125,7 +125,7 @@ describe("buildDocumentMap", () => {
   });
 
   it("accepts the Thread 24 Comprehension shape as its bucket source", () => {
-    // The bucket flows from deriveComprehension (Thread 24). A MappedDocument is
+    // The bucket flows from deriveComprehension. A MappedDocument is
     // a Comprehension's documentId + bucket, joined to the topic the classifier
     // assigned. No confidence value is read or carried (non-goal §8).
     const comprehension: Comprehension = {

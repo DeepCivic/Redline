@@ -78,7 +78,7 @@ Where `evaluation-spec.json` is:
 
 The forked backend gains `financial_profiles` + `financial_extractions` (keyed on
 `(source_doc_id, topic_id)`) and a new Arq worker stage — additive to the schema above,
-consumed by the `IFinancialExtractor` adapter (Thread 8).
+consumed by the `IFinancialExtractor` adapter.
 
 Thread 6 built the **schema + config API** and Thread 7 the **extraction worker
 stage** as a self-contained overlay under

@@ -1,7 +1,7 @@
 import type { Result } from "../result";
 
 // Pulls the currency figures (or description fallback) that the Numbatch
-// financial-extraction worker (Thread 7) wrote for a response group's documents,
+// financial-extraction worker wrote for a response group's documents,
 // with provenance back to womblex elements. Feeds ProcurementResponse.costing.
 
 export interface FinancialExtractionRequest {
@@ -12,7 +12,7 @@ export interface FinancialExtractionRequest {
 
 // estimateAud is null when only a prose description of costs was available — the
 // domain keeps both so the review grid can show a numeric cell or the fallback.
-// Keyed on (documentId, requirementId): the Numbatch financial worker (Thread 7)
+// Keyed on (documentId, requirementId): the Numbatch financial worker
 // writes one figure per (document, requirement) via the roll-up's deduped
 // matched-chunk provenance — no per-requirement re-extraction (ADR-0004).
 export interface FinancialExtraction {

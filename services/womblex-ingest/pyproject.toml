@@ -12,10 +12,12 @@ dependencies = [
 
 [project.optional-dependencies]
 # The real womblex engine. redline runs it from the engine's OWN image, built
-# from the services/womblex submodule by the `womblex` compose service — a
-# REQUIRED subsystem kept out of the API image because its runtime is heavy.
-# This extra is here so a real-lane test environment can `pip install .[womblex]`
-# to exercise the query-embedding half of the binding.
+# from the services/womblex submodule by the `womblex` compose service. Kept out
+# of the API image by DEPLOYMENT CHOICE (resource/lifecycle isolation), not
+# necessity — the sidecar image is python:3.12-slim, inside womblex's 3.11/3.12
+# support, so the engine can equally be co-located. This extra is here so a
+# real-lane test environment can `pip install .[womblex]` to exercise the
+# query-embedding half of the binding.
 #
 # The version MUST track the services/womblex submodule — that submodule is
 # the schema the shard mapping is written against, and a sidecar embedding
@@ -29,13 +31,18 @@ dependencies = [
 # So check #13 warn+skips rather than passing until the tag exists and the
 # gitlink is re-pointed at it. This pin (`0.3.0`) already matches the engine
 # code; the outstanding step is purely restoring the guard. See
-# docs/delivery-plan.md thread 62 and §7.
-# womblex needs Python 3.11/3.12 (its OCR dep has no 3.10 wheel).
+# docs/delivery-plan.md §4 (carried item #2).
 #
-# `pyarrow` is what the binding uses to DECODE the Parquet shards the pod landed
+# The engine stays in a SEPARATE extra (and a separate image) for resource +
+# lifecycle reasons — heavy OCR/tokeniser/model runtime, independently scaled via
+# its own cloud runner — NOT because it can't be installed here: the sidecar image
+# is python:3.12-slim, inside womblex's own 3.11/3.12 support. A real-lane env may
+# `pip install .[womblex]` on 3.12 to exercise the query-embedding half.
+#
+# `pyarrow` is what the binding uses to DECODE the Parquet shards the engine landed
 # in MinIO (real_extractor.py); it is far lighter than womblex's full OCR/model
 # stack, so the read side of the binding runs anywhere pyarrow resolves even when
-# the engine itself only runs in its pod.
+# the engine itself is deployed as its own image.
 womblex = [
     "womblex==0.3.0",
     "pyarrow>=16,<25",

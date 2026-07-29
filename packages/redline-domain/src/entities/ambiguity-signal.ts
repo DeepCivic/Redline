@@ -17,7 +17,7 @@
 // heuristics.
 
 // A document's ranked topic candidates — the scored input a signal reads. The
-// scores are the retrieval/classification confidences (Thread 22). They enter
+// scores are the retrieval/classification confidences. They enter
 // the register here and are consumed here; the derivation emits only a bucket,
 // so no score escapes to the view model (non-goal §8).
 export interface RankedCandidate {
@@ -98,7 +98,7 @@ export const AMBIGUITY_SIGNALS: readonly AmbiguitySignal[] = [
   // Declared, not yet wired. Recorded so the space the lens intends to cover is
   // visible, exactly as womblex lists its not-implemented heuristics. Each needs
   // signal it cannot read yet (samples, cross-corpus history) — the overlay tier
-  // (Threads 33–34) and portability (Thread 30) supply those.
+  // (Threads 33–34) and portability supply those.
   {
     id: "sample-disagreement",
     signal: "accrued boundary decisions disagree with this assignment",

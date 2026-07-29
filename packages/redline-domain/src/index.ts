@@ -1,6 +1,6 @@
 // @redline/redline-domain — public surface.
 //
-// Primitives (Thread 1) plus the core entities and port interfaces (Thread 2).
+// Primitives plus the core entities and port interfaces.
 export * from "./result";
 export * from "./errors/domain-error";
 
@@ -10,23 +10,23 @@ export * from "./entities/evaluation-structure";
 export * from "./entities/requirement";
 export * from "./entities/procurement-response";
 
-// Comprehension lens (Thread 17) — durable, evaluation-independent.
+// Comprehension lens — durable, evaluation-independent.
 export * from "./entities/topic";
 export * from "./entities/lens";
 export * from "./entities/lens-projection";
 
-// Hard rules (Thread 18) — deterministic pattern -> topic, resolved before any model.
+// Hard rules — deterministic pattern -> topic, resolved before any model.
 export * from "./entities/hard-rule";
 export * from "./entities/hard-rule-evaluation";
 
-// Comprehension (Thread 24) — a named, statused ambiguity signal register
+// Comprehension — a named, statused ambiguity signal register
 // (womblex's heuristics_disambiguation shape) and the pure Clear/Ambiguous
 // derivation it drives. No confidence value escapes to the view model.
 export * from "./entities/ambiguity-signal";
 export * from "./entities/ambiguity-derivation";
 
 // Ports
-// Adjudication (Thread 23) — the lens's LLM seam; picks among contending topics
+// Adjudication — the lens's LLM seam; picks among contending topics
 // for what retrieval left unclear and returns a one-sentence rationale.
 export * from "./ports/adjudicator";
 export * from "./ports/embedding-reader";
@@ -36,7 +36,7 @@ export * from "./ports/language-model";
 export * from "./ports/procurement-classifier";
 export * from "./ports/procurement-extraction-reader";
 
-// Retrieval (Thread 22) — embeds a topic definition into a query vector, in the
+// Retrieval — embeds a topic definition into a query vector, in the
 // same space as the chunk vectors, so the lens's first pass can match without a
-// trained model (ADR-0014, Thread 20a).
+// trained model (ADR-0014).
 export * from "./ports/text-embedder";

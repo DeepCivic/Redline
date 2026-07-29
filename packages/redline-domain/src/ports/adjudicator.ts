@@ -1,7 +1,7 @@
 import type { Result } from "../result";
 
 // The lens's LLM adjudication seam (design doc §3, "LLM adjudication → clear
-// match + one-sentence rationale"). It settles what retrieval (Thread 22) left
+// match + one-sentence rationale"). It settles what retrieval left
 // genuinely unclear: given a document's passages and the candidate topics it
 // could belong to, the model picks one topic and states, in one sentence, why.
 //

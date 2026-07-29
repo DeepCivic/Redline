@@ -1,6 +1,6 @@
 """The text-embedding query seam — Thread 20a's exit test (ADR-0014).
 
-Thread 19 ships one vector per *chunk*. Retrieval (Thread 22) also needs the
+Thread 19 ships one vector per *chunk*. Retrieval also needs the
 *topic definition* embedded in the same space to match against those chunks, and
 redline's TypeScript has no embedding model — so the sidecar owns query embedding
 too, exactly as it owns chunk embedding.

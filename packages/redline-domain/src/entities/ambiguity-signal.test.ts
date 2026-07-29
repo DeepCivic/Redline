@@ -7,7 +7,7 @@ import {
 } from "./ambiguity-signal";
 
 // A document's ranked topic candidates — the scored input the signals read.
-// The scores are the retrieval/classification confidences (Thread 22); they
+// The scores are the retrieval/classification confidences; they
 // enter here and are consumed here. Nothing downstream of the derivation sees
 // them (non-goal §8: no confidence scores in the UI).
 const ranked = (...scores: readonly number[]): readonly RankedCandidate[] =>

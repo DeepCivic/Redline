@@ -31,7 +31,7 @@ export interface ClassifyWithHardRulesInput {
   // The response group being classified. `documentIds` is the full set; the
   // unclaimed subset is what actually reaches the classifier.
   readonly request: ClassificationRequest;
-  // The lens's rules, in declaration order (Thread 18). May be empty — then
+  // The lens's rules, in declaration order. May be empty — then
   // every document is unclaimed and the group forwards whole (ADR-0008).
   readonly ruleSet: HardRuleSet;
   // Per-document identifier tokens the caller extracted. A document with no

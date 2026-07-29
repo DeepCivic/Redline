@@ -23,7 +23,7 @@
 ## Context
 
 `TableCellRecord.isCurrency` is the only currency signal on the extraction seam,
-and Track V's V3 (thread 58) builds the whole pricing path on it: no Numbatch, no
+and Track V's V3 builds the whole pricing path on it: no Numbatch, no
 financial extension, just womblex's own table cells. `delivery-plan.md` §4 V1
 therefore specifies the fix as *"derive currency from `value_type` (and
 `number_format` for `sheet_cell`, which carries it)"*, citing `architecture.md`
@@ -107,7 +107,7 @@ limitation, recorded under Consequences rather than papered over.
 
 - V1's exit test becomes provable on plain row dicts, with no womblex install, no
   pyarrow and no Isaacus key — the mapping is a pure function of the cell text.
-- V3 (thread 58) gets a currency signal that is true of real shards rather than of
+- V3 gets a currency signal that is true of real shards rather than of
   an assumed schema, which is the precondition for its pivots meaning anything.
 - The failure mode is a visible gap, not a silent wrong number.
 
@@ -129,7 +129,7 @@ limitation, recorded under Consequences rather than papered over.
   `"$1 234,50"` are both `True` — but its digits are ambiguous. A consumer that
   strips separators the same way reads `1.23456` and `1 23450` for two values that
   are both 1234.56 and 1234.50. `isCurrency` is only a flag; **parsing `rawValue`
-  into a number is V3's (thread 58) job, and it must not assume Australian
+  into a number is V3's job, and it must not assume Australian
   grouping without checking.** Unmarked European values are `False` like any other
   bare number. Acceptable for Australian procurement (D1); a correctness bug the
   moment the corpus is not.

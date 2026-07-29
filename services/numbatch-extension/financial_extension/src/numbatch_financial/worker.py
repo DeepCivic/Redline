@@ -1,4 +1,4 @@
-"""The financial extraction worker stage (Thread 7).
+"""The financial extraction worker stage.
 
 The new Arq worker stage (build plan §6): for each topic a document matched,
 read womblex's currency-typed table cells for that topic's already-deduped
@@ -9,7 +9,7 @@ per (document, requirement), no duplication.
 ``extract_financials_for_document`` is the pure orchestration, wired only to a
 :class:`~numbatch_financial.womblex_source.WomblexSource` seam and a session
 factory, so it is provable standalone. ``financial_extraction_task`` is the Arq
-entrypoint the fork registers on its worker (Thread 16): it resolves the seam
+entrypoint the fork registers on its worker: it resolves the seam
 from the shared ``ctx`` and delegates here.
 """
 
@@ -81,7 +81,7 @@ async def financial_extraction_task(
     source_doc_id: str,
     matched_topics: list[dict[str, Any]],
 ) -> None:
-    """Arq entrypoint — registered on the fork's worker (Thread 16).
+    """Arq entrypoint — registered on the fork's worker.
 
     ``ctx`` carries the shared ``session_factory`` and ``womblex_source`` the
     fork's ``WorkerSettings.on_startup`` wires up. The roll-up's matched topics

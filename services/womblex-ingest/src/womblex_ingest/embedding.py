@@ -1,6 +1,6 @@
-"""The text-embedding seam — server side (ADR-0014, Thread 20a).
+"""The text-embedding seam — server side (ADR-0014).
 
-Thread 19 ships one vector per chunk. Retrieval (Thread 22) also needs the topic
+Thread 19 ships one vector per chunk. Retrieval also needs the topic
 *definition* embedded into the same space to match against those chunks, and
 redline's TypeScript links no embedding model — so the sidecar owns query
 embedding too, exactly as it owns chunk embedding.

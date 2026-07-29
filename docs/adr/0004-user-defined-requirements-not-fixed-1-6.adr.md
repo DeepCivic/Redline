@@ -105,6 +105,6 @@ fixed 1–6 model entirely.**
   decision row updated; this ADR indexed in `docs/adr/README.md`.
 - Thread 2a (domain reshape) lands the entity changes tests-first; `redline-domain`
   purity (validate.sh check #4) keeps `Requirement`/`RequirementSet` dependency-free.
-- The `NumbatchClassifier` adapter (Thread 5) is the only place `requirementId` ↔
+- The `NumbatchClassifier` adapter is the only place `requirementId` ↔
   Numbatch `topic_id` is translated; its contract test pins the mapping against a
   captured Numbatch payload.

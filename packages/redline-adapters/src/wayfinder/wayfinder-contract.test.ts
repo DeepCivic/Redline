@@ -48,7 +48,7 @@ describe.skipIf(wayfinder === null)("Wayfinder pivot contract", () => {
     expect(result.hasNumericData).toBe(true);
   });
 
-  // The Document Map (Thread 25) reuses computePivot's *count* measure ranking —
+  // The Document Map reuses computePivot's *count* measure ranking —
   // descending count, alphabetical tiebreak — over redline's own types. Freeze
   // the order upstream produces so drift in the ranking rule surfaces here, the
   // one package that may reach Wayfinder.

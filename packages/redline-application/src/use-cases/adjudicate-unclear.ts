@@ -13,10 +13,10 @@ import {
 
 // AdjudicateUnclear — the third leg of the lens's first-pass classification
 // (design doc §3, "LLM adjudication → clear match + one-sentence rationale").
-// It runs *only* on what retrieval (Thread 22) left genuinely unclear: for each
+// It runs *only* on what retrieval left genuinely unclear: for each
 // such document it asks the IAdjudicator port to choose among the contending
 // topics and to say, in one sentence, why. What retrieval settled cleanly, and
-// what a hard rule already claimed (Thread 21), never reach the model.
+// what a hard rule already claimed, never reach the model.
 //
 // This is one independent leg of §3, composed by the caller, not chained to the
 // hard-rule pre-pass or retrieval (no orchestrator, D4). The caller decides what

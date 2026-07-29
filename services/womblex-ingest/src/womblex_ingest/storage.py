@@ -8,7 +8,7 @@ model is durably stored alongside the Parquet shards, so `GET /extractions/...`
 survives a sidecar restart (MinIO is the record).
 
 `list_objects` was added for Thread 37b: the real extractor discovers the Parquet
-shards the womblex pod (Thread 37a) landed under `proc/{evaluationId}/` — whose
+shards the womblex pod landed under `proc/{evaluationId}/` — whose
 batch/run-directory names are womblex's, not ours — rather than assuming a fixed
 set of keys.
 """

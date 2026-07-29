@@ -1,13 +1,13 @@
 // WomblexTextEmbedder — implements the domain's ITextEmbedder over the
 // womblex-ingest sidecar's query-embedding seam (`POST /embeddings/query`,
-// ADR-0014 / Thread 20a).
+// ADR-0014).
 //
 // redline's TypeScript links no embedding model, so the sidecar — which already
 // owns chunk embedding — embeds a topic definition too, in the *same* space
 // (same declared model, same dimensions, L2-normalised). This adapter POSTs the
 // text, narrows the response, and parses `values` into a Float32Array so a query
 // vector and a chunk vector share one representation and cosine similarity is a
-// dot product (Thread 22).
+// dot product.
 //
 // Designed "as if C" (ADR-0001): the only coupling to the sidecar is HTTP + JSON.
 

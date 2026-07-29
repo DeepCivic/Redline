@@ -117,7 +117,7 @@ money:
     numeric_fraction_min: 0.7
     min_cells: 3
     # PROVISIONAL — tune against *.money_columns.parquet on the first real
-    # corpus (thread 60); that sidecar is the per-column verdict audit and is
+    # corpus; that sidecar is the per-column verdict audit and is
     # the surface that makes these falsifiable.
     #
     # Header matching is whole-token, so `subtotal` is NOT covered by the

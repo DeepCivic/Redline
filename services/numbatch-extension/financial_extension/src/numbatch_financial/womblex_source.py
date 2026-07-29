@@ -2,7 +2,7 @@
 
 Build plan §6: the worker reads womblex ``table_cells`` / ``sheet_cell`` /
 ``form_fields`` (currency-typed) **for a topic's already-deduped matched chunks**.
-In the vendored fork (Thread 16) that feed is Numbatch's own ingestion store —
+In the vendored fork that feed is Numbatch's own ingestion store —
 the same chunk Parquet Numbatch classified, keyed on ``source_doc_id`` and the
 matched chunk ids. Here we express it as a small :class:`WomblexSource` protocol
 so the worker depends only on the seam, and provide an in-memory fake so the

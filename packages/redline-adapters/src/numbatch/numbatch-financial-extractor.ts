@@ -6,7 +6,7 @@
 // FinancialExtraction[] (estimateAud: number | null + description + provenance).
 //
 // The topic_id ↔ requirementId translation is the same binding the classifier
-// uses (Thread 5): redline speaks "requirement", Numbatch speaks "topic". Topics
+// uses: redline speaks "requirement", Numbatch speaks "topic". Topics
 // with no mapping are dropped, not invented — the binding is the source of truth.
 //
 // Designed "as if C" (ADR-0001): the only coupling to Numbatch is HTTP + JSON.

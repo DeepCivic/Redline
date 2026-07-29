@@ -199,9 +199,9 @@ class StubWomblexExtractor:
 def build_extractor(mode: str, *, storage=None, bucket: str = "redline") -> Extractor:
     if mode == "real":
         # Imported lazily so `pip install womblex`/pyarrow is only required in real
-        # mode. The real extractor reads the womblex pod's shards (Thread 37a) from
+        # mode. The real extractor reads the womblex pod's shards from
         # object storage, so it needs the same storage handle + bucket the API
-        # writes JSON through (Thread 37b).
+        # writes JSON through.
         from womblex_ingest.real_extractor import RealWomblexExtractor
 
         if storage is None:

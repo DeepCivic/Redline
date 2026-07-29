@@ -1,12 +1,21 @@
 """Thread 37b — the real binding, driven over real Parquet shards.
 
-The womblex engine only runs in its own Python-3.12 pod (Thread 37a); its OCR dep
-has no wheel on the interpreter running this suite, so we cannot invoke the engine
-here. What we *can* prove is the binding's own contract: given the Parquet shard
-layout the pod lands in MinIO (`proc/{evaluationId}/*.elements/.chunks/
-.table_cells/.embeddings.parquet`, keyed by `source_hash`), `RealWomblexExtractor`
-reads them from object storage and maps womblex's schema into the JSON read model
-— with no re-writing of the durable Parquet (the pod owns it).
+This suite proves the binding's own contract *without* invoking the engine: given
+the Parquet shard layout womblex lands in MinIO (`proc/{evaluationId}/
+*.elements/.chunks/.table_cells/.embeddings.parquet`, keyed by `source_hash`),
+`RealWomblexExtractor` reads them from object storage and maps womblex's schema
+into the JSON read model — with no re-writing of the durable Parquet (the engine
+owns it). We fake only the MinIO seam; the read + decode + map path is exactly
+the production one.
+
+Why fake the engine rather than run it: not an interpreter constraint (the
+sidecar image is `python:3.12-slim`, which is inside womblex's own 3.11/3.12
+support — see ADR-0003), but a test-shape one. The engine is a heavy, separately
+scaled subsystem that produces shards via its own cloud runner; the *binding's*
+contract is the read + map, and that is provable from real Parquet bytes alone.
+The default `validate.sh` box does not install the `[womblex]` extra (and may run
+a newer interpreter than the engine supports), so `test_..._matches_the_engines`
+below `importorskip`s the engine while everything here runs on pyarrow alone.
 
 These write *real* Parquet (via pyarrow, the same decoder the binding uses) into
 an in-memory `FakeObjectStorage`, so the read + decode + map path is the
@@ -16,10 +25,11 @@ took for the embeddings seam.
 pyarrow is in the `[dev]` extra, so this suite **runs in the default validate
 lane**. It used to sit behind the `[womblex]` extra alone, which meant every test
 here skipped under `validate.sh` — a mapping written against columns womblex never
-writes reported green for as long as that held (thread 56).
+writes reported green for as long as that held.
 
-The engine-produced-shards proof (real corpus → real pod → these same reads) is
-the compose-level smoke owed to a runtime with Podman, and remains V5 (thread 60).
+The engine-produced-shards proof (real corpus → real engine → these same reads)
+is the compose-level smoke owed to a runtime with Podman, and remains V5
+.
 """
 
 from __future__ import annotations
@@ -44,7 +54,7 @@ MODEL = "kanon-2-embedder"
 
 # womblex's `TABLE_CELLS_SCHEMA`, mirrored exactly from `services/womblex` @
 # `v0.2.0` (`src/womblex/store/output.py:82`). Mirrored rather than imported
-# because this suite runs without the engine installed;
+# because the default validate box does not install the `[womblex]` extra;
 # `test_the_mirrored_table_cells_schema_matches_the_engines` asserts the mirror
 # against the real object whenever womblex IS importable, so the two cannot drift
 # in silence. That guard is the point: the previous fixtures here invented
@@ -106,8 +116,14 @@ def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
         "batch-0000.elements.parquet",
         _parquet(
             [
-                {"source_hash": SOURCE_HASH, "elem_order": 0, "page": 1, "text": "Heading"},
-                {"source_hash": SOURCE_HASH, "elem_order": 1, "page": 1, "text": "network security controls"},
+                {"source_hash": SOURCE_HASH, "elem_order": 0, "page": 1, "kind": "heading", "text": "Heading", "alt_text": None},
+                {"source_hash": SOURCE_HASH, "elem_order": 1, "page": 1, "kind": "paragraph", "text": "network security controls", "alt_text": None},
+                # Thread 61: non-text kinds serialise `text: None`. The `table`
+                # element is the parent of the `table_cells` below, so if its null
+                # text raised, the document — and all of its pricing — would be
+                # lost. The `image` carries only `alt_text`.
+                {"source_hash": SOURCE_HASH, "elem_order": 2, "page": 1, "kind": "table", "text": None, "alt_text": None},
+                {"source_hash": SOURCE_HASH, "elem_order": 3, "page": 1, "kind": "image", "text": None, "alt_text": "Vendor logo"},
             ]
         ),
     )
@@ -183,13 +199,18 @@ def test_reads_the_pod_shards_into_a_json_read_model() -> None:
     result = RealWomblexExtractor(storage, "redline").extract("eval-real", ["SynthResponse1.pdf"])
 
     assert result.document_count == 1
-    # The pod owns the durable Parquet; the binding does not re-write shards.
+    # The engine owns the durable Parquet; the binding does not re-write shards.
     assert result.shards == []
     document = result.documents[0]
     assert document.documentId == SOURCE_HASH
+    # Thread 61: every element maps, including the non-text `table` and `image`
+    # kinds. `table` (null text) → ""; `image` → its `alt_text`. elementOrder
+    # stays contiguous, which the table-cell join below relies on.
     assert [(e.elementOrder, e.text) for e in document.elements] == [
         (0, "Heading"),
         (1, "network security controls"),
+        (2, ""),
+        (3, "Vendor logo"),
     ]
     # Chunks come back ordered by chunk_index, with the recomposed join key.
     assert [c.chunkId for c in document.chunks] == [f"{SOURCE_HASH}:0", f"{SOURCE_HASH}:1"]
@@ -234,7 +255,7 @@ def test_absent_embed_stage_omits_embeddings_but_still_extracts() -> None:
 
 def test_no_shards_under_the_prefix_fails_loudly() -> None:
     # An empty ExtractionResult would masquerade as "extracted, found nothing";
-    # the binding refuses so a missing pod run is diagnosable.
+    # the binding refuses so a missing engine run is diagnosable.
     with pytest.raises(ShardSchemaError):
         RealWomblexExtractor(FakeObjectStorage(), "redline").extract("eval-real", ["x.pdf"])
 

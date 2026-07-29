@@ -8,7 +8,7 @@
 
 ## Context
 
-Build plan §8 decision #2 — *"Parquet boundary (Thread 4) — womblex sidecar emits
+Build plan §8 decision #2 — *"Parquet boundary — womblex sidecar emits
 **JSON** (recommended) vs a Parquet-reading TS adapter"* — is marked *decide in
 Thread 4*. Thread 4 implements `IProcurementExtractionReader` (elements / chunks /
 table cells + provenance) in `packages/redline-adapters`, so the shape of the seam

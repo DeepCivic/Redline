@@ -25,9 +25,9 @@ Building Thread 17 forced it. `Topic { id, name, definition }` and
    that key is the topic's own.
 
 The answer is load-bearing downstream. Boundary decisions are content-addressed
-against topics (Thread 27–28) and must still bite when the lens is applied to
-another corpus (Thread 30); the persisted binding is `requirementId ↔ topic_id`
-(Thread 29); decisions are pushed back as topic samples (Thread 33). If a
+against topics and must still bite when the lens is applied to
+another corpus; the persisted binding is `requirementId ↔ topic_id`
+; decisions are pushed back as topic samples. If a
 projection minted new ids, every one of those seams would need a second mapping
 to get back to the topic.
 
@@ -56,7 +56,7 @@ identity-preserving: a projected requirement's `id` *is* its topic's `id`.**
 
 **Positive**
 
-- One mapping, not two. `requirementId ↔ topic_id` (Thread 29) stays the single
+- One mapping, not two. `requirementId ↔ topic_id` stays the single
   translation, exactly as ADR-0004 intended, and the adapter needs no
   evaluation-scoped id table.
 - Boundary decisions re-attach for free. A decision recorded against a topic

@@ -24,8 +24,15 @@ Column names are read defensively, but only across spellings womblex genuinely
 writes: a table cell arrives from `table_cells` (`parent_elem_order`) or from a
 `sheet_cell` element (`elem_order`), and one mapping serves both. Anything the
 mapping cannot honour is a *finding* to be raised as its own thread + ADR, not
-silently coerced — so a missing required key raises rather than emitting a
+silently coerced — so a missing required *key* raises rather than emitting a
 half-populated record.
+
+The one field that is legitimately absent, not a finding, is an element's `text`
+: womblex's `Element.text` is `str | None`, and every non-text kind
+(`table`, `image`, `figure`, `form`, `page_break`, `sheet_meta`, `sheet_cell`)
+serialises `text: None`. `map_element` maps those elements too — falling back to
+`alt_text` then `""` — because raising on one would lose the whole document, and
+every real tender carries tables.
 """
 
 from __future__ import annotations
@@ -186,12 +193,26 @@ def _is_plain_number(text: str) -> bool:
 
 
 def map_element(source_hash: str, row: Row) -> ElementRecord:
-    """`source_hash` → documentId, `elem_order` → elementOrder (design §)."""
+    """`source_hash` → documentId, `elem_order` → elementOrder (design §).
+
+    `text` is **not** required. womblex's `Element.text` is `str |
+    None`: only the text-bearing kinds (`TEXT_KINDS`) populate it, while `table`,
+    `image`, `figure`, `form`, `page_break`, `sheet_meta` and `sheet_cell`
+    serialise `text: None`. Requiring it here raised `ShardSchemaError` on the
+    first non-text element and — via `map_document_extraction`, which maps every
+    row — lost the whole document, including its `table` element and therefore all
+    of its pricing. Every element is kept so `elementOrder` provenance stays
+    contiguous; the visible text falls back to `alt_text` (which `ELEMENT_SCHEMA`
+    carries for `image`/`figure`) then to `""`. `ExtractionElement.text` is a
+    non-nullable `string` in `redline-domain`, so `""` — not `None` — is the
+    honest empty (a sibling of ADR-0016's verbatim-value contract decision).
+    """
+    text = _optional(row, "text", "alt_text")
     return ElementRecord(
         documentId=source_hash,
         elementOrder=int(_require(row, "elem_order", "element_order")),
         page=_optional(row, "page", "page_number"),
-        text=str(_require(row, "text")),
+        text=str(text) if text is not None else "",
     )
 
 

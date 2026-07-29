@@ -2,7 +2,7 @@ import type { Result } from "../result";
 
 // Read-only view of womblex's `*.embeddings.parquet` sibling (ADR-0014). The
 // womblex sidecar reads its own Parquet and serves vectors as JSON floats over
-// GET /embeddings/{evaluationId}/{documentId}; the adapter (Thread 20) parses
+// GET /embeddings/{evaluationId}/{documentId}; the adapter parses
 // them and the domain only sees plain data. Vectors join the extraction's chunks
 // on chunkId — the same "{source_hash}:{chunk_index}" vocabulary the extraction
 // seam already speaks.

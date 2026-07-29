@@ -11,9 +11,9 @@ import {
 } from "@redline/redline-domain";
 import { AdjudicateUnclear, type UnclearDocument } from "./adjudicate-unclear";
 
-// LLM adjudication (Thread 23) — the third leg of the first-pass path (design
+// LLM adjudication — the third leg of the first-pass path (design
 // doc §3, "LLM adjudication → clear match + one-sentence rationale"). It runs
-// only on what retrieval (Thread 22) left genuinely unclear, asks the model to
+// only on what retrieval left genuinely unclear, asks the model to
 // choose among the contending topics, and emits a RequirementClassification
 // that carries the one-sentence rationale alongside the shared shape.
 

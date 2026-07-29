@@ -1,4 +1,4 @@
-"""The stub text embedder and the query wire model (Thread 20a, ADR-0014).
+"""The stub text embedder and the query wire model (ADR-0014).
 
 `StubTextEmbedder` embeds arbitrary text into the *same* space the stub's chunk
 vectors live in (same model id, same dimensions), deterministically, so a

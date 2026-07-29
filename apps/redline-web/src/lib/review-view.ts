@@ -7,7 +7,7 @@ import {
   type ReviewSort,
 } from "./review-grid";
 
-// View model for the in-app review grid (Thread 12). A pure transform of a
+// View model for the in-app review grid. A pure transform of a
 // ReviewGrid into presentation-ready shapes the Next.js/React shell binds to —
 // header cells (with the active sort indicator + next-click direction), the
 // sorted/filtered body rows, and a resolved source deep-link href per row.

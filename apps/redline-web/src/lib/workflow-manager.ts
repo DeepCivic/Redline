@@ -15,7 +15,7 @@ import type {
 } from "@redline/redline-application";
 
 // WorkflowManager — the specialist control surface's brain (build plan §5 /
-// Thread 11). A pure, in-memory model of the "drag documents into response
+/). A pure, in-memory model of the "drag documents into response
 // groups" composition: it lets a specialist add vendors, create response groups,
 // assign/move/unassign documents, mark consortiums, and split a vendor's
 // multiple bids — the three relationship shapes the plan calls out. It holds no

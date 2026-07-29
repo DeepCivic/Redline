@@ -1,5 +1,5 @@
 // The wire shape served by the womblex-ingest sidecar's query-embedding seam
-// (`POST /embeddings/query`, ADR-0014 / Thread 20a). This is the one place that
+// (`POST /embeddings/query`, ADR-0014). This is the one place that
 // trusts the wire and narrows `unknown` → the domain's QueryEmbedding, parsing
 // the JSON `number[]` into a `Float32Array` (the same binding constraint the
 // chunk vectors cross under — ADR-0014). Kept internal to the adapter.
@@ -24,7 +24,7 @@ const isNumberArray = (value: unknown): value is number[] =>
 
 // Narrow an untrusted JSON body into a QueryEmbedding, or a VALIDATION_FAILED
 // DomainError describing the first structural violation. The query is chunk-free
-// (Thread 20a): no join key to validate, only the model/dimensions/values triple.
+//: no join key to validate, only the model/dimensions/values triple.
 export const parseQueryEmbedding = (
   body: unknown,
 ): Result<QueryEmbedding, DomainError> => {

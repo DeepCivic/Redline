@@ -8,10 +8,10 @@ fork; ``build_app`` here for standalone tests). Two routers:
     GET  /financial-profiles/{id}         read one profile
     GET  /financial-extractions/{doc_id}  read a document's extracted figures
 
-The config endpoints (Thread 6) are idempotent by ``topic_id`` (a topic = a
+The config endpoints are idempotent by ``topic_id`` (a topic = a
 redline requirement): re-creating for a topic that already has a live profile
 returns the existing one (200), never a duplicate — matching the bootstrap's
-"safe to re-run" contract (ADR-0005). The extraction read endpoint (Thread 8)
+"safe to re-run" contract (ADR-0005). The extraction read endpoint
 serves the figures the Thread 7 worker wrote so the ``NumbatchFinancialExtractor``
 adapter can fill ``ProcurementResponse.costing``.
 

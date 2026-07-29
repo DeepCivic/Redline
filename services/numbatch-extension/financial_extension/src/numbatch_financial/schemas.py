@@ -1,8 +1,8 @@
 """Pydantic v2 request/response schemas for the financial extension's API.
 
 Numbatch's backend is FastAPI + Pydantic v2, so these mirror its DTO style. The
-config API (Thread 6) creates and reads financial profiles; the extraction read
-API (Thread 8) serves the figures the Thread 7 worker wrote, so the
+config API creates and reads financial profiles; the extraction read
+API serves the figures the Thread 7 worker wrote, so the
 ``NumbatchFinancialExtractor`` adapter can fill ``ProcurementResponse.costing``.
 """
 

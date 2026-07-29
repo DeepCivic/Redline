@@ -2,9 +2,9 @@
 
 These tests exercise `shard_reader.py` — the one place that understands womblex's
 real Parquet schema — with hand-built row dicts, so the schema *contract* is
-provable without pyarrow, a real shard, or the womblex engine (which only runs in
-its own Python-3.12 pod, Thread 37a). The Parquet-decode + storage-read side of
-the binding is covered by `test_real_extractor.py` (pyarrow-gated).
+provable without pyarrow, a real shard, or the womblex engine installed. The
+Parquet-decode + storage-read side of the binding is covered by
+`test_real_extractor.py` (pyarrow-gated).
 """
 
 from __future__ import annotations
@@ -48,6 +48,58 @@ def test_element_accepts_the_element_order_alias() -> None:
 def test_element_without_elem_order_is_a_schema_error() -> None:
     with pytest.raises(ShardSchemaError):
         map_element(SOURCE_HASH, {"page": 1, "text": "x"})
+
+
+# Thread 61 (V1a) — non-text element kinds. womblex's `Element.text` is `str |
+# None`; only the text-bearing kinds (TEXT_KINDS) populate it, and `table`,
+# `image`, `figure`, `form`, `page_break`, `sheet_meta` and `sheet_cell` all
+# serialise `text: None`. `map_element` must map every element rather than
+# `_require` a text it will never find — one such element raising would lose the
+# whole document's extraction, and every real tender carries tables. The element
+# is kept (never dropped) so `elementOrder` provenance stays contiguous; the
+# visible text falls back to `alt_text` (ELEMENT_SCHEMA carries it for
+# `image`/`figure`) then to `""`.
+
+
+def test_non_text_element_with_null_text_maps_to_empty_string_not_a_raise() -> None:
+    # A `table` element carries no text of its own (its cells are a sibling
+    # shard). The row still maps — losing it would break elementOrder contiguity
+    # and, via `map_document_extraction`, lose the whole document.
+    element = map_element(SOURCE_HASH, {"elem_order": 4, "kind": "table", "text": None})
+
+    assert element.elementOrder == 4
+    assert element.text == ""
+
+
+def test_non_text_element_with_a_missing_text_key_maps_to_empty_string() -> None:
+    # womblex writes the column, but a producer/fixture that omits it entirely
+    # must map identically to an explicit `None` — the absence is the same fact.
+    element = map_element(SOURCE_HASH, {"elem_order": 5, "kind": "page_break"})
+
+    assert element.text == ""
+
+
+def test_image_element_falls_back_to_alt_text() -> None:
+    # ELEMENT_SCHEMA carries `alt_text` for `image`/`figure`; it is the only
+    # human-readable string such an element has, so it is the map's text when
+    # `text` is null. This is what BuildDocumentMap renders for a figure.
+    element = map_element(
+        SOURCE_HASH,
+        {"elem_order": 6, "kind": "image", "text": None, "alt_text": "Org chart"},
+    )
+
+    assert element.text == "Org chart"
+
+
+def test_text_is_preferred_over_alt_text_when_both_are_present() -> None:
+    # A text-bearing element that also happens to carry alt_text keeps its own
+    # text; alt_text is strictly the fallback, never an override.
+    element = map_element(
+        SOURCE_HASH,
+        {"elem_order": 7, "kind": "caption", "text": "Figure 1", "alt_text": "ignored"},
+    )
+
+    assert element.text == "Figure 1"
 
 
 def test_chunk_id_is_recomposed_from_source_hash_and_chunk_index() -> None:
@@ -234,6 +286,40 @@ def test_extraction_orders_chunks_by_chunk_index() -> None:
         f"{SOURCE_HASH}:1",
         f"{SOURCE_HASH}:2",
     ]
+
+
+def test_extraction_maps_every_element_including_non_text_kinds() -> None:
+    # Thread 61 exit test: a shard whose elements include `table`, `image` and
+    # `page_break` maps to a DocumentExtraction with every element present and no
+    # raise. Before this, the `table` row (the only kind that has `table_cells`
+    # children) would raise `ShardSchemaError` on its null text and lose the whole
+    # document — taking its pricing with it, on exactly the table-bearing tenders
+    # redline exists to read.
+    rows = ShardRows(
+        source_hash=SOURCE_HASH,
+        elements=[
+            {"elem_order": 0, "kind": "heading", "page": 1, "text": "Pricing schedule"},
+            {"elem_order": 1, "kind": "table", "page": 1, "text": None},
+            {"elem_order": 2, "kind": "image", "page": 1, "text": None, "alt_text": "Logo"},
+            {"elem_order": 3, "kind": "page_break", "page": 1, "text": None},
+        ],
+        chunks=[{"chunk_index": 0, "text": "c"}],
+        table_cells=[table_cells_row(parent_elem_order=1, value="$80,000.00")],
+    )
+
+    extraction = map_document_extraction(rows)
+
+    # Every element present, in order, elementOrder contiguous.
+    assert [e.elementOrder for e in extraction.elements] == [0, 1, 2, 3]
+    assert [e.text for e in extraction.elements] == [
+        "Pricing schedule",
+        "",  # table: null text → ""
+        "Logo",  # image: alt_text fallback
+        "",  # page_break: null text → ""
+    ]
+    # The table's cell survives because its parent element no longer kills the doc.
+    assert [c.elementOrder for c in extraction.tableCells] == [1]
+    assert extraction.tableCells[0].isCurrency is True
 
 
 def test_embeddings_join_chunks_and_declare_the_model() -> None:

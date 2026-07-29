@@ -24,8 +24,8 @@ import {
 // cosine similarity is a plain dot product — no re-normalisation here.
 //
 // Interchangeability at the port boundary (D2): the rows emitted here are the
-// same RequirementClassification the hard-rule pre-pass (Thread 21) and the
-// Numbatch adapter (Thread 5) produce. A topic's id is the requirement's id it
+// same RequirementClassification the hard-rule pre-pass and the
+// Numbatch adapter produce. A topic's id is the requirement's id it
 // projects to (ADR-0010), so the matched topic's id is written straight into
 // `requirementId` — no mapping table.
 //
