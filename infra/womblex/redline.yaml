@@ -31,6 +31,14 @@ extraction:
     # financial path reads (architecture.md §4, the join keys).
     include_tables: true
   ocr:
+    # LOAD-BEARING, not a default. Reconstructing table cells inside a
+    # layout-detected table rect needs per-detection OCR quads to bin into rows
+    # and columns, and only region-based engines supply them. The LLM/VLM
+    # engines (`mistral-ocr`, `ollama`) resolve reading order natively and
+    # return markdown with no regions, so switching to one would silently
+    # delete every table cell on a scanned page — and with it all pricing on
+    # scanned tenders. See womblex `ingest/strategies_scanned.py` and
+    # decisions.md "Table-cell reconstruction on OCR pages".
     engine: paddleocr
     dpi: 300
     lang: eng
@@ -68,6 +76,75 @@ embedding:
   enabled: true
   model: kanon-2-embedder
   task: retrieval/document
+
+# ── The pricing leg (delivery-plan.md §4 V3, threads 62 + 63) ────────────────
+# INERT until the submodule bump: the pinned v0.2.0 engine has no `money:`
+# section, and womblex's config models set no pydantic `extra=`, so v2's default
+# (`ignore`) makes this a silent no-op rather than an error — the same
+# convention this file's header already states. Verified, not assumed.
+#
+# Not part of `womblex run`/`worker` either: this is a separate per-stage
+# command (`womblex money --shards <dir>`) run after the pipeline, writing
+# *.money_spans.parquet + *.money_columns.parquet siblings. Offline and
+# API-free — no Isaacus spend. Wiring that invocation is thread 63.
+#
+# Why it matters: the column-evidenced path recovers bare numbers whose
+# money-ness comes from their column header, which womblex measures as ~98.7%
+# of its corpus's amounts. A tender schedule headed `Unit Price ($)` over cells
+# `4500`, `12000` is exactly that shape, and redline's marker-requiring seam
+# derivation (ADR-0016) sees none of it.
+money:
+  enabled: true
+  # Prose prices ("a fixed fee of $48,000 per annum"). redline has no other
+  # route to these: the narrative locus carries char offsets in the same space
+  # as chunks, so they map to (document, requirement) the way cells do.
+  narrative: true
+  default_currency: AUD
+  # Australia does not use comma decimals. Mixed-denomination tenders remain a
+  # known gap (ADR-0016 Consequences) — this setting does not address them.
+  international_numbers: false
+  # Bare numbers near financial vocabulary in *prose*. Upstream measures this as
+  # low precision, and an invented price is worse than a missing one. Header
+  # vocabulary — the high-value use of the same terms — is unaffected by this.
+  implicit_context: false
+  min_confidence: 0.5
+  # null inherits processing.text_source (below), which is what keeps money
+  # offsets in the same coordinate space as the chunks redline retrieves over.
+  text_source: null
+
+  columns:
+    enabled: true
+    numeric_fraction_min: 0.7
+    min_cells: 3
+    # PROVISIONAL — tune against *.money_columns.parquet on the first real
+    # corpus (thread 60); that sidecar is the per-column verdict audit and is
+    # the surface that makes these falsifiable.
+    #
+    # Header matching is whole-token, so `subtotal` is NOT covered by the
+    # built-in `total`. The rest are tender-schedule vocabulary the built-in
+    # set (price, cost, fee, charge, quote, total, gst, amount, payment) misses.
+    extra_header_terms:
+      - subtotal
+      - rrp
+      - extended
+      - disbursement
+      - disbursements
+      - freight
+    # A veto is only needed for headers that WOULD otherwise be promoted — i.e.
+    # ones carrying money vocabulary while not being money. A bare `Qty` column
+    # needs no veto because nothing promotes it in the first place. These are
+    # the tender headers that collide with the built-in money terms:
+    #   `Cost Centre` (cost), `Payment Terms` (payment), `Value Rating` (value),
+    #   `Price Band` (price), `Value Weighting` (value).
+    # Each is still escaped by a header declaring its own currency, so
+    # `Warranty ($)` survives — the veto check yields to `header_currency`.
+    extra_veto_terms:
+      - centre
+      - center
+      - terms
+      - rating
+      - band
+      - weighting
 
 processing:
   batch_size: 25

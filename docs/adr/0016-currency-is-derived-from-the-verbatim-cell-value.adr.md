@@ -11,9 +11,10 @@
 > The *conclusion* (require an explicit marker) is also now measurably too narrow:
 > womblex measures its column-evidenced path as carrying ~98.7% of amounts, which
 > a marker requirement cannot see. See
-> [`../reviews/2026-07-29-womblex-upstream-drift-review.md`](../reviews/2026-07-29-womblex-upstream-drift-review.md).
-> Nothing is unwound here — this ADR was never accepted — but it should be
-> superseded rather than promoted.
+> [`../delivery-plan.md`](../delivery-plan.md) §3 (upstream delta) and §4 V3. Nothing is unwound
+> here — this ADR was never accepted — but it should be superseded rather than
+> promoted, and the superseding ADR should state whether `derive_is_currency`
+> survives as a fallback for shards written without the money stage.
 - **Corrects**: [`architecture.md`](../architecture.md) §7.4, which records the
   opposite ("currency inferred from `value_type`"). That correction was written
   before `services/womblex` was initialised and is falsified by the engine's
