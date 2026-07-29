@@ -28,7 +28,7 @@ dependencies = [
 # stack, so the read side of the binding runs anywhere pyarrow resolves even when
 # the engine itself only runs in its pod.
 womblex = [
-    "womblex==0.2.0",
+    "womblex==0.3.0",
     "pyarrow>=16,<25",
 ]
 dev = [
