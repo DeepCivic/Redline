@@ -58,7 +58,7 @@ redline/
 ├── apps/
 │   └── redline-web/                # specialist control surface + review grid
 ├── services/
-│   ├── womblex/                 # SUBMODULE: the womblex engine @ v0.2.0
+│   ├── womblex/                 # SUBMODULE: the womblex engine @ v0.3.0
 │   ├── womblex-ingest/          # redline's Parquet→JSON read sidecar
 │   ├── numbatch/                # SUBMODULE: the Numbatch fork @ 72bcead
 │   └── numbatch-extension/      # redline's additive overlay on the fork

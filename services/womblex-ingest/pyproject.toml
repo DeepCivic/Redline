@@ -17,10 +17,19 @@ dependencies = [
 # This extra is here so a real-lane test environment can `pip install .[womblex]`
 # to exercise the query-embedding half of the binding.
 #
-# The version MUST track the services/womblex submodule tag — that submodule is
+# The version MUST track the services/womblex submodule — that submodule is
 # the schema the shard mapping is written against, and a sidecar embedding
 # against a different engine build is the one drift nothing else would catch.
-# validate.sh check #13 enforces the two stay equal.
+# validate.sh check #13 enforces the two stay equal, comparing this pin against
+# the submodule's exact git tag.
+#
+# NOTE (0.3.0 bump): the submodule gitlink tracks the *merged* `Release 0.3.0`
+# commit on womblex's `main`, not a `v0.3.0` git tag — upstream had not pushed
+# the tag when this landed (an accepted override; the release code is present).
+# So check #13 warn+skips rather than passing until the tag exists and the
+# gitlink is re-pointed at it. This pin (`0.3.0`) already matches the engine
+# code; the outstanding step is purely restoring the guard. See
+# docs/delivery-plan.md thread 62 and §7.
 # womblex needs Python 3.11/3.12 (its OCR dep has no 3.10 wheel).
 #
 # `pyarrow` is what the binding uses to DECODE the Parquet shards the pod landed

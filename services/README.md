@@ -8,7 +8,7 @@ packages.
 ([ADR-0015](../docs/adr/0015-upstream-python-engines-are-submodules.adr.md)). Run
 `git submodule update --init` on a fresh clone.
 
-- **`womblex/`** — the womblex document-extraction engine, pinned to `v0.2.0`. Its
+- **`womblex/`** — the womblex document-extraction engine, pinned to `v0.3.0`. Its
   own image and cloud runner (Postgres job queue + scalable `worker`, native S3
   staging) are what the `womblex` compose profile runs; redline supplies only
   configuration (`infra/womblex/redline.yaml`).

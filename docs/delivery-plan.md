@@ -342,7 +342,7 @@ per-brand pivot totals them._
 > bare-number column** — the ~98.7% case redline is blind to today. Supersedes
 > [ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md);
 > decide there whether `derive_is_currency` is retained as a fallback for shards
-> with no money sidecar. Blocked on 62 (bump) and 63 (run the stage).
+> with no money sidecar. Unblocked by 62 (bump landed); still needs 63 (run the stage).
 >
 > **One upstream limitation to carry into the exit test, because no config can
 > fix it.** `classify_column` checks vetoes *before* money terms and returns
@@ -401,7 +401,7 @@ document delineated by topic and brand, with provenance back to source._
 | 61 | V1a — map non-text elements | **V** | womblex-ingest | 🔵 **next** — found by QA on 56 (§4 V1a). `map_element` requires `text`, but womblex writes `text: None` for every non-text kind; one such element raises and the **whole document's extraction is lost**. Blocks the real lane. |
 | 57 | V2 — retrieval-backed classifier | **V** | redline-web | 🔵 next |
 | 58 | V3 — currency from table cells | **V** | adapters | 🔵 next — **respecified** (§4 V3): read `*.money_spans.parquet` instead of deriving `isCurrency`. Supersedes ADR-0016. Blocked on 62 + 63. |
-| 62 | Bump the womblex submodule to `v0.3.0` | **V** | infra, womblex-ingest | 🟡 **in flight** — upstream `0.3.0` is cut (DeepCivic/womblex; MINOR under 0.x — additive money op + table-grid, plus two observable changes: OCR pages emit `kind='table'` elements, `ImageExtractor` removed; no extraction schema moved). Submodule gitlink and the sidecar's `womblex==0.3.0` pin bumped together here. **Must not merge before the womblex PR merges and `v0.3.0` is tagged on its `main`** — the gitlink currently points at the release *branch* commit, so `validate.sh` #13 warn+skips rather than passing until it is re-pointed at the tagged commit. Enables 58 and the OCR table cells. |
+| 62 | Bump the womblex submodule to `v0.3.0` | **V** | infra, womblex-ingest | ✅ **done (with one carried caveat)** — the womblex `0.3.0` PR is merged on its `main` (`b5730b0`, "Release 0.3.0 (#29)", `version = "0.3.0"`); gitlink re-pointed there from the pre-merge branch commit `c255902` (identical trees) and the working tree checked out to match, so the recorded gitlink, the checkout, and the sidecar's `womblex==0.3.0` pin all agree in substance. **Caveat:** upstream never pushed the `v0.3.0` **tag** (deliberate override — the release code is present and that is what matters here), so `validate.sh` #13 **warn+skips** rather than `pass`ing, because it compares against an *exact tag* by design. This is a knowingly accepted gap, not a silent one; see the §7 note. **Re-point the gitlink to the tagged commit and confirm #13 `pass`es the moment `v0.3.0` lands on womblex's `main`.** MINOR under 0.x — additive money op + table-grid, plus two observable changes: OCR pages emit `kind='table'` elements, `ImageExtractor` removed; no extraction schema moved. Enables 58 and the OCR table cells. |
 | 63 | Run the money stage | **V** | infra | ⚪ **not started** — the `money:` section is already in `infra/womblex/redline.yaml` (inert until 62; pydantic ignores unknown sections — verified), so this thread is the *invocation*: a `womblex money --shards` step after the run. Not part of `womblex run`/`worker`, and `money_shards()` takes a local `Path` while the distributed lane publishes to S3 — needs a stage-in/stage-out decision (§4 V3). |
 | 59 | V4 — Next.js shell | **V** | redline-web | 🔵 next (was 41) |
 | 60 | V5 — real corpus end to end | **V** | infra | 🔵 next — measure the three new OCR-table gates (paddleocr-only, deskew refusal, precision refusal) on the real corpus; still owns the `content_type` join-key gap (§6.2, unchanged upstream) |
@@ -474,10 +474,24 @@ document delineated by topic and brand, with provenance back to source._
    V2 unblocks classification without Numbatch; V3 unblocks pricing without
    Numbatch. Either order, or in parallel.
 
-   > **2026-07-29 (§3, upstream delta).** V3 now sits behind **62** (submodule bump) and **63**
-   > (run the money stage), and 62 is itself gated on an upstream `v0.3.0` tag. If
-   > that tag is slow, run **61, 57 and 59 first** rather than blocking the track
-   > — V3 is the only thread that needs the newer engine.
+   > **2026-07-29 (§3, upstream delta).** V3 sits behind **62** (submodule bump) and **63**
+   > (run the money stage). **62 is done as of the 0.3.0 bump** — the gitlink now
+   > tracks the merged `0.3.0` commit on womblex's `main`, so 63 and V3 are
+   > unblocked on the code. One thing is still outstanding: upstream never pushed
+   > the `v0.3.0` **tag**, so `validate.sh` #13 warn+skips instead of `pass`ing.
+   > That was accepted deliberately (the release code is present); the guard is
+   > restored to a hard `pass` by re-pointing the gitlink at the tagged commit
+   > once womblex tags `v0.3.0`. If 63's money stage proves slow, run **61, 57 and
+   > 59 first** — V3 is the only thread that needs the money sidecars.
+   >
+   > **Carried follow-up — restore check #13 to `pass`.** The pin-drift guard is
+   > the one thing that keeps the engine build and the sidecar pin honest, and it
+   > is currently quiet-by-consent. When womblex pushes `v0.3.0` on its `main`,
+   > `git -C services/womblex fetch --tags && git checkout v0.3.0`, `git add
+   > services/womblex`, and confirm `./validate.sh` reports
+   > `pass "womblex pin (submodule v0.3.0 == sidecar pin 0.3.0)"` rather than the
+   > warn+skip. This is the only step between here and 62 being unconditionally
+   > green.
 4. **V4 (59)** — the shell. The only piece that is genuinely new code, and the
    only reason the product cannot be looked at today.
 5. **V5 (60)** — the real corpus run. The point of the exercise.
