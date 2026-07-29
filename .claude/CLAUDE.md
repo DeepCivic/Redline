@@ -47,7 +47,7 @@ read-only under `@rbrasier/*` (see ADR-0001). Two documents govern:
 tracks nothing.
 
 Both upstream Python engines are **git submodules** consumed for their existing
-capabilities, not reimplemented (**ADR-0015**): `services/womblex` (`v0.2.0`) and
+capabilities, not reimplemented (**ADR-0015**): `services/womblex` (`v0.3.0`) and
 `services/numbatch` (`72bcead`). A submodule holds upstream source only — redline's
 own code sits beside it (`services/womblex-ingest`, `services/numbatch-extension`).
 Run `git submodule update --init` on a fresh clone. Wayfinder stays a build-time
