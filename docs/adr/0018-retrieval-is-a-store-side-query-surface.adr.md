@@ -157,70 +157,101 @@ IChunkStore {
 
 ---
 
-## Addendum — similarity (RAG) is deferred; the exact-fetch half ships alone first
+## Addendum — only vector *similarity search* (ANN / `findSimilar`) is deferred; the graph and the embeddings ship
 
 - **Status**: Proposed
 - **Date**: 2026-07-31
+- **Corrects**: an earlier draft of this addendum that deferred *"the tool/graph
+  surface"* and left the embeddings merely *"stored, not loaded."* That over-cut:
+  it conflated three separable things — the enricher's **graph**, the **embeddings as
+  available data**, and **vector similarity search** — and only the last of those is
+  deferrable. This addendum draws the line correctly.
 
 ### Context
 
-The decision above specifies the *whole* surface at once: exact fetch **and**
-similarity discovery, an ANN index (`pgvector` HNSW) under `findSimilar`, and a
-tool/graph RAG surface for the report builder. Read against what the next two
-releases actually need, that is more than the moment calls for — and the expensive,
-fiddly part (an ANN index to size and tune, a query-embed path, a tool/graph loop)
-sits entirely in the *similarity* half. **RAG is not needed for this release, or the
-one after it.** Building it now buys nothing shippable and risks an index/vector layer
-that has to be maintained and reasoned about before anything depends on it.
+The decision above specifies the whole surface at once. It is worth deferring the
+part that is expensive and not yet needed — but the first cut of this addendum drew
+the line in the wrong place. Three things it treated as one:
 
-The consumer that *does* ship (ADR-0017's deterministic report assembler) works from
-**exact, provenance-addressed fetch** — `fetchChunks` / `fetchByStructure` returning
-byte-identical rows by stable key. That half needs no vector index at all: ordinary
-indexed columns answer it.
+1. **The enricher's graph** — womblex's `enrich` output (`entities`, `graph_edges`,
+   `entity_links`). ADR-0017 names this as *how the report-assembler LLM navigates*:
+   *"traversing a graph and calling tools to locate the right source rows."* It is
+   **not RAG** — no vectors, no nearest-neighbour — it is structured provenance the
+   LLM walks to reach the verbatim rows it copies. The report assembler needs it to
+   do its job efficiently; deferring it removes the near-term navigation mechanic.
+   (`design-principles.md` rules out graph *visualisations*; the *data* graph as a
+   traversal tool is explicitly in scope — ADR-0017.)
+2. **The embeddings as available data** — the Isaacus vectors womblex produces
+   (`*.embeddings.parquet`) are the substrate the enrich/graph stage is built from and
+   the material later similarity search will index. They must be **present and
+   addressable in the store**, not left as inert objects in a bucket. "Available" is a
+   near-term requirement even though "ANN-indexed" is not.
+3. **Vector similarity search** — the ANN index (`pgvector` HNSW), `findSimilar`, and
+   the store-side query-embed path. *This* is the RAG mechanic. It is the expensive,
+   fiddly part (an index to size and tune, a query-embed path, recall/latency
+   budgets), and it is genuinely **not needed for this release or the next**. Building
+   it now risks a half-used vector layer maintained before anything depends on it.
+
+Only (3) is deferrable. (1) and (2) ship.
 
 ### Decision
 
-**Split the surface. Build the exact-fetch half now; defer the similarity half —
-`findSimilar`, the `pgvector`/ANN index, the query-embed path, and the tool/graph RAG
-surface — until a release actually requires it.**
+**Defer only vector *similarity search* — the ANN/`pgvector` index, `findSimilar`, and
+the query-embed path. Ship the graph, the exact-fetch surface, and the embeddings as
+available store data now.**
 
-- **Ships now:** the port's `fetchChunks` / `fetchByStructure`; the `redline_` chunk
-  and provenance tables with their ordinary indexes; the Parquet→DB load. No vector
-  column, no HNSW index, no query embedding. The embedding Parquet still lands in
-  MinIO as the durable record (ADR-0002) — it is *stored*, just not *indexed* yet, so
-  turning similarity on later is a load/index step, not a re-ingest.
-- **Deferred (its own build thread, when a release needs it):** `findSimilar`, the
-  `pgvector` HNSW index (and the FAISS/hnswlib fallback debate), the store-side
-  query-embed path, and the tool/graph surface. The port is *declared* with
-  `findSimilar` in its shape so adding it later is additive, but it may ship
-  **unimplemented** (returning a `NOT_IMPLEMENTED` `DomainError`) until then.
-- **Consequence for ADR-0008 (must be stated plainly):** ADR-0008's cold-start path is
-  *"hard rules → retrieval (nearest-neighbour) → LLM adjudication."* With similarity
-  deferred, **the retrieval leg of that path is deferred with it.** For these
-  releases, cold-start classification rests on hard rules + LLM adjudication over
-  exact/structural fetches; the trained Numbatch overlay engages as before once its
-  sample floor is crossed. This does not weaken ADR-0008 — both paths still satisfy
-  one port — but it narrows what the *untrained* first pass can do until RAG lands,
-  and that trade is accepted on the ground that RAG is not a this-release capability.
+- **Ships now — exact fetch:** the port's `fetchChunks` / `fetchByStructure`; the
+  `redline_` chunk + provenance tables with ordinary indexes; the Parquet→DB load.
+- **Ships now — the graph:** womblex's `enrich` output (`entities`, `graph_edges`,
+  `entity_links`) is loaded into the store and exposed as read tools the LLM
+  traverses, addressing the same provenance-keyed rows. This is the report
+  assembler's navigation mechanic (ADR-0017), and it is not vector search.
+- **Ships now — embeddings available:** `*.embeddings.parquet` is loaded into the
+  store as addressable data (keyed on `(source_hash, chunk_index)`, declaring its
+  `model`/`dimensions` — ADR-0014's surviving invariants), so the graph stage and any
+  consumer can reach a chunk's vector. Loaded and available; simply **not yet under an
+  ANN index**.
+- **Deferred — similarity search only:** `findSimilar`, the `pgvector` HNSW index (and
+  the FAISS/hnswlib fallback debate), and the store-side query-embed path. The port is
+  *declared* with `findSimilar` so adding it later is additive; it may ship
+  **unimplemented** (`NOT_IMPLEMENTED` `DomainError`) until a release needs RAG.
+  Because the vectors are already loaded and available, enabling it is *building an
+  index over data already in the store* — not a load or a re-ingest.
+- **Consequence for ADR-0008 (stated plainly):** ADR-0008's cold-start path is *"hard
+  rules → retrieval (nearest-neighbour) → LLM adjudication."* Only the
+  **nearest-neighbour** step needs vector similarity, so **that step — and only that
+  step — is deferred.** For these releases the untrained first pass runs hard rules +
+  LLM adjudication, the adjudicator navigating via the graph and exact fetch rather
+  than a vector ranking. Both paths still satisfy one port; the trained Numbatch
+  overlay engages as before once its sample floor is crossed. This narrows the
+  untrained first pass until similarity search lands — accepted, on the ground that
+  vector search is not a this-release-or-next capability, and the graph carries much
+  of the navigation in the interim.
 
 ### Consequences
 
-- **Less to build and nothing premature to tune.** No ANN index to size, no
-  recall/latency budget, no query-embed path, no tool loop — none of it enters the
-  system before something depends on it. The "pain in the ass" that a half-used
-  vector/RAG layer becomes is simply not created yet.
-- **The forward door stays open cheaply.** Vectors are already in MinIO; the port
-  already names `findSimilar`; the store backing (`pgvector` vs ANN-over-Parquet) is
-  still an open follow-on ADR — but now it is decided *when RAG is built*, on real
-  need, not speculatively. Turning similarity on is an index build + one adapter
-  method, not a seam change.
-- **The first-pass classifier is weaker in the interim.** Until RAG lands, an
-  untrained lens leans on hard rules + adjudication without nearest-neighbour placing.
-  Accepted deliberately; revisit when a release makes RAG a requirement.
-- The `findSimilar`/`pgvector` material in **Decision → The store**, **The tool/graph
-  surface**, the `pgvector` capacity note under **Negative**, and the similarity
-  clauses of the **Enforcement** exit test are all **deferred by this addendum** —
-  they describe the eventual shape, not this release's build. The exit test that ships
-  asserts exact `fetchChunks`/`fetchByStructure` return byte-identical rows for stable
-  keys; the `findSimilar` ranking and mismatched-model-refusal assertions move to the
-  deferred similarity thread.
+- **The near-term product mechanic is intact.** The report-assembler LLM has the
+  graph to navigate, exact fetch to copy verbatim rows, and the embeddings available
+  as data — everything ADR-0017 says it needs, minus a nearest-neighbour predicate it
+  can do without for now.
+- **Only the expensive, not-yet-needed part is deferred.** No ANN index to size, no
+  recall/latency budget, no query-embed path — none of it enters the system before
+  something depends on it. The "pain in the ass" of a half-used vector-search layer is
+  not created yet.
+- **The forward door is cheap *and* the substrate is ready.** The embeddings are
+  already loaded and available in the store, so enabling similarity is *building an
+  index over present data* + one adapter method — not a re-ingest, not a seam change.
+  The store backing for that index (`pgvector` vs ANN-over-Parquet) stays an open
+  follow-on ADR, decided *when RAG is built*, on real need.
+- **The first-pass classifier is narrower in the interim** — no nearest-neighbour
+  placing until similarity search lands; the graph + adjudication carry it. Accepted
+  deliberately; revisit when a release makes vector search a requirement.
+- **What this addendum defers, precisely:** the `pgvector` HNSW index; `findSimilar`;
+  the store-side query-embed path; and the similarity clauses of the **Enforcement**
+  exit test (the `findSimilar` ranking and mismatched-model-refusal assertions move to
+  the deferred similarity thread). **What it does *not* defer:** the graph tools
+  (**Decision → The tool/graph surface**, minus `find_similar`), the exact-fetch
+  surface, and loading the embeddings into the store. The exit test that ships asserts
+  exact `fetchChunks`/`fetchByStructure` return byte-identical rows for stable keys,
+  the graph tools traverse `enrich` edges to reach those rows, and a chunk's embedding
+  is retrievable as data.
