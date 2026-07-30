@@ -179,12 +179,14 @@ while IFS= read -r f; do
   lc=$(wc -l < "$f")
   [ "$lc" -lt 700 ] && continue
   if [ "$lc" -ge 800 ]; then SIZE_FAILURES+="  $lc  $f\n"; else SIZE_WARNINGS+="  $lc  $f\n"; fi
-# services/womblex and services/numbatch are the vendored upstream submodules —
-# source we never modify, excluded from our own static guards exactly as
-# vendor/wayfinder is. redline's own overlay lives in services/numbatch-extension
-# and IS checked.
+# services/womblex, services/numbatch and services/wayfinder are the vendored
+# upstream submodules — source we never modify (the Wayfinder fork carries
+# redline's mount on its redline-integration branch, but that tree is the fork's
+# to shape, not redline source to lint), excluded from our own static guards
+# exactly as vendor/wayfinder is. redline's own overlay lives in
+# services/numbatch-extension and IS checked.
 done < <(find packages/*/src apps/*/src services/*/src -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.py" \) \
-  ! -path "services/womblex/*" ! -path "services/numbatch/*" \
+  ! -path "services/womblex/*" ! -path "services/numbatch/*" ! -path "services/wayfinder/*" \
   ! -name "*.test.ts" ! -name "*.test.tsx" 2>/dev/null)
 [ -n "$SIZE_WARNINGS" ] && { warn "files ≥ 700 lines — split when next touched:"; printf '%b' "$SIZE_WARNINGS"; }
 if [ -z "$SIZE_FAILURES" ]; then pass "no source file ≥ 800 lines"; else
@@ -323,6 +325,60 @@ else
   fi
   rm -rf "$PY_VENV" 2>/dev/null || true
   find services -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+fi
+
+# ── 15. Wayfinder fork hygiene (services/wayfinder submodule) ────────────────
+# The Wayfinder fork is a submodule we RUN and EDIT (ADR-0019), unlike the
+# byte-identical Python submodules. Two invariants replace "never modified":
+#   (a) the checkout is on the redline-integration branch's commit the
+#       superproject records — redline's mount lives only there;
+#   (b) the fork's `main` has NOT diverged from upstream/main — redline changes
+#       must never leak onto `main`, so upstreaming stays a clean diff.
+# SKIPs (never fails) on a clone without the submodule initialised or without an
+# `upstream` remote to compare against, matching #13's clean-clone posture; CI
+# checks out submodules and has the remote, so CI is where this bites.
+section "15. Wayfinder fork on redline-integration, main undiverged from upstream"
+if [ ! -d services/wayfinder/.git ] && [ ! -f services/wayfinder/.git ]; then
+  skip "wayfinder fork — services/wayfinder not initialised (git submodule update --init)"
+elif ! command -v git >/dev/null 2>&1; then
+  skip "wayfinder fork — git unavailable"
+else
+  WF_CONFIGURED_BRANCH="$(git config -f .gitmodules submodule.services/wayfinder.branch 2>/dev/null)"
+  WF_CURRENT_BRANCH="$(git -C services/wayfinder rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  # (a) The submodule must sit on the branch .gitmodules names. A detached HEAD
+  # (git's default submodule checkout) reads as "HEAD" and is allowed only when
+  # it points at that branch's commit — so we compare commits, not branch names,
+  # to stay robust to a detached-but-correct checkout.
+  WF_BRANCH_SHA="$(git -C services/wayfinder rev-parse "origin/${WF_CONFIGURED_BRANCH}" 2>/dev/null || git -C services/wayfinder rev-parse "${WF_CONFIGURED_BRANCH}" 2>/dev/null)"
+  WF_HEAD_SHA="$(git -C services/wayfinder rev-parse HEAD 2>/dev/null)"
+  WF_ON_BRANCH=false
+  if [ "$WF_CURRENT_BRANCH" = "$WF_CONFIGURED_BRANCH" ]; then WF_ON_BRANCH=true;
+  elif [ -n "$WF_BRANCH_SHA" ] && [ "$WF_HEAD_SHA" = "$WF_BRANCH_SHA" ]; then WF_ON_BRANCH=true; fi
+
+  # (b) The fork's main must not have diverged from upstream/main: every commit
+  # on the fork's main is an ancestor of upstream/main (a clean mirror) OR the
+  # two are identical. Any fork-only commit on `main` is the leak this catches.
+  # Needs an `upstream` remote; SKIP that half rather than fail when it is absent.
+  WF_MAIN_DIVERGED="unknown"
+  if git -C services/wayfinder rev-parse upstream/main >/dev/null 2>&1 \
+     && git -C services/wayfinder rev-parse origin/main >/dev/null 2>&1; then
+    if [ -z "$(git -C services/wayfinder log --oneline upstream/main..origin/main 2>/dev/null)" ]; then
+      WF_MAIN_DIVERGED=false
+    else
+      WF_MAIN_DIVERGED=true
+    fi
+  fi
+
+  if [ "$WF_ON_BRANCH" != true ]; then
+    fail "wayfinder fork: checkout is not on '${WF_CONFIGURED_BRANCH}' (redline's mount must live only there). Run 'git submodule update --init' or 'git -C services/wayfinder checkout ${WF_CONFIGURED_BRANCH}'"
+  elif [ "$WF_MAIN_DIVERGED" = true ]; then
+    fail "wayfinder fork: origin/main has commits not in upstream/main — redline changes have leaked onto main. Keep main a clean upstream mirror; land redline work only on ${WF_CONFIGURED_BRANCH}"
+  elif [ "$WF_MAIN_DIVERGED" = unknown ]; then
+    warn "wayfinder fork: no upstream remote in services/wayfinder — cannot verify main is undiverged (add 'upstream' or rely on CI)"
+    pass "wayfinder fork on ${WF_CONFIGURED_BRANCH} (main divergence unchecked — no upstream remote)"
+  else
+    pass "wayfinder fork on ${WF_CONFIGURED_BRANCH}, main undiverged from upstream"
+  fi
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

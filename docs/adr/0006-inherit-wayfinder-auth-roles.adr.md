@@ -1,6 +1,6 @@
 # ADR-0006 — Auth/roles: inherit Wayfinder's, do not build our own
 
-- **Status**: Accepted
+- **Status**: Accepted — delivery vehicle amended by [ADR-0019](./0019-wayfinder-fork-submodule-for-ui-mount.adr.md) (the "Next.js shell" this ADR assumes is a redline-served app; ADR-0019 makes it a mount inside a forked Wayfinder `apps/web`. The auth/roles decision itself is unchanged — the mount still reuses Wayfinder's Better Auth session and permission vocabulary.)
 - **Date**: 2026-08-01
 
 ## Context

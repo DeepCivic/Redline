@@ -19,4 +19,4 @@
 # tells you whether the new commit still satisfies the contract redline reuses.
 
 repo=rbrasier/wayfinder
-ref=d3c2f4e7d561df9528a6a9ffa840a1fe965e1215
+ref=60767f41ec3ee2a793897dbee6a31cc62e967fef

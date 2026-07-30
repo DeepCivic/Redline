@@ -4,3 +4,7 @@
 [submodule "services/numbatch"]
 	path = services/numbatch
 	url = https://github.com/DeepCivic/Numbatch.git
+[submodule "services/wayfinder"]
+	path = services/wayfinder
+	url = https://github.com/johntooth/wayfinder.git
+	branch = redline-integration

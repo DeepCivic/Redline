@@ -4,7 +4,11 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/coverage/**", "**/.turbo/**", "vendor/**"],
+    // vendor/** is the materialised Wayfinder domain (typed reuse); services/**
+    // are the upstream submodules — the Python engines and the Wayfinder fork
+    // (ADR-0019). None of these are redline source we lint; the fork's apps/web
+    // is linted by the fork's own ESLint config.
+    ignores: ["**/dist/**", "**/coverage/**", "**/.turbo/**", "vendor/**", "services/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

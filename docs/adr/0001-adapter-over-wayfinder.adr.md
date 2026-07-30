@@ -1,7 +1,11 @@
 # ADR-0001 — Adapter over Wayfinder (not a fork) + Strategy A consumption
 
 - **Status**: Accepted (Strategy A's mechanics amended by
-  [ADR-0012](./0012-wayfinder-is-pinned-and-optional.adr.md), 2026-07-25)
+  [ADR-0012](./0012-wayfinder-is-pinned-and-optional.adr.md), 2026-07-25;
+  the "never a fork" rule narrowed by
+  [ADR-0019](./0019-wayfinder-fork-submodule-for-ui-mount.adr.md), 2026-08-01 —
+  a contributor's own fork, carried as a submodule for the run/mount seam and
+  pinned by us, is not the release-cadence coupling this ADR rejected)
 - **Date**: 2026-07-23
 
 ## Context

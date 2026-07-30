@@ -17,11 +17,14 @@ line-length = 120
 # The upstream engines are submodules holding upstream source we never modify
 # (ADR-0015), so they are excluded here exactly as vendor/wayfinder is excluded
 # from the Node scope and as validate.sh #9 excludes them from the size guard.
-# redline's own overlays — services/womblex-ingest, services/numbatch-extension —
-# sit beside them and ARE linted.
+# services/wayfinder is the Wayfinder fork submodule (ADR-0019): its tree —
+# including any Python it carries — is the fork's, not redline's, so it is
+# excluded too. redline's own overlays — services/womblex-ingest,
+# services/numbatch-extension — sit beside them and ARE linted.
 extend-exclude = [
     "services/womblex",
     "services/numbatch",
+    "services/wayfinder",
     "vendor",
 ]
 
