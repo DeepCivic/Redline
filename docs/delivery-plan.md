@@ -42,41 +42,50 @@ wanted; neither is needed to see the grid.
 Most of this slice already exists (use-cases, adapters, web core, the compose
 profiles — all green under `./validate.sh`). The retrieval leg is the exception:
 ADR-0017/0018 (Proposed) rebuild it on a store, superseding the current
-in-TypeScript vector path. What remains, in order:
+in-TypeScript vector path. **Note the ADR-0018 addendum: similarity (RAG) is
+deferred — this release ships the *exact-fetch* half only, no vector index, no
+`findSimilar`.** What remains, in order:
 
-### 1a — Materialise womblex embeddings into the retrieval store
+### 1a — Materialise womblex chunks into the retrieval store (exact-fetch half)
 
-**New, and it precedes retrieval.** [ADR-0017](./adr/0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
+**New, and it precedes classification.** [ADR-0017](./adr/0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
 / [ADR-0018](./adr/0018-retrieval-is-a-store-side-query-surface.adr.md) (both
 **Proposed** — ratify before building) overturn ADR-0014: at the measured corpus
 scale (~1,500 docs → ~90k chunks × 1792-d ≈ 645 MB packed / ~2.5–3 GB as JSON),
-vectors do **not** cross to TypeScript. The sidecar loads `*.chunks.parquet` +
-`*.embeddings.parquet` into redline's `redline_` Postgres schema (`pgvector`), a
-queryable projection with MinIO shards remaining the durable record (ADR-0002).
+vectors do **not** cross to TypeScript. The sidecar loads `*.chunks.parquet` into
+redline's `redline_` Postgres schema — chunk rows + full provenance, with ordinary
+indexes answering exact/structural fetch. **Per the ADR-0018 addendum, no
+`pgvector` column and no ANN index are built now**: `*.embeddings.parquet` still
+lands in MinIO as the durable record (ADR-0002), stored but not indexed, so
+turning similarity on later is a load/index step, not a re-ingest.
 
-_Exit: an ingest of a real corpus lands chunk rows + vectors in `redline_`
-(pgvector index built); an absent embed stage leaves the extraction queryable and
-the vector tables empty (NOT_FOUND on similarity, not a broken ingest)._
+_Exit: an ingest of a real corpus lands chunk rows in `redline_`; exact
+`fetchChunks`/`fetchByStructure` return byte-identical text for a stable key; an
+absent chunk stage leaves the tables empty (NOT_FOUND, not a broken ingest)._
 
-### 1b — Retrieval-backed `IProcurementClassifier` over the store
+### 1b — Cold-start `IProcurementClassifier` over the store (no similarity leg)
 
 `ClassifyResponseGroup` takes an `IProcurementClassifier`; the container wires
 whichever implementation a deployment supplies. Today the only one is Numbatch's,
 which needs 10 samples/topic and a trained adapter. [ADR-0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md)
 settled that **both paths satisfy the same port** — so compose the cold-start path
-(hard rules → retrieval → adjudication) behind that port in `lib/container.ts`.
+behind that port in `lib/container.ts`.
 
-**Retrieval is rebuilt on the store, not on shipped vectors.** ADR-0018 replaces
-ADR-0014's `IEmbeddingReader` (a reader returning `Float32Array`) with a
-provenance-addressed query port (exact `fetchChunks` by key + `findSimilar`
-discovery returning keyed candidates, never raw vectors); the query text is
-embedded store-side by the chunks' declared model, or the match is refused.
-`ClassifyByRetrieval` moves its cosine math out of TypeScript and onto that port.
-The existing `ClassifyByRetrieval` / `IEmbeddingReader` / embeddings adapter are
-**superseded** by this step, not extended.
+**Retrieval is rebuilt on the store, not on shipped vectors — but the similarity
+leg is deferred (ADR-0018 addendum).** ADR-0018 replaces ADR-0014's
+`IEmbeddingReader` with a provenance-addressed port; this release implements its
+exact `fetchChunks`/`fetchByStructure` and declares `findSimilar`
+**unimplemented** (`NOT_IMPLEMENTED`) until a later release needs RAG.
+Consequently ADR-0008's *"hard rules → retrieval → adjudication"* runs here as
+**hard rules + LLM adjudication over exact/structural fetch**, without the
+nearest-neighbour placing step. The old in-TS `ClassifyByRetrieval` /
+`IEmbeddingReader` / cosine adapter are **superseded** by the port either way.
+This narrows what the untrained first pass does until RAG lands — accepted, since
+RAG is not a this-release or next-release capability.
 
 _Exit: `ClassifyResponseGroup` returns `RequirementClassification[]` for a real
-group with no Numbatch running and no samples curated, sourced from the store._
+group with no Numbatch running and no samples curated, sourced from the store —
+without a similarity index in the loop._
 
 ### 2 — Run the money stage
 
@@ -148,12 +157,14 @@ _Exit: Playwright green in CI against served routes._
 ### 5 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
-extracts, chunks and embeds (see the runbook note below) → vectors materialise
-into the `redline_` store (item 1a) → group documents by vendor → classify by
-retrieval over the store (item 1b) → render. Extraction provenance still serves as
-JSON (ADR-0003/0017); only bulk vectors go to the store. Needs `ISAACUS_API_KEY`
-(chunking *and* embedding are Isaacus-gated — see below) and a corpus in the
-git-ignored `services/womblex-ingest/tests/corpus-local/`.
+extracts, chunks and embeds (see the runbook note below) → chunk rows materialise
+into the `redline_` store (item 1a) → group documents by vendor → cold-start
+classify over the store (item 1b — hard rules + adjudication, no similarity leg
+yet) → render. Extraction provenance still serves as JSON (ADR-0003/0017); bulk
+vectors stay in MinIO (stored, not indexed — ADR-0018 addendum). Needs
+`ISAACUS_API_KEY` (chunking *and* embedding are Isaacus-gated — see below; the
+embed stage still runs so vectors are on hand for the deferred RAG work) and a
+corpus in the git-ignored `services/womblex-ingest/tests/corpus-local/`.
 
 Also the owner of one open item: **measure the three OCR-table gates**
 (paddleocr-only, deskew refusal, precision refusal) on the real corpus.
@@ -237,11 +248,14 @@ should shape the lens work rather than be assumed. In dependency order:
 0. **Ratify [ADR-0017](./adr/0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
    and [ADR-0018](./adr/0018-retrieval-is-a-store-side-query-surface.adr.md)** (both
    Proposed) before any of item 1. They overturn ADR-0014 and set the store the
-   retrieval leg is built on; ADR-0018 also carries a store-backing sub-choice
-   (`pgvector` vs an ANN index over the shards) that may spawn a follow-on ADR.
-1. **Item 1a precedes 1b** — the store must hold the vectors before retrieval can
-   query it. Together they replace the old in-TypeScript retrieval leg (the former
-   `ClassifyByRetrieval` / `IEmbeddingReader` / embeddings adapter are superseded).
+   retrieval leg is built on. **ADR-0018's addendum defers the similarity (RAG)
+   half** — the `pgvector`/ANN index, `findSimilar` and the tool/graph surface —
+   until a release needs it; the store-backing sub-choice (`pgvector` vs ANN over
+   the shards) is a follow-on ADR decided *then*, not now.
+1. **Item 1a precedes 1b** — the store must hold the chunk rows before
+   classification can read them. Together they replace the old in-TypeScript
+   retrieval leg (the former `ClassifyByRetrieval` / `IEmbeddingReader` /
+   embeddings adapter are superseded). Neither builds a vector index this release.
 2. **Items 1 (a→b) and 3** are independent of each other. Item 1 unblocks
    classification without Numbatch; item 3 unblocks pricing without Numbatch.
    Item 3 sits behind **item 2** (run the money stage); if that proves slow, run
@@ -260,4 +274,8 @@ workspace extraction and release.
   extension's roll-up is wanted.
 - **No comprehension lens.** Collisions, boundary decisions, lens persistence and
   portability all wait.
+- **No similarity / RAG.** The `pgvector` index, `findSimilar`, the store-side
+  query-embed path and the tool/graph surface are deferred (ADR-0018 addendum).
+  Vectors are stored in MinIO, not indexed; the untrained first pass runs on hard
+  rules + adjudication without nearest-neighbour placing until a release needs it.
 - **No workspace extraction.** Ship-shape is a later concern than see-shape.

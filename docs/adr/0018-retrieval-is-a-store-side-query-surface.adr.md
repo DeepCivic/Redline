@@ -154,3 +154,73 @@ IChunkStore {
 - `ClassifyByRetrieval` (ADR-0008 cold start) is rebuilt on the new port; its output
   `RequirementClassification` shape is unchanged, so `BuildEvaluationTable` and the
   presentation seam are untouched.
+
+---
+
+## Addendum — similarity (RAG) is deferred; the exact-fetch half ships alone first
+
+- **Status**: Proposed
+- **Date**: 2026-07-31
+
+### Context
+
+The decision above specifies the *whole* surface at once: exact fetch **and**
+similarity discovery, an ANN index (`pgvector` HNSW) under `findSimilar`, and a
+tool/graph RAG surface for the report builder. Read against what the next two
+releases actually need, that is more than the moment calls for — and the expensive,
+fiddly part (an ANN index to size and tune, a query-embed path, a tool/graph loop)
+sits entirely in the *similarity* half. **RAG is not needed for this release, or the
+one after it.** Building it now buys nothing shippable and risks an index/vector layer
+that has to be maintained and reasoned about before anything depends on it.
+
+The consumer that *does* ship (ADR-0017's deterministic report assembler) works from
+**exact, provenance-addressed fetch** — `fetchChunks` / `fetchByStructure` returning
+byte-identical rows by stable key. That half needs no vector index at all: ordinary
+indexed columns answer it.
+
+### Decision
+
+**Split the surface. Build the exact-fetch half now; defer the similarity half —
+`findSimilar`, the `pgvector`/ANN index, the query-embed path, and the tool/graph RAG
+surface — until a release actually requires it.**
+
+- **Ships now:** the port's `fetchChunks` / `fetchByStructure`; the `redline_` chunk
+  and provenance tables with their ordinary indexes; the Parquet→DB load. No vector
+  column, no HNSW index, no query embedding. The embedding Parquet still lands in
+  MinIO as the durable record (ADR-0002) — it is *stored*, just not *indexed* yet, so
+  turning similarity on later is a load/index step, not a re-ingest.
+- **Deferred (its own build thread, when a release needs it):** `findSimilar`, the
+  `pgvector` HNSW index (and the FAISS/hnswlib fallback debate), the store-side
+  query-embed path, and the tool/graph surface. The port is *declared* with
+  `findSimilar` in its shape so adding it later is additive, but it may ship
+  **unimplemented** (returning a `NOT_IMPLEMENTED` `DomainError`) until then.
+- **Consequence for ADR-0008 (must be stated plainly):** ADR-0008's cold-start path is
+  *"hard rules → retrieval (nearest-neighbour) → LLM adjudication."* With similarity
+  deferred, **the retrieval leg of that path is deferred with it.** For these
+  releases, cold-start classification rests on hard rules + LLM adjudication over
+  exact/structural fetches; the trained Numbatch overlay engages as before once its
+  sample floor is crossed. This does not weaken ADR-0008 — both paths still satisfy
+  one port — but it narrows what the *untrained* first pass can do until RAG lands,
+  and that trade is accepted on the ground that RAG is not a this-release capability.
+
+### Consequences
+
+- **Less to build and nothing premature to tune.** No ANN index to size, no
+  recall/latency budget, no query-embed path, no tool loop — none of it enters the
+  system before something depends on it. The "pain in the ass" that a half-used
+  vector/RAG layer becomes is simply not created yet.
+- **The forward door stays open cheaply.** Vectors are already in MinIO; the port
+  already names `findSimilar`; the store backing (`pgvector` vs ANN-over-Parquet) is
+  still an open follow-on ADR — but now it is decided *when RAG is built*, on real
+  need, not speculatively. Turning similarity on is an index build + one adapter
+  method, not a seam change.
+- **The first-pass classifier is weaker in the interim.** Until RAG lands, an
+  untrained lens leans on hard rules + adjudication without nearest-neighbour placing.
+  Accepted deliberately; revisit when a release makes RAG a requirement.
+- The `findSimilar`/`pgvector` material in **Decision → The store**, **The tool/graph
+  surface**, the `pgvector` capacity note under **Negative**, and the similarity
+  clauses of the **Enforcement** exit test are all **deferred by this addendum** —
+  they describe the eventual shape, not this release's build. The exit test that ships
+  asserts exact `fetchChunks`/`fetchByStructure` return byte-identical rows for stable
+  keys; the `findSimilar` ranking and mismatched-model-refusal assertions move to the
+  deferred similarity thread.
