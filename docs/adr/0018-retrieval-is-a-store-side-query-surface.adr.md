@@ -206,6 +206,13 @@ available store data now.**
   `entity_links`) is loaded into the store and exposed as read tools the LLM
   traverses, addressing the same provenance-keyed rows. This is the report
   assembler's navigation mechanic (ADR-0017), and it is not vector search.
+  **Operational reality (not a decision reversal):** redline's current womblex
+  profile disables the enrich stage (`infra/womblex/redline.yaml`:
+  `enrichment.enabled: false`, `linking.enabled: false`), so *no graph is produced
+  until that stage is turned on* — a config change and an Isaacus-costed run. This
+  ADR keeps the graph in-scope as the target navigation mechanic and specifies how
+  it is stored/queried once produced; **whether to enable enrich for a given release
+  is a delivery decision** taken at delivery-plan item 1a, not a change to this ADR.
 - **Ships now — embeddings available:** `*.embeddings.parquet` is loaded into the
   store as addressable data (keyed on `(source_hash, chunk_index)`, declaring its
   `model`/`dimensions` — ADR-0014's surviving invariants), so the graph stage and any

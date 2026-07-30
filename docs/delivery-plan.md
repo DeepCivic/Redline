@@ -1,6 +1,6 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-07-30
+> **Status:** the live tracking document · **Date:** 2026-07-31
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -33,11 +33,13 @@ the trained-classifier overlay are **deferred** (§3) — they are a second-orde
 improvement on a product that does not yet render.
 
 **Numbatch is not on this path.** Classification runs cold-start over womblex
-embeddings ([ADR-0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md)'s
-first pass — no samples, no training, no adapter), and pricing comes from
-womblex's own currency-typed table cells / money sidecars. The Numbatch stack
-re-enters only when a *trained* overlay or the financial extension's roll-up is
-wanted; neither is needed to see the grid.
+extraction ([ADR-0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md)'s
+first pass — no samples, no training, no adapter): hard rules + LLM adjudication
+navigating the store's chunks/provenance (and the enrich graph *once enabled* —
+see 1a), with the nearest-neighbour step deferred (ADR-0018 addendum). Pricing
+comes from womblex's own currency-typed table cells / money sidecars. The Numbatch
+stack re-enters only when a *trained* overlay or the financial extension's roll-up
+is wanted; neither is needed to see the grid.
 
 Most of this slice already exists (use-cases, adapters, web core, the compose
 profiles — all green under `./validate.sh`). The retrieval leg is the exception:
@@ -47,7 +49,7 @@ search* (the `pgvector`/ANN index + `findSimilar`) is deferred — the graph, ex
 fetch, and the embeddings *as available store data* all ship.** What remains, in
 order:
 
-### 1a — Materialise womblex chunks, embeddings and graph into the store
+### 1a — Materialise womblex chunks and embeddings into the store (graph gated on enabling enrich)
 
 **New, and it precedes classification.** [ADR-0017](./adr/0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
 / [ADR-0018](./adr/0018-retrieval-is-a-store-side-query-surface.adr.md) (both
@@ -55,20 +57,29 @@ order:
 scale (~1,500 docs → ~90k chunks × 1792-d ≈ 645 MB packed / ~2.5–3 GB as JSON),
 vectors do **not** cross to TypeScript. The sidecar loads into redline's `redline_`
 Postgres schema: `*.chunks.parquet` (chunk rows + provenance, ordinary indexes for
-exact/structural fetch), `*.embeddings.parquet` (**loaded and available** as data,
-keyed on `(source_hash, chunk_index)`, declaring `model`/`dimensions` — ADR-0014's
-surviving invariants), and the `enrich` **graph** (`entities`, `graph_edges`,
-`entity_links`) the report assembler traverses. **Per the ADR-0018 addendum, only
-the `pgvector` ANN *index* is not built now** — the vectors are present and
-addressable, simply not yet under a similarity index, so enabling search later is
-building an index over data already in the store, not a re-ingest. MinIO shards
-remain the durable record (ADR-0002).
+exact/structural fetch) and `*.embeddings.parquet` (**loaded and available** as
+data, keyed on `(source_hash, chunk_index)`, declaring `model`/`dimensions` —
+ADR-0014's surviving invariants). **Per the ADR-0018 addendum, only the `pgvector`
+ANN *index* is not built now** — the vectors are present and addressable, simply
+not yet under a similarity index, so enabling search later is building an index
+over data already in the store, not a re-ingest. MinIO shards remain the durable
+record (ADR-0002).
 
-_Exit: an ingest of a real corpus lands chunk rows, embeddings (as retrievable
-data) and graph edges in `redline_`; exact `fetchChunks`/`fetchByStructure` return
-byte-identical text for a stable key and the graph tools traverse edges to reach
-those rows; an absent chunk stage leaves the tables empty (NOT_FOUND, not a broken
-ingest)._
+> **Prerequisite for the graph, flagged honestly.** ADR-0017 names the `enrich`
+> graph (`entities`, `graph_edges`, `entity_links`) as the report assembler's
+> navigation mechanic — but **redline's womblex profile currently disables it**
+> (`infra/womblex/redline.yaml`: `enrichment.enabled: false`, `linking.enabled:
+> false`; the file is "trimmed to extract → chunk → embed"). So there is **no graph
+> to load until `enrich`/`linking` are turned on**, which is a config change *and*
+> an Isaacus-costed stage in the run. Whether the graph is in scope for this
+> release turns on that decision; until it is, 1a loads chunks + embeddings only,
+> and 1b navigates chunks/provenance without graph edges.
+
+_Exit: an ingest of a real corpus lands chunk rows and embeddings (as retrievable
+data) in `redline_`; exact `fetchChunks`/`fetchByStructure` return byte-identical
+text for a stable key; an absent chunk stage leaves the tables empty (NOT_FOUND,
+not a broken ingest). If enrich is enabled, graph edges load too and the graph
+tools traverse them to reach those rows._
 
 ### 1b — Cold-start `IProcurementClassifier` over the store (no nearest-neighbour yet)
 
@@ -81,16 +92,16 @@ behind that port in `lib/container.ts`.
 **Retrieval is rebuilt on the store, not on shipped vectors — and only the
 nearest-neighbour step is deferred (ADR-0018 addendum).** ADR-0018 replaces
 ADR-0014's `IEmbeddingReader` with a provenance-addressed port; this release
-implements its exact `fetchChunks`/`fetchByStructure` plus the graph tools, and
-declares `findSimilar` **unimplemented** (`NOT_IMPLEMENTED`) until a later release
-needs vector search. Consequently ADR-0008's *"hard rules → retrieval
-(nearest-neighbour) → adjudication"* runs here as **hard rules + LLM adjudication
-navigating the graph and exact fetch**, without the nearest-neighbour placing step
-(the only part that needs vector search). The old in-TS `ClassifyByRetrieval` /
+implements its exact `fetchChunks`/`fetchByStructure` (plus the graph tools *if
+enrich is enabled* — see 1a), and declares `findSimilar` **unimplemented**
+(`NOT_IMPLEMENTED`) until a later release needs vector search. Consequently
+ADR-0008's *"hard rules → retrieval (nearest-neighbour) → adjudication"* runs here
+as **hard rules + LLM adjudication over exact/structural fetch** (graph-navigated
+where the graph is present), without the nearest-neighbour placing step (the only
+part that needs vector search). The old in-TS `ClassifyByRetrieval` /
 `IEmbeddingReader` / cosine adapter are **superseded** by the port either way. This
 narrows the untrained first pass until vector search lands — accepted, since it is
-not a this-release or next-release capability and the graph carries much of the
-navigation in the interim.
+not a this-release or next-release capability.
 
 _Exit: `ClassifyResponseGroup` returns `RequirementClassification[]` for a real
 group with no Numbatch running and no samples curated, sourced from the store —
@@ -166,28 +177,36 @@ _Exit: Playwright green in CI against served routes._
 ### 5 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
-extracts, chunks and embeds (see the runbook note below) → chunk rows, embeddings
-(as retrievable data) and graph edges materialise into the `redline_` store
-(item 1a) → group documents by vendor → cold-start classify over the store
-(item 1b — hard rules + adjudication navigating the graph, no nearest-neighbour
-step yet) → render. Extraction provenance still serves as JSON (ADR-0003/0017);
-bulk vectors are loaded into the store as data but not yet ANN-indexed (ADR-0018
-addendum). Needs `ISAACUS_API_KEY` (chunking, embedding *and* enrich are
-Isaacus-gated — see below; the embed and enrich stages run so the vectors and
-graph are on hand) and a corpus in the git-ignored
-`services/womblex-ingest/tests/corpus-local/`.
+extracts, chunks and embeds (see the runbook note below) → chunk rows and
+embeddings (as retrievable data) materialise into the `redline_` store (item 1a)
+→ group documents by vendor → cold-start classify over the store (item 1b — hard
+rules + adjudication over exact fetch, no nearest-neighbour step yet) → render.
+Extraction provenance still serves as JSON (ADR-0003/0017); bulk vectors are
+loaded into the store as data but not yet ANN-indexed (ADR-0018 addendum). Needs
+`ISAACUS_API_KEY` (the embed stage is Isaacus-gated — see below) and a corpus in
+the git-ignored `services/womblex-ingest/tests/corpus-local/`. The enrich graph is
+**off in redline's profile** (`enrichment.enabled: false`); enabling it — if the
+graph is wanted for navigation — is a config + Isaacus-cost decision taken as part
+of item 1a, not an assumed default.
 
 Also the owner of one open item: **measure the three OCR-table gates**
 (paddleocr-only, deskew refusal, precision refusal) on the real corpus.
 
-> **Two upstream-behaviour facts confirmed on a real 0.3.0 run, to bake into the
-> runbook (they are not obvious from the config).** (a) `womblex run` writes
-> `elements`/`table_cells`/`form_fields` but **does not persist chunks** — chunking
-> and embedding are separate per-stage commands (`womblex chunk --shards` then
-> `womblex embed --shards`) over the run's shard dir. (b) The **chunk stage is
-> Isaacus-gated** in 0.3.0 (the Kanon-2 tokeniser is API-only), so `ISAACUS_API_KEY`
-> is needed for *chunking*, not only embedding — `architecture.md` §7.1's "default
-> chunking is offline" is stale and should be corrected there.
+> **Upstream-behaviour facts to bake into the runbook (not obvious from config).**
+> (a) `womblex run` writes `elements`/`table_cells`/`form_fields` but **does not
+> persist chunks** — chunking and embedding are separate per-stage commands
+> (`womblex chunk --shards` then `womblex embed --shards`) over the run's shard
+> dir. (b) **A gating contradiction to resolve on the real run:** a live 0.3.0 run
+> showed `chunk` *skipping* without `ISAACUS_API_KEY` (recorded in
+> `architecture.md` §7), yet the engine's own config comments
+> (`services/womblex/configs/example.yaml`, `infra/womblex/redline.yaml`) state the
+> Kanon-2 *tokeniser* is free on Hugging Face and plain token chunking needs **no**
+> key — only AI chunking (`chunking_model`) calls the API. These disagree; the
+> real-corpus run is the place to settle whether `chunk` is truly Isaacus-gated in
+> 0.3.0 or the skip had another cause, and correct `architecture.md` §7 to match.
+> (c) The **embed** stage is unambiguously Isaacus-gated (`kanon-2-embedder`), and
+> **`enrich`/`linking` are disabled** in redline's profile (so no graph is produced
+> unless turned on — item 1a).
 
 _Exit: a specialist opens the review grid for a real tender and sees each
 document delineated by topic and brand, with provenance back to source._
@@ -264,11 +283,13 @@ should shape the lens work rather than be assumed. In dependency order:
    the graph, exact fetch, and the embeddings *as available data* all ship now. The
    store-backing sub-choice for the eventual index (`pgvector` vs ANN over the
    shards) is a follow-on ADR decided *then*, not now.
-1. **Item 1a precedes 1b** — the store must hold the chunk rows, embeddings and
-   graph before classification can read them. Together they replace the old
+1. **Item 1a precedes 1b** — the store must hold the chunk rows and embeddings
+   before classification can read them. Together they replace the old
    in-TypeScript retrieval leg (the former `ClassifyByRetrieval` / `IEmbeddingReader`
    / embeddings adapter are superseded). Neither builds a vector *index* this
-   release, though both *load* the vectors.
+   release, though both *load* the vectors. The enrich **graph** loads here **only
+   if `enrichment`/`linking` are enabled** in the womblex profile — a decision
+   taken with item 1a (see its prerequisite note).
 2. **Items 1 (a→b) and 3** are independent of each other. Item 1 unblocks
    classification without Numbatch; item 3 unblocks pricing without Numbatch.
    Item 3 sits behind **item 2** (run the money stage); if that proves slow, run
@@ -289,8 +310,11 @@ workspace extraction and release.
   portability all wait.
 - **No vector *similarity search*.** The `pgvector`/ANN *index*, `findSimilar` and
   the store-side query-embed path are deferred (ADR-0018 addendum). The embeddings
-  *are* loaded and available in the store, and the `enrich` **graph** *does* ship as
-  the report assembler's navigation mechanic — what waits is the nearest-neighbour
-  index over the vectors. The untrained first pass runs on hard rules + adjudication
-  (graph-navigated) without nearest-neighbour placing until a release needs it.
+  *are* loaded and available in the store; what waits is the nearest-neighbour index
+  over the vectors. The untrained first pass runs on hard rules + adjudication over
+  exact fetch without nearest-neighbour placing until a release needs it.
+- **No enrich graph by default.** ADR-0017 names it as the eventual navigation
+  mechanic, but redline's womblex profile disables `enrichment`/`linking`; producing
+  and loading the graph is an explicit, Isaacus-costed opt-in taken at item 1a, not
+  part of the lean vertical unless chosen.
 - **No workspace extraction.** Ship-shape is a later concern than see-shape.
