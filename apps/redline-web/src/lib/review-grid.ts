@@ -1,7 +1,7 @@
 import type { ProcurementResponse } from "@redline/redline-domain";
 
-// ReviewGrid — the specialist review surface's brain (build plan §1 / §5 /
-/). A pure, framework-free model of the sortable, filterable review
+// ReviewGrid — the specialist review surface's brain (build plan §1 / §5).
+// A pure, framework-free model of the sortable, filterable review
 // table: it turns the BuildEvaluationTable output (one ProcurementResponse per
 // (group, document, matched requirement)) into typed, sortable rows a Next.js/
 // React shell binds to. Currency stays a real number end-to-end (the domain
