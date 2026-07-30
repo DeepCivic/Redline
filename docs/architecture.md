@@ -62,13 +62,16 @@ Womblex's stages split cleanly into offline and Isaacus-gated:
 | **`embed`** | **YES** — `kanon-2-embedder` via `client.embeddings.create` | **`*.embeddings.parquet`** |
 | `enrich` | **YES** — `kanon-2-enricher` | `*.enrichment_*`, `*.graph_edges`, `*.entity_links` parquet |
 
-**Consequence for redline's retrieval leg (ADR-0008, amended 2026-07-27):** redline's
-cold-start classification path *is* nearest-neighbour matching over womblex's
-`*.embeddings.parquet`. The embed stage is Isaacus-only. Therefore:
+**Consequence for redline's classification leg (ADR-0008, amended 2026-07-27; ADR-0018):**
+redline's cold-start classification reads womblex's chunks/embeddings from the
+`redline_` store. The chunk *and* embed stages are Isaacus-gated. Therefore:
 
-- **Retrieval requires `ISAACUS_API_KEY`.** Without it, `*.embeddings.parquet` is
-  never produced, `GET /embeddings/...` is `NOT_FOUND`, and retrieval
-  classification cannot run. This is a hard dependency, not a degraded mode.
+- **A usable corpus requires `ISAACUS_API_KEY`.** Without it, `chunk`/`embed`
+  never run, no chunk rows land in the store, and there is nothing to classify
+  over. This is a hard dependency, not a degraded mode. (Note the *current*
+  cold-start path adjudicates over exact/structural fetch and does not itself run
+  a nearest-neighbour match — but it still needs the chunk rows the Isaacus-gated
+  stages produce.)
 - **Air-gap / offline operation is a non-goal for redline.** Earlier docs carried
   an "Isaacus-optional / air-gapped" posture (a hangover from womblex's own edge
   modes and Wayfinder's air-gap validation). redline does not pursue it — a
@@ -97,30 +100,34 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
 │        │                                                                     │
 │        ▼                                                                     │
 │  packages/redline-application   Use-cases (orchestration): IngestDocuments,  │
-│    (TypeScript)                  ClassifyByRetrieval, AdjudicateUnclear,      │
+│    (TypeScript)                  ColdStartClassifier, ClassifyWithHardRules,  │
+│        │                         AdjudicateUnclear, ClassifyResponseGroup,    │
 │        │                         BuildEvaluationTable, DocumentMap, pivots.  │
 │        ▼                                                                     │
 │  packages/redline-domain    Entities + PORTS (Result pattern, zero deps):    │
-│    (TypeScript)               IProcurementExtractionReader, IEmbeddingReader, │
-│        │                      ITextEmbedder, IProcurementClassifier,          │
-│        │                      IFinancialExtractor, IAdjudicator,              │
-│        │                      ILanguageModel, IEvaluationRepository.          │
+│    (TypeScript)               IProcurementExtractionReader, IChunkStore,      │
+│        │                      IProcurementClassifier, IFinancialExtractor,    │
+│        │                      IAdjudicator, ILanguageModel,                   │
+│        │                      IEvaluationRepository.                          │
 │        ▼                                                                     │
 │  packages/redline-adapters   Port implementations — the ONLY code that       │
 │    (TypeScript)              speaks to the seams. Each is "as if C" (ADR-0001)│
 │        │  ├── womblex/         → HTTP+JSON to womblex-ingest sidecar          │
-│        │  ├── embeddings/      → HTTP+JSON to womblex-ingest sidecar          │
 │        │  ├── numbatch/        → HTTP to Numbatch backend (classify + finance)│
 │        │  └── persistence/     → redline_ Postgres (Drizzle)                 │
+│        │       (a TS IChunkStore reader over redline_chunks is not yet built  │
+│        │        — the store is written by the sidecar; see §4/§5)            │
 │        │                                                                     │
 │        └──── seams ────────────────────────────────────────────────────────┤
 │                 │ HTTP+JSON            │ HTTP+JSON        │ Postgres          │
 │                 ▼                      ▼                  ▼                   │
 │  services/womblex-ingest      services/numbatch      redline-postgres        │
 │    (FastAPI, Python)            (fork: backend +        (schema: redline_*)   │
-│    reads MinIO Parquet,          Arq worker +                                │
-│    serves JSON. WOMBLEX_MODE      inference)                                 │
-│    = stub | real.                                                            │
+│    reads MinIO Parquet,          Arq worker +          redline_chunks: the    │
+│    serves JSON, AND loads        inference)            ADR-0018 store, WRITTEN │
+│    chunks+embeddings into                             by the sidecar's ingest │
+│    redline_chunks.                                    (chunk rows + provenance│
+│    WOMBLEX_MODE = stub | real.                        + embedding as data).   │
 │        │ reads                                                               │
 │        ▼                                                                     │
 │  MinIO  proc/{evaluationId}/*.parquet   ◄── written by ──┐                   │
@@ -189,14 +196,21 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
 (3) Read seam  — the womblex-ingest SIDECAR (WOMBLEX_MODE=real)
     POST /ingest  reads the pod's shards, maps womblex's schema → JSON read model,
                   writes {source_hash}.extraction.json + .embeddings.json beside
-                  the shards (durable read model surviving a restart).
+                  the shards (durable read model surviving a restart), AND — when
+                  a redline_ DSN is wired — projects each document's chunk rows +
+                  embeddings into redline's own store (the redline_chunks table),
+                  addressable by provenance (ADR-0017/0018).
     GET  /extractions/{eval}/{doc}   → { documentId, elements[], chunks[], tableCells[] }
     GET  /embeddings/{eval}/{doc}    → { documentId, model, dimensions, vectors[] }
     POST /embeddings/query {text}    → { model, dimensions, values[] }   (query vector)
-    NB: the embeddings-as-JSON seam is being superseded — at real corpus scale
-    (~90k chunks) bulk vectors move to a store (Parquet in MinIO/Postgres),
-    queried in place, not shipped to TypeScript. ADR-0017/0018 (Accepted) amend
-    ADR-0014; extraction provenance stays JSON. See delivery-plan items 1a/1b.
+    NB: extraction provenance stays JSON (ADR-0003). Bulk vectors do NOT cross to
+    TypeScript for classification: at real corpus scale (~90k chunks) they are
+    loaded into the redline_ store as data and queried in place through
+    IChunkStore, superseding the embeddings-as-JSON path for the classifier
+    (ADR-0017/0018 amend ADR-0014). The /embeddings JSON routes remain for the
+    query-embed seam and small reads, but the classification leg no longer ships
+    bulk vectors to TS. The embeddings are loaded and addressable, but not yet
+    under a similarity index (ADR-0018 addendum defers pgvector/ANN + findSimilar).
 
 (4) Ingest use-case  — redline-application
     IngestDocuments confirms every document reads back through the extraction port,
@@ -208,16 +222,21 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
 (6) Classification (first pass — no trained model; ADR-0008)
     For each (document, requirement):
       a. HARD RULES resolve deterministically first — rule-claimed docs never
-         reach a model  (thread: hard-rule pre-pass).
-      b. RETRIEVAL: embed each requirement definition via POST /embeddings/query,
-         cosine-match against the document's chunk vectors (GET /embeddings/...).
-         REQUIRES the embed stage to have run → REQUIRES Isaacus. The declared
-         model on the query vector MUST match the chunk vectors' model or the
-         match is refused (vectors from different models are incomparable).
-      c. ADJUDICATION: an LLM (IAdjudicator) settles only what retrieval leaves
-         ambiguous, emitting a one-sentence rationale.
+         reach the store or a model (confidence 1, no source chunk).
+      b. ADJUDICATION over EXACT FETCH: for every unclaimed document, its passages
+         are read verbatim from the redline_ store by structure
+         (IChunkStore.fetchByStructure({ documentId })) and an LLM (IAdjudicator)
+         chooses among the lens topics, emitting a one-sentence rationale. The
+         chosen topic's id IS the requirementId it projects to (ADR-0010).
+    NB (ADR-0018 addendum): the nearest-neighbour PLACING step is deferred — it is
+    the only leg that needs vector similarity search (findSimilar), which is not
+    built this release. So the cold-start path runs hard rules + adjudication over
+    exact/structural fetch, WITHOUT a similarity ranking. The store's stable order
+    stands in for provenance (the first fetched chunk is the sourceChunkId).
     Output: RequirementClassification { documentId, requirementId, confidence,
             sourceChunkId } — identical shape whichever path produced it.
+    Composed as ColdStartClassifier (redline-application), an IProcurementClassifier
+    wired behind the port in lib/container.ts (buildColdStartClassifier).
 
 (6') Classification (overlay — later; ADR-0008/0009)
     Once boundary decisions accumulate ≥ MIN_SAMPLES_PER_TOPIC per topic, a
@@ -280,13 +299,20 @@ carried as provenance, not as part of the join key (see §7).
    share a host or not, and what backs the storage (an S3 bucket or an
    AWS-managed equivalent) is config. (ADR-0002)
 
-3. **Embeddings declare their model and cross L2-normalised.** Vectors from
-   different models are incomparable; a query vector and the chunk vectors it is
-   matched against must declare the same model or the match is refused. (ADR-0014)
+3. **Embeddings are loaded into the store as data and never cross to TypeScript.**
+   At real corpus scale bulk vectors are projected into `redline_chunks`
+   (`embedding jsonb` + `embedding_model`, L2-normalised, keyed on the stable
+   `chunkId`), addressable through `IChunkStore` but returned as *rows*, never raw
+   vectors — `redline-domain` stays vector-free (ADR-0017). Vectors from different
+   models are incomparable, so a future similarity match must compare like model
+   with like; the vector is present but not yet under a similarity index (ADR-0018
+   addendum defers `pgvector`/ANN + `findSimilar`). This supersedes ADR-0014's
+   embeddings-as-JSON seam. (ADR-0014, ADR-0017, ADR-0018)
 
 4. **Both classification paths satisfy one port.** `RequirementClassification` is
-   produced by retrieval+adjudication (cold start) or by the trained Numbatch
-   adapter (overlay); consumers cannot tell which ran. (ADR-0008)
+   produced by the cold-start path (hard rules + adjudication over the store's
+   exact/structural fetch) or by the trained Numbatch adapter (overlay); consumers
+   cannot tell which ran. (ADR-0008)
 
 5. **Numbatch is used exactly as built.** `MIN_SAMPLES_PER_TOPIC` is never
    relaxed; the fork is additive-only (backend financial extension, no frontend).
@@ -457,11 +483,11 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
   (light) — that half runs anywhere pyarrow resolves, independent of whether the
   engine is installed in the same environment. Producing the shards (and any query
   embedding) requires the engine and, for embeddings, Isaacus.
-- `ISAACUS_API_KEY` is the single switch that turns retrieval on. Without it:
+- `ISAACUS_API_KEY` is the single switch that turns the corpus on. Without it:
   extraction shards land, but there are **no chunks and no embeddings** (both the
-  `chunk` and `embed` stages are Isaacus-gated in v0.3.0), and no retrieval
-  classification. redline treats that as a misconfiguration, not a supported mode
-  (§2; ADR-0008, amended 2026-07-27).
+  `chunk` and `embed` stages are Isaacus-gated in v0.3.0), so nothing lands in the
+  `redline_` store and there is nothing to classify over. redline treats that as a
+  misconfiguration, not a supported mode (§2; ADR-0008, amended 2026-07-27).
 
 ---
 
