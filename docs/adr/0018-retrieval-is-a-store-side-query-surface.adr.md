@@ -1,7 +1,7 @@
 # ADR-0018 — The retrieval leg is a store-side query surface addressed by provenance; similarity is one tool, not the seam
 
-- **Status**: Proposed
-- **Date**: 2026-07-30
+- **Status**: Accepted (with the addendum below)
+- **Date**: 2026-07-30 (ratified 2026-07-31)
 - **Depends on**: [ADR-0017](./0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
   (bulk data is Parquet in redline's store, not JSON to TypeScript). This ADR
   specifies the query surface ADR-0017 leaves open.
@@ -159,7 +159,7 @@ IChunkStore {
 
 ## Addendum — only vector *similarity search* (ANN / `findSimilar`) is deferred; the graph and the embeddings ship
 
-- **Status**: Proposed
+- **Status**: Accepted (ratified 2026-07-31, as part of this ADR)
 - **Date**: 2026-07-31
 - **Corrects**: an earlier draft of this addendum that deferred *"the tool/graph
   surface"* and left the embeddings merely *"stored, not loaded."* That over-cut:

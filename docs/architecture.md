@@ -195,7 +195,7 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
     POST /embeddings/query {text}    → { model, dimensions, values[] }   (query vector)
     NB: the embeddings-as-JSON seam is being superseded — at real corpus scale
     (~90k chunks) bulk vectors move to a store (Parquet in MinIO/Postgres),
-    queried in place, not shipped to TypeScript. ADR-0017/0018 (Proposed) amend
+    queried in place, not shipped to TypeScript. ADR-0017/0018 (Accepted) amend
     ADR-0014; extraction provenance stays JSON. See delivery-plan items 1a/1b.
 
 (4) Ingest use-case  — redline-application

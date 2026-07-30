@@ -43,17 +43,17 @@ is wanted; neither is needed to see the grid.
 
 Most of this slice already exists (use-cases, adapters, web core, the compose
 profiles — all green under `./validate.sh`). The retrieval leg is the exception:
-ADR-0017/0018 (Proposed) rebuild it on a store, superseding the current
-in-TypeScript vector path. **Note the ADR-0018 addendum: only vector *similarity
-search* (the `pgvector`/ANN index + `findSimilar`) is deferred — the graph, exact
-fetch, and the embeddings *as available store data* all ship.** What remains, in
-order:
+ADR-0017/0018 (**Accepted** 2026-07-31) rebuild it on a store, superseding the
+current in-TypeScript vector path. **Note the ADR-0018 addendum: only vector
+*similarity search* (the `pgvector`/ANN index + `findSimilar`) is deferred — the
+graph, exact fetch, and the embeddings *as available store data* all ship.** What
+remains, in order:
 
 ### 1a — Materialise womblex chunks and embeddings into the store (graph gated on enabling enrich)
 
 **New, and it precedes classification.** [ADR-0017](./adr/0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
 / [ADR-0018](./adr/0018-retrieval-is-a-store-side-query-surface.adr.md) (both
-**Proposed** — ratify before building) overturn ADR-0014: at the measured corpus
+**Accepted** 2026-07-31) overturn ADR-0014: at the measured corpus
 scale (~1,500 docs → ~90k chunks × 1792-d ≈ 645 MB packed / ~2.5–3 GB as JSON),
 vectors do **not** cross to TypeScript. The sidecar loads into redline's `redline_`
 Postgres schema: `*.chunks.parquet` (chunk rows + provenance, ordinary indexes for
@@ -275,12 +275,13 @@ should shape the lens work rather than be assumed. In dependency order:
 
 **The lean vertical runs to completion before the deferred work starts.**
 
-0. **Ratify [ADR-0017](./adr/0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
-   and [ADR-0018](./adr/0018-retrieval-is-a-store-side-query-surface.adr.md)** (both
-   Proposed) before any of item 1. They overturn ADR-0014 and set the store the
-   retrieval leg is built on. **ADR-0018's addendum defers only vector *similarity
-   search*** — the `pgvector`/ANN index and `findSimilar` — until a release needs it;
-   the graph, exact fetch, and the embeddings *as available data* all ship now. The
+0. **[ADR-0017](./adr/0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
+   and [ADR-0018](./adr/0018-retrieval-is-a-store-side-query-surface.adr.md) are
+   ratified** (Accepted 2026-07-31) — the item-0 gate is cleared, item 1 may build.
+   They overturn ADR-0014 and set the store the retrieval leg is built on.
+   **ADR-0018's addendum defers only vector *similarity search*** — the
+   `pgvector`/ANN index and `findSimilar` — until a release needs it; the graph,
+   exact fetch, and the embeddings *as available data* all ship now. The
    store-backing sub-choice for the eventual index (`pgvector` vs ANN over the
    shards) is a follow-on ADR decided *then*, not now.
 1. **Item 1a precedes 1b** — the store must hold the chunk rows and embeddings
