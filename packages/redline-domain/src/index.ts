@@ -29,6 +29,10 @@ export * from "./entities/ambiguity-derivation";
 // Adjudication — the lens's LLM seam; picks among contending topics
 // for what retrieval left unclear and returns a one-sentence rationale.
 export * from "./ports/adjudicator";
+// Retrieval store — the ADR-0018 store-side query surface (item 1a/1b). Exact
+// fetch by provenance ships now; vector similarity (findSimilar) is declared
+// but deferred (ADR-0018 addendum). No vector ever crosses this seam.
+export * from "./ports/chunk-store";
 export * from "./ports/embedding-reader";
 export * from "./ports/evaluation-repository";
 export * from "./ports/financial-extractor";

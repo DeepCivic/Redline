@@ -5,6 +5,10 @@ import {
   ok,
   type ClassificationRequest,
   type Evaluation,
+  type HardRuleCandidate,
+  type HardRuleSet,
+  type IAdjudicator,
+  type IChunkStore,
   type IEvaluationRepository,
   type IFinancialExtractor,
   type ILanguageModel,
@@ -13,11 +17,13 @@ import {
   type ProcurementResponse,
   type RequirementClassification,
   type Result,
+  type Topic,
 } from "@redline/redline-domain";
 import {
   AssignDocumentsToGroups,
   BuildEvaluationTable,
   ClassifyResponseGroup,
+  ColdStartClassifier,
 } from "@redline/redline-application";
 import { WorkflowManager } from "./workflow-manager";
 import { ReviewGrid } from "./review-grid";
@@ -159,3 +165,33 @@ export const buildContainer = (parts: ProductionContainerParts): Result<Workflow
   }
   return ok({ ...parts, productName });
 };
+
+// The cold-start classification path, composed behind the IProcurementClassifier
+// port (delivery-plan item 1b; ADR-0008 first pass in the ADR-0018-addendum
+// shape). This is where a deployment with no Numbatch and no trained adapter
+// wires classification: hard rules + LLM adjudication over the store's
+// exact/structural fetch, no nearest-neighbour step. The result is an ordinary
+// IProcurementClassifier a caller hands to `buildContainer` as `parts.classifier`
+// — the trained Numbatch overlay would be wired the same way at the same seam,
+// and the controller cannot tell which is behind the port (ADR-0008 D2).
+export interface ColdStartClassifierParts {
+  readonly chunkStore: IChunkStore;
+  readonly adjudicator: IAdjudicator;
+  // The evaluation's lens: the topics adjudication chooses among, the hard rules
+  // resolved before the model, and the per-document identifier tokens the rules
+  // match on.
+  readonly topics: readonly Topic[];
+  readonly ruleSet: HardRuleSet;
+  readonly candidates: readonly HardRuleCandidate[];
+}
+
+export const buildColdStartClassifier = (
+  parts: ColdStartClassifierParts,
+): IProcurementClassifier =>
+  new ColdStartClassifier({
+    chunkStore: parts.chunkStore,
+    adjudicator: parts.adjudicator,
+    topics: parts.topics,
+    ruleSet: parts.ruleSet,
+    candidates: parts.candidates,
+  });

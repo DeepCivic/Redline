@@ -1,17 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { isOk, isErr, ok, err, domainError, makeEvaluation } from "@redline/redline-domain";
+import { isOk, isErr, ok, err, domainError, makeEvaluation, makeHardRuleSet } from "@redline/redline-domain";
 import type {
+  Adjudication,
+  AdjudicationRequest,
+  ChunkRow,
   Evaluation,
+  IAdjudicator,
+  IChunkStore,
   IEvaluationRepository,
   IFinancialExtractor,
   ILanguageModel,
   IProcurementClassifier,
   IProcurementExtractionReader,
   ProcurementResponse,
+  Result,
   ResponseGroup,
+  ScoredChunkRef,
+  StructureFilter,
+  Topic,
   Vendor,
 } from "@redline/redline-domain";
-import { WorkflowController } from "./container";
+import { WorkflowController, buildColdStartClassifier, buildContainer } from "./container";
 
 // A small in-memory repository so the controller can be exercised end to end
 // without a database — the same standalone posture as the application tests.
@@ -334,5 +343,146 @@ describe("WorkflowController — review", () => {
     // Every sheet still carries its header row.
     expect(built.data.sheets[0]).toHaveLength(1);
     expect(built.data.sheets[0][0][0]).toEqual({ value: "Vendor", type: String, fontWeight: "bold" });
+  });
+});
+
+// The item-1b seam: buildColdStartClassifier composes the untrained first pass
+// (hard rules + adjudication over exact fetch, no nearest-neighbour) into an
+// ordinary IProcurementClassifier the container accepts as `parts.classifier`.
+// This proves the cold-start path is wired *behind the port* — the controller,
+// once built with it, reclassifies a group with no Numbatch and no trained
+// adapter anywhere in the graph.
+describe("container — cold-start classifier wiring (item 1b)", () => {
+  const topics: readonly Topic[] = [
+    { id: "req-support", name: "Support", definition: "support services" },
+    { id: "req-hosting", name: "Hosting", definition: "hosting services" },
+  ];
+
+  // A store that answers the exact-fetch half and refuses the deferred
+  // similarity half — the ADR-0018-addendum shape the cold-start path runs over.
+  class FakeChunkStore implements IChunkStore {
+    constructor(private readonly rows: readonly ChunkRow[]) {}
+    async fetchChunks(
+      _e: string,
+      chunkIds: readonly string[],
+    ): Promise<Result<readonly ChunkRow[]>> {
+      return ok(
+        chunkIds
+          .map((id) => this.rows.find((r) => r.chunkId === id))
+          .filter((r): r is ChunkRow => r !== undefined),
+      );
+    }
+    async fetchByStructure(
+      _e: string,
+      filter: StructureFilter,
+    ): Promise<Result<readonly ChunkRow[]>> {
+      return ok(this.rows.filter((r) => !filter.documentId || r.documentId === filter.documentId));
+    }
+    async findSimilar(): Promise<Result<readonly ScoredChunkRef[]>> {
+      return err(domainError("NOT_IMPLEMENTED", "deferred (ADR-0018 addendum)"));
+    }
+  }
+
+  const adjudicator: IAdjudicator = {
+    async adjudicate(request: AdjudicationRequest): Promise<Result<Adjudication>> {
+      const verdict: Adjudication = {
+        documentId: request.documentId,
+        chosenTopicId: request.candidates[0].topicId,
+        rationale: "chosen on the passages",
+      };
+      return ok(verdict);
+    },
+  };
+
+  it("reclassifies a group through a container wired with the cold-start path (no Numbatch)", async () => {
+    const store = new FakeChunkStore([
+      {
+        documentId: "doc-1",
+        chunkId: "doc-1:0",
+        chunkIndex: 0,
+        contentType: "narrative",
+        page: 1,
+        text: "we provide support",
+      },
+    ]);
+    const ruleSet = makeHardRuleSet({ rules: [] });
+    if (isErr(ruleSet)) throw new Error("bad rules");
+
+    const coldStart = buildColdStartClassifier({
+      chunkStore: store,
+      adjudicator,
+      topics,
+      ruleSet: ruleSet.data,
+      candidates: [],
+    });
+
+    const repository = new InMemoryRepository();
+    const evaluation = makeEvaluation({ id: "eval-1", name: "Tender", stage: "classifying" });
+    if (isErr(evaluation)) throw new Error("bad seed");
+    repository.seed(evaluation.data);
+
+    const container = buildContainer({
+      repository,
+      classifier: coldStart,
+      financialExtractor,
+      extractionReader,
+      languageModel,
+      productName: "Platform",
+    });
+    expect(isOk(container)).toBe(true);
+    if (!isOk(container)) return;
+
+    const controller = new WorkflowController(container.data);
+    const result = await controller.reclassifyGroup({
+      evaluationId: "eval-1",
+      responseGroupId: "g-acme",
+      documentIds: ["doc-1"],
+    });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      documentId: "doc-1",
+      requirementId: "req-support",
+      sourceChunkId: "doc-1:0",
+    });
+  });
+
+  it("resolves a hard-rule-claimed document through the wired path without the model", async () => {
+    let modelCalls = 0;
+    const recordingAdjudicator: IAdjudicator = {
+      async adjudicate(request: AdjudicationRequest): Promise<Result<Adjudication>> {
+        modelCalls += 1;
+        return ok({
+          documentId: request.documentId,
+          chosenTopicId: request.candidates[0].topicId,
+          rationale: "",
+        });
+      },
+    };
+    const ruleSet = makeHardRuleSet({
+      rules: [{ id: "r1", pattern: "SEC-*", topicId: "req-support" }],
+    });
+    if (isErr(ruleSet)) throw new Error("bad rules");
+
+    const coldStart = buildColdStartClassifier({
+      chunkStore: new FakeChunkStore([]),
+      adjudicator: recordingAdjudicator,
+      topics,
+      ruleSet: ruleSet.data,
+      candidates: [{ documentId: "SEC-014", subjects: ["SEC-014"] }],
+    });
+
+    const result = await coldStart.classifyResponseGroup({
+      evaluationId: "eval-1",
+      responseGroupId: "g",
+      documentIds: ["SEC-014"],
+    });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data[0].requirementId).toBe("req-support");
+    expect(result.data[0].sourceChunkId).toBeNull();
+    expect(modelCalls).toBe(0);
   });
 });

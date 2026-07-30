@@ -10,7 +10,12 @@ export type DomainErrorCode =
   | "CONFLICT"
   | "EXTRACTION_FAILED"
   | "CLASSIFICATION_FAILED"
-  | "INFRA_FAILURE";
+  | "INFRA_FAILURE"
+  // A port operation that is deliberately declared but not yet built — a
+  // deferral, not a runtime fault. ADR-0018's addendum ships IChunkStore with
+  // findSimilar declared but its vector-search index deferred; the operation
+  // refuses with this code until a release builds it.
+  | "NOT_IMPLEMENTED";
 
 export interface DomainError {
   readonly code: DomainErrorCode;

@@ -15,8 +15,10 @@ export {
 export {
   WorkflowController,
   buildContainer,
+  buildColdStartClassifier,
   type OpenWorkflowInput,
   type ProductionContainerParts,
+  type ColdStartClassifierParts,
   type WorkflowContainer,
 } from "./lib/container";
 

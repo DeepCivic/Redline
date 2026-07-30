@@ -11,7 +11,9 @@
 # ship the dev defaults.
 #
 # Profiles:
-#   ingest    — womblex-ingest + minio (the ingestion path)
+#   ingest    — womblex-ingest + minio + redline-postgres (the ingestion path;
+#               an ingest lands the MinIO shards AND projects chunks + embeddings
+#               into the redline_ chunk store — item 1a, ADR-0017/0018)
 #   womblex   — the real womblex engine, built from the ../services/womblex
 #               submodule using ITS OWN Dockerfile and run through ITS OWN cloud
 #               runner (Postgres job queue + scalable `worker`), sharing MinIO.
@@ -86,6 +88,8 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+      redline-postgres:
+        condition: service_healthy
     environment:
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
@@ -95,6 +99,12 @@ services:
       # contract). redline's real deployment runs the womblex pod + WOMBLEX_MODE=real.
       WOMBLEX_MODE: ${WOMBLEX_MODE:-stub}
       ISAACUS_API_KEY: ${ISAACUS_API_KEY:-}
+      # redline's own Postgres (ADR-0002). When set, an ingest projects its
+      # chunks + embeddings into the `redline_` chunk store (item 1a) alongside
+      # the MinIO shards, so the cold-start classifier (item 1b) can fetch them
+      # by provenance. Points at the redline-postgres service, which the `ingest`
+      # profile brings up beside the sidecar. Unset it to run shards-only.
+      REDLINE_DATABASE_URL: ${REDLINE_DATABASE_URL:-postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}}
     ports:
       - "8000:8000"
 
@@ -281,7 +291,7 @@ services:
   # DATABASE_URL; the seam stays plain Postgres so a deployment can repoint it.
   redline-postgres:
     image: docker.io/library/postgres:16
-    profiles: ["redline"]
+    profiles: ["ingest", "redline"]
     environment:
       POSTGRES_USER: ${REDLINE_DB_USER:-redline}
       POSTGRES_PASSWORD: ${REDLINE_DB_PASSWORD:-redline-dev}

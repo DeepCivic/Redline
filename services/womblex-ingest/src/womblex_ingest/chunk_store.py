@@ -25,6 +25,10 @@ being, with `shard_reader`, the one place that understands womblex's chunk schem
 (`chunk_index`, `content_type`, `page`) — joins each to its vector, and writes the
 result. It reads the raw shard rows rather than the mapped `ChunkRecord` precisely
 so the JSON presentation seam (`records.py`) stays untouched by this store work.
+`load_extraction` is its sibling for the caller that already holds the mapped
+read model — the `/ingest` route — projecting a `DocumentExtraction` + its
+`DocumentEmbeddings` into the same `ChunkRow`s, so an ingest lands the store
+alongside the MinIO shards (the item-1a exit).
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Protocol, Sequence, Tuple
 
-from womblex_ingest.records import DocumentEmbeddings
+from womblex_ingest.records import DocumentEmbeddings, DocumentExtraction
 from womblex_ingest.shard_reader import ShardRows, _optional, _require
 
 
@@ -172,6 +176,67 @@ def load_document(
                 content_type=str(_optional(chunk_row, "content_type") or "narrative"),
                 page=_optional(chunk_row, "page", "page_number"),
                 text=str(_require(chunk_row, "text", "chunk_text")),
+                embedding=vector[0] if vector else None,
+                embedding_model=vector[1] if vector else None,
+            )
+        )
+    store.upsert_chunks(evaluation_id, projected)
+
+
+def _chunk_index_from_id(chunk_id: str) -> int:
+    """Recover the ordinal from a `{source_hash}:{chunk_index}` key.
+
+    The stable key carries the ordinal as its suffix (ADR-0014); a key that does
+    not is a producer that broke the seam's identity contract, so raising is
+    correct rather than silently landing an unaddressable row.
+    """
+    _, _, suffix = chunk_id.rpartition(":")
+    if not suffix.isdigit():
+        raise ValueError(
+            f"chunk id {chunk_id!r} does not end in a numeric chunk_index; "
+            "the seam's stable key is '{source_hash}:{chunk_index}' (ADR-0014)"
+        )
+    return int(suffix)
+
+
+def load_extraction(
+    store: ChunkStore,
+    evaluation_id: str,
+    document: DocumentExtraction,
+    embeddings: Optional[DocumentEmbeddings],
+) -> None:
+    """Project a document's JSON read model (+ vectors) into the store.
+
+    This is the load path the `/ingest` route drives: it already holds the mapped
+    `DocumentExtraction` and its `DocumentEmbeddings` sibling (the JSON seam,
+    `records.py`), so the store is populated from those rather than re-reading the
+    Parquet shards. `load_document` remains the raw-`ShardRows` projection for a
+    caller that has decoded rows in hand; the two land identical `ChunkRow`s.
+
+    Each chunk joins its vector on `chunkId` — the same key both resources carry
+    — and its `chunk_index` is recovered from that key. `content_type`/`page` are
+    absent from the JSON read model (it does not carry them), so they take the
+    store's defaults (`narrative` / ``None``), exactly as `load_document` does for
+    a chunk row that omits them. A chunk with no vector (the absent-embed-stage
+    path) lands with `embedding=None` — the extraction stays queryable
+    (NOT_FOUND on the vector, not a broken load — ADR-0018).
+    """
+    vectors_by_chunk_id: Dict[str, Tuple[List[float], str]] = {}
+    if embeddings is not None:
+        for vector in embeddings.vectors:
+            vectors_by_chunk_id[vector.chunkId] = (list(vector.values), embeddings.model)
+
+    projected: List[ChunkRow] = []
+    for chunk in document.chunks:
+        vector = vectors_by_chunk_id.get(chunk.chunkId)
+        projected.append(
+            ChunkRow(
+                document_id=document.documentId,
+                chunk_id=chunk.chunkId,
+                chunk_index=_chunk_index_from_id(chunk.chunkId),
+                content_type="narrative",
+                page=None,
+                text=chunk.text,
                 embedding=vector[0] if vector else None,
                 embedding_model=vector[1] if vector else None,
             )

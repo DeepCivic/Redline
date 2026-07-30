@@ -1,7 +1,8 @@
 """FastAPI surface for the womblex-ingest sidecar.
 
-Routes: `POST /ingest` (run extraction, write shards + JSON, return a run id),
-`GET /status/{run_id}`, `GET /extractions/{evaluation_id}/{document_id}` — the
+Routes: `POST /ingest` (run extraction, write shards + JSON, project chunks +
+embeddings into redline's own store when one is wired — item 1a, ADR-0017/0018 —
+and return a run id), `GET /status/{run_id}`, `GET /extractions/{evaluation_id}/{document_id}` — the
 Parquet→JSON read seam the Thread 4 adapter consumes — and
 `GET /embeddings/{evaluation_id}/{document_id}`, its retrieval sibling (ADR-0014).
 The two read seams are deliberately separate resources: the embed stage is an
@@ -20,6 +21,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from womblex_ingest.chunk_store import ChunkStore, load_extraction
 from womblex_ingest.embedding import TextEmbedder
 from womblex_ingest.extraction import Extractor
 from womblex_ingest.runs import Run, RunRegistry
@@ -71,6 +73,7 @@ def build_app(
     embedder: Optional[TextEmbedder] = None,
     womblex_mode: str = "stub",
     isaacus_enabled: bool = False,
+    chunk_store: Optional[ChunkStore] = None,
 ) -> FastAPI:
     app = FastAPI(title="womblex-ingest", version="0.1.0")
     registry = RunRegistry()
@@ -135,6 +138,27 @@ def build_app(
                 json.dumps(document_embeddings.to_json()).encode("utf-8"),
                 "application/json",
             )
+
+        # Project chunks + embeddings into redline's own store (item 1a,
+        # ADR-0017/0018) alongside the durable MinIO shards, so the cold-start
+        # classifier (item 1b) can fetch them by provenance. The store is present
+        # only when a deployment wired a DSN; the stub / air-gapped lane skips it
+        # and serves purely from the shards + JSON seam. A store write failure
+        # fails the run loudly rather than leaving the store silently behind the
+        # shards — the projection is the point of this stage.
+        if chunk_store is not None:
+            embeddings_by_document = {e.documentId: e for e in result.embeddings}
+            try:
+                for document in result.documents:
+                    load_extraction(
+                        chunk_store,
+                        evaluation_id,
+                        document,
+                        embeddings_by_document.get(document.documentId),
+                    )
+            except Exception as load_error:  # a store failure is a failed run
+                registry.mark_failed(run.run_id, str(load_error))
+                return _error(502, "INFRA_FAILURE", str(load_error), run_id=run.run_id)
 
         registry.mark_succeeded(run.run_id, result.document_count, shard_keys)
         return JSONResponse(
@@ -222,6 +246,19 @@ def build_app_from_env() -> FastAPI:
     )
     extractor = build_extractor(settings.womblex_mode, storage=storage, bucket=settings.bucket)
     embedder = build_text_embedder(settings.womblex_mode)
+
+    # Wire redline's own store only when a DSN is configured (ADR-0002). The
+    # PostgresChunkStore migrates its `redline_` tables on startup so the first
+    # ingest can project into them; without a DSN the store step is skipped and
+    # the sidecar serves from the shards + JSON seam alone.
+    chunk_store: Optional[ChunkStore] = None
+    if settings.redline_database_url:
+        from womblex_ingest.chunk_store_postgres import PostgresChunkStore
+
+        store = PostgresChunkStore(settings.redline_database_url)
+        store.migrate()
+        chunk_store = store
+
     return build_app(
         storage=storage,
         extractor=extractor,
@@ -229,4 +266,5 @@ def build_app_from_env() -> FastAPI:
         embedder=embedder,
         womblex_mode=settings.womblex_mode,
         isaacus_enabled=settings.isaacus_enabled,
+        chunk_store=chunk_store,
     )

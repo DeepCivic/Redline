@@ -34,8 +34,15 @@ from womblex_ingest.chunk_store import (
     InMemoryChunkStore,
     StructureFilter,
     load_document,
+    load_extraction,
 )
-from womblex_ingest.records import EmbeddingRecord, make_document_embeddings
+from womblex_ingest.records import (
+    DocumentExtraction,
+    ChunkRecord,
+    ElementRecord,
+    EmbeddingRecord,
+    make_document_embeddings,
+)
 from womblex_ingest.shard_reader import ShardRows
 
 SOURCE_HASH = "82f9355eabcd0001"
@@ -187,3 +194,78 @@ def test_chunk_row_is_plain_data() -> None:
     assert isinstance(row.embedding, list)
     with pytest.raises(Exception):
         row.text = "mutated"  # type: ignore[misc]  # frozen
+
+
+# ── load_extraction: the /ingest load path over the JSON read model ──────────
+
+
+def _extraction(source_hash: str) -> DocumentExtraction:
+    # The mapped read model the /ingest route holds (records.py). It carries no
+    # content_type/page on chunks — those take the store's defaults — but the
+    # chunkId is the stable `{source_hash}:{index}` key the load recovers the
+    # ordinal from and joins the vector on.
+    return DocumentExtraction(
+        documentId=source_hash,
+        elements=[ElementRecord(documentId=source_hash, elementOrder=0, page=1, text="e")],
+        chunks=[
+            ChunkRecord(chunkId=f"{source_hash}:0", documentId=source_hash, text="Chunk zero text."),
+            ChunkRecord(chunkId=f"{source_hash}:1", documentId=source_hash, text="Chunk one text."),
+        ],
+        tableCells=[],
+    )
+
+
+def test_load_extraction_lands_rows_from_the_json_read_model() -> None:
+    # The item-1a exit clause the /ingest route drives: a load lands addressable,
+    # byte-identical chunk rows from the mapped read model — identical shape to
+    # load_document's raw-shard projection.
+    store = InMemoryChunkStore()
+
+    load_extraction(store, EVAL, _extraction(SOURCE_HASH), _embeddings(SOURCE_HASH))
+
+    rows = store.fetch_chunks(EVAL, [f"{SOURCE_HASH}:0", f"{SOURCE_HASH}:1"])
+    assert [r.chunk_id for r in rows] == [f"{SOURCE_HASH}:0", f"{SOURCE_HASH}:1"]
+    assert rows[0].text == "Chunk zero text."
+    assert rows[0].chunk_index == 0
+    assert rows[1].chunk_index == 1
+
+
+def test_load_extraction_joins_the_vector_on_chunk_id() -> None:
+    # The vector is available data after the load, keyed on the same chunkId both
+    # the extraction and embeddings resources carry (ADR-0014).
+    store = InMemoryChunkStore()
+
+    load_extraction(store, EVAL, _extraction(SOURCE_HASH), _embeddings(SOURCE_HASH))
+
+    (row,) = store.fetch_chunks(EVAL, [f"{SOURCE_HASH}:0"])
+    assert row.embedding is not None
+    assert row.embedding_model == "kanon-2-embedder"
+    assert math.isclose(math.sqrt(sum(x * x for x in row.embedding)), 1.0, rel_tol=1e-9)
+
+
+def test_load_extraction_without_embeddings_lands_chunks_with_no_vector() -> None:
+    # The absent-embed-stage path over the read model: the chunks are queryable,
+    # the vector is simply absent (NOT_FOUND on the vector, not a broken load).
+    store = InMemoryChunkStore()
+
+    load_extraction(store, EVAL, _extraction(SOURCE_HASH), embeddings=None)
+
+    (row,) = store.fetch_chunks(EVAL, [f"{SOURCE_HASH}:0"])
+    assert row.text == "Chunk zero text."
+    assert row.embedding is None
+    assert row.embedding_model is None
+
+
+def test_load_extraction_rejects_a_chunk_id_without_a_numeric_ordinal() -> None:
+    # The stable key must carry its ordinal; a producer that broke that contract is
+    # a loud failure at the seam, not an unaddressable row landed silently.
+    store = InMemoryChunkStore()
+    broken = DocumentExtraction(
+        documentId=SOURCE_HASH,
+        elements=[],
+        chunks=[ChunkRecord(chunkId=f"{SOURCE_HASH}:not-a-number", documentId=SOURCE_HASH, text="x")],
+        tableCells=[],
+    )
+
+    with pytest.raises(ValueError):
+        load_extraction(store, EVAL, broken, embeddings=None)

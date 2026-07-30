@@ -28,6 +28,11 @@ class Settings:
     bucket: str
     womblex_mode: str
     isaacus_api_key: Optional[str]
+    # redline's own Postgres (ADR-0002). When set, an ingest projects its chunks +
+    # embeddings into the `redline_` chunk store (item 1a) alongside the MinIO
+    # shards; when absent (the stub / air-gapped lane), the store step is skipped
+    # and only the shards + JSON seam are written — the sidecar still starts.
+    redline_database_url: Optional[str]
 
     @property
     def isaacus_enabled(self) -> bool:
@@ -49,4 +54,5 @@ class Settings:
             bucket=os.environ.get("REDLINE_BUCKET", "redline"),
             womblex_mode=os.environ.get("WOMBLEX_MODE", "stub"),
             isaacus_api_key=os.environ.get("ISAACUS_API_KEY"),
+            redline_database_url=os.environ.get("REDLINE_DATABASE_URL"),
         )
