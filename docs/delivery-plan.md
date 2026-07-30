@@ -40,19 +40,43 @@ re-enters only when a *trained* overlay or the financial extension's roll-up is
 wanted; neither is needed to see the grid.
 
 Most of this slice already exists (use-cases, adapters, web core, the compose
-profiles — all green under `./validate.sh`). What remains, in order:
+profiles — all green under `./validate.sh`). The retrieval leg is the exception:
+ADR-0017/0018 (Proposed) rebuild it on a store, superseding the current
+in-TypeScript vector path. What remains, in order:
 
-### 1 — Retrieval-backed `IProcurementClassifier`
+### 1a — Materialise womblex embeddings into the retrieval store
+
+**New, and it precedes retrieval.** [ADR-0017](./adr/0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
+/ [ADR-0018](./adr/0018-retrieval-is-a-store-side-query-surface.adr.md) (both
+**Proposed** — ratify before building) overturn ADR-0014: at the measured corpus
+scale (~1,500 docs → ~90k chunks × 1792-d ≈ 645 MB packed / ~2.5–3 GB as JSON),
+vectors do **not** cross to TypeScript. The sidecar loads `*.chunks.parquet` +
+`*.embeddings.parquet` into redline's `redline_` Postgres schema (`pgvector`), a
+queryable projection with MinIO shards remaining the durable record (ADR-0002).
+
+_Exit: an ingest of a real corpus lands chunk rows + vectors in `redline_`
+(pgvector index built); an absent embed stage leaves the extraction queryable and
+the vector tables empty (NOT_FOUND on similarity, not a broken ingest)._
+
+### 1b — Retrieval-backed `IProcurementClassifier` over the store
 
 `ClassifyResponseGroup` takes an `IProcurementClassifier`; the container wires
 whichever implementation a deployment supplies. Today the only one is Numbatch's,
 which needs 10 samples/topic and a trained adapter. [ADR-0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md)
 settled that **both paths satisfy the same port** — so compose the cold-start path
-(hard rules → retrieval → adjudication, all built) behind that port in
-`lib/container.ts`, where the app layer may see both application and adapters.
+(hard rules → retrieval → adjudication) behind that port in `lib/container.ts`.
+
+**Retrieval is rebuilt on the store, not on shipped vectors.** ADR-0018 replaces
+ADR-0014's `IEmbeddingReader` (a reader returning `Float32Array`) with a
+provenance-addressed query port (exact `fetchChunks` by key + `findSimilar`
+discovery returning keyed candidates, never raw vectors); the query text is
+embedded store-side by the chunks' declared model, or the match is refused.
+`ClassifyByRetrieval` moves its cosine math out of TypeScript and onto that port.
+The existing `ClassifyByRetrieval` / `IEmbeddingReader` / embeddings adapter are
+**superseded** by this step, not extended.
 
 _Exit: `ClassifyResponseGroup` returns `RequirementClassification[]` for a real
-group with no Numbatch running and no samples curated._
+group with no Numbatch running and no samples curated, sourced from the store._
 
 ### 2 — Run the money stage
 
@@ -123,15 +147,25 @@ _Exit: Playwright green in CI against served routes._
 
 ### 5 — Real corpus, end to end
 
-Run a real procurement corpus through: `womblex` profile ingests →
-sidecar serves JSON (`WOMBLEX_MODE=real`) → group documents by vendor → classify
-by retrieval → render. Needs `ISAACUS_API_KEY` (the embed stage is Isaacus-only;
-without it there are no embeddings and no retrieval — `architecture.md` §2) and a
-corpus in the git-ignored `services/womblex-ingest/tests/corpus-local/`.
+Run a real procurement corpus through: `womblex` profile ingests → the sidecar
+extracts, chunks and embeds (see the runbook note below) → vectors materialise
+into the `redline_` store (item 1a) → group documents by vendor → classify by
+retrieval over the store (item 1b) → render. Extraction provenance still serves as
+JSON (ADR-0003/0017); only bulk vectors go to the store. Needs `ISAACUS_API_KEY`
+(chunking *and* embedding are Isaacus-gated — see below) and a corpus in the
+git-ignored `services/womblex-ingest/tests/corpus-local/`.
 
-Also the owner of two open items: **measure the three OCR-table gates**
-(paddleocr-only, deskew refusal, precision refusal) on the real corpus, and the
-**`content_type` join-key gap** (carried item §4.1).
+Also the owner of one open item: **measure the three OCR-table gates**
+(paddleocr-only, deskew refusal, precision refusal) on the real corpus.
+
+> **Two upstream-behaviour facts confirmed on a real 0.3.0 run, to bake into the
+> runbook (they are not obvious from the config).** (a) `womblex run` writes
+> `elements`/`table_cells`/`form_fields` but **does not persist chunks** — chunking
+> and embedding are separate per-stage commands (`womblex chunk --shards` then
+> `womblex embed --shards`) over the run's shard dir. (b) The **chunk stage is
+> Isaacus-gated** in 0.3.0 (the Kanon-2 tokeniser is API-only), so `ISAACUS_API_KEY`
+> is needed for *chunking*, not only embedding — `architecture.md` §7.1's "default
+> chunking is offline" is stale and should be corrected there.
 
 _Exit: a specialist opens the review grid for a real tender and sees each
 document delineated by topic and brand, with provenance back to source._
@@ -161,14 +195,17 @@ should shape the lens work rather than be assumed. In dependency order:
 
 ## 4. Carried-forward items
 
-1. **The `content_type` join-key gap** (`architecture.md` §7.3). womblex joins
-   vectors to chunks on `(source_hash, chunk_index, content_type)`; redline's
-   `chunkId` collapses that to two keys, so narrative and table chunks at the same
-   index collide. It bites on exactly the table-heavy tender corpora redline
-   targets. **Owner: item 5** (the real-corpus run). Resolving it means either a
-   `content_type`-aware `chunkId` or an ADR-0014 amendment — a change to the
-   seam's identity, not a binding fix. The fixtures write `content_type` so the
-   collision is visible in the shard rather than implied.
+1. **The `content_type` join-key gap is retired — no collision exists.** A real
+   0.3.0 run showed womblex assigns `chunk_index` as a single monotonic
+   per-document sequence spanning narrative *then* table chunks
+   (`process/chunker.py` re-sequences the concatenated list:
+   `chunk_index = len(repaired)` — e.g. a real REOI is narrative 0–21, table
+   22–29). So `(source_hash, chunk_index)` — redline's two-key `chunkId` — is
+   **already unique across content types**; there is nothing to disambiguate.
+   `content_type` is kept as **provenance carried alongside a row** (useful to the
+   report tools), not as a third join key. `architecture.md` §7.3's collision
+   worry should be corrected to say so. No `content_type`-aware `chunkId` and no
+   seam-identity change are needed.
 2. **Restore `validate.sh` check #13 to a hard `pass`.** The pin-drift guard keeps
    the engine build and the sidecar `womblex==0.3.0` pin honest. Upstream merged
    `0.3.0` on its `main` but never pushed the `v0.3.0` **tag**, so the gitlink
@@ -197,14 +234,21 @@ should shape the lens work rather than be assumed. In dependency order:
 
 **The lean vertical runs to completion before the deferred work starts.**
 
-1. **Items 1 and 3** are independent of each other. Item 1 unblocks classification
-   without Numbatch; item 3 unblocks pricing without Numbatch. Either order, or in
-   parallel. Item 3 sits behind **item 2** (run the money stage); if that proves
-   slow, run **items 1 and 4 first** — item 3 is the only one that needs the money
-   sidecars.
-2. **Item 4** — the shell. The only piece that is genuinely new code, and the only
-   reason the product cannot be looked at today.
-3. **Item 5** — the real corpus run. The point of the exercise.
+0. **Ratify [ADR-0017](./adr/0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
+   and [ADR-0018](./adr/0018-retrieval-is-a-store-side-query-surface.adr.md)** (both
+   Proposed) before any of item 1. They overturn ADR-0014 and set the store the
+   retrieval leg is built on; ADR-0018 also carries a store-backing sub-choice
+   (`pgvector` vs an ANN index over the shards) that may spawn a follow-on ADR.
+1. **Item 1a precedes 1b** — the store must hold the vectors before retrieval can
+   query it. Together they replace the old in-TypeScript retrieval leg (the former
+   `ClassifyByRetrieval` / `IEmbeddingReader` / embeddings adapter are superseded).
+2. **Items 1 (a→b) and 3** are independent of each other. Item 1 unblocks
+   classification without Numbatch; item 3 unblocks pricing without Numbatch.
+   Item 3 sits behind **item 2** (run the money stage); if that proves slow, run
+   **items 1 and 4 first** — item 3 is the only one that needs the money sidecars.
+3. **Item 4** — the shell. The only piece that is genuinely new *frontend* code,
+   and the only reason the product cannot be looked at today.
+4. **Item 5** — the real corpus run. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.

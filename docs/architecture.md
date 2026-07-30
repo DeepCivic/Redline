@@ -56,7 +56,7 @@ Womblex's stages split cleanly into offline and Isaacus-gated:
 |---|---|---|
 | `detect` / `extract` | **No** — PyMuPDF + PaddleOCR/YOLO, all local | `*.elements`, `*.table_cells`, `*.form_fields`, `*._manifest` parquet |
 | `redact` | No — local detector | `*.redactions.parquet` |
-| `chunk` (default) | **No** — `semchunk` with the Kanon *tokeniser* (offline token split) | `*.chunks.parquet` |
+| `chunk` (default) | **Yes** (v0.3.0) — `semchunk` sized with the Kanon-2 *tokeniser*, which is API-only (Kanon-2 is not on Hugging Face) | `*.chunks.parquet` |
 | `chunk` (AI mode, `chunking.chunking_model` set) | Yes — enricher-driven boundaries | `*.chunks.parquet` (better boundaries) |
 | `pii` | No — graph-driven (needs enrich) or a local MiniLM backstop | `*.pii_spans`, `*.clean_text` parquet |
 | **`embed`** | **YES** — `kanon-2-embedder` via `client.embeddings.create` | **`*.embeddings.parquet`** |
@@ -79,8 +79,11 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
 - The only genuinely offline concern is **redline's own infra** (its MinIO/Postgres
   are its own, config-driven, never a hardcoded Wayfinder endpoint — ADR-0002).
   That is unrelated to the Isaacus dependency.
-- Chunking is **not** Isaacus-gated in the default path (an earlier assumption
-  that it was is wrong — see §7). Only *AI* chunking and *embed*/*enrich* are.
+- **Chunking is also Isaacus-gated (v0.3.0).** An earlier revision recorded the
+  default chunk stage as offline; a real 0.3.0 run falsifies that — the Kanon-2
+  tokeniser is API-only, so `chunk` skips without `ISAACUS_API_KEY`. Chunks *and*
+  embeddings therefore both require Isaacus; only `extract`/`table_cells`/`redact`
+  are offline. See §7.
 
 ---
 
@@ -175,8 +178,11 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
 (2) Extraction + chunking  — the womblex POD
     The womblex pod runs over the evaluation's documents:
         womblex extract  → *.elements / *.table_cells / *.form_fields / *._manifest
-        womblex chunk    → *.chunks.parquet                    (offline; semchunk)
-        womblex embed    → *.embeddings.parquet   [ONLY if ISAACUS_API_KEY set]
+        womblex chunk    → *.chunks.parquet          [Isaacus-gated; Kanon-2 tokeniser]
+        womblex embed    → *.embeddings.parquet       [ONLY if ISAACUS_API_KEY set]
+    NB (v0.3.0): `womblex run` persists only extract shards; `chunk` and `embed`
+    are separate per-stage commands (`womblex chunk --shards`, `womblex embed
+    --shards`) over the run's shard dir.
     All shards land in MinIO under  proc/{evaluationId}/  (batch-NNNN.<role>.parquet).
     source_hash (SHA-256 of the source bytes) is the document identity throughout.
 
@@ -187,6 +193,10 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
     GET  /extractions/{eval}/{doc}   → { documentId, elements[], chunks[], tableCells[] }
     GET  /embeddings/{eval}/{doc}    → { documentId, model, dimensions, vectors[] }
     POST /embeddings/query {text}    → { model, dimensions, values[] }   (query vector)
+    NB: the embeddings-as-JSON seam is being superseded — at real corpus scale
+    (~90k chunks) bulk vectors move to a store (Parquet in MinIO/Postgres),
+    queried in place, not shipped to TypeScript. ADR-0017/0018 (Proposed) amend
+    ADR-0014; extraction provenance stays JSON. See delivery-plan items 1a/1b.
 
 (4) Ingest use-case  — redline-application
     IngestDocuments confirms every document reads back through the extraction port,
@@ -242,14 +252,17 @@ cold-start classification path *is* nearest-neighbour matching over womblex's
   (`narrative` | `table`), `start_char`/`end_char`, nullable `page_start`/`page_end`.
   Chunks join to elements by offset-range overlap, **not** by `elem_order`.
 - **Embeddings:** joined to chunks on **`(source_hash, chunk_index, content_type)`**
-  — a **three-key** join. Columns: `model`, `task`, `dim`, `vector` (float32 list).
+  in womblex's own store. Columns: `model`, `task`, `dim`, `vector` (float32 list).
   `task` is `retrieval/document` for chunk vectors and **must** be `retrieval/query`
-  for query vectors.
+  for query vectors. Note `chunk_index` is a **single monotonic per-document
+  sequence spanning narrative *then* table chunks** (womblex re-sequences the
+  concatenated list), so `(source_hash, chunk_index)` is already unique across
+  content types — the third key never disambiguates a collision (see §7).
 
 redline's JSON wire shape (the sidecar's `records.py` / the domain DTOs) uses
 `chunkId = "{source_hash}:{chunk_index}"` and L2-normalises vectors so a
-consumer's cosine similarity is a dot product (ADR-0014). See §7 for the
-`content_type` join-key gap this leaves open.
+consumer's cosine similarity is a dot product (ADR-0014). `content_type` is
+carried as provenance, not as part of the join key (see §7).
 
 ---
 
@@ -347,12 +360,15 @@ redline/
 The per-thread docs and dev-iteration plans carried assumptions that the
 vendored womblex source contradicts. Recorded here so they are not re-derived:
 
-1. **Chunking is NOT Isaacus-only.** The default chunk stage is offline
-   (`semchunk` + the Kanon tokeniser as a local token split). Only *AI chunking*
-   (`chunking.chunking_model` set) and the *embed*/*enrich* stages need Isaacus.
-   A run without Isaacus therefore yields extraction **and chunks** but no
-   embeddings — which, since retrieval needs embeddings, is not a usable redline
-   deployment (air-gap is a non-goal; see §2).
+1. **Chunking IS Isaacus-gated (v0.3.0) — an earlier "offline chunking"
+   assumption is now falsified.** A real 0.3.0 run showed the default `chunk`
+   stage skips without `ISAACUS_API_KEY`: it sizes chunks with the **Kanon-2**
+   tokeniser, which is API-only (it is not on Hugging Face; the earlier note that
+   `semchunk` + a *free* Kanon tokeniser ran offline described a prior engine
+   version). A run without Isaacus therefore yields extraction shards **but no
+   chunks and no embeddings** — not a usable redline deployment (air-gap is a
+   non-goal; see §2). Operationally: `womblex run` persists only extract shards;
+   `chunk` and `embed` are separate `--shards` commands.
 
 2. **Retrieval requires Isaacus.** `*.embeddings.parquet` is produced only by
    `kanon-2-embedder` (Isaacus). redline's retrieval classification (ADR-0008)
@@ -360,13 +376,20 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    from the earlier air-gap work is retired: it was only ever true up to the chunk
    stage, and air-gap is not a redline goal.
 
-3. **The embeddings join is three keys, not two.** womblex joins vectors to
-   chunks on `(source_hash, chunk_index, content_type)`. redline's wire shape
-   collapses this to `chunkId = {source_hash}:{chunk_index}` and drops
-   `content_type`. **Open finding:** a document with both narrative and table
-   chunks at the same `chunk_index` would collide. This needs either a
-   `content_type`-aware `chunkId` or an ADR-0014 amendment before real
-   table-heavy corpora are trusted. (Not yet resolved.)
+3. **The embeddings join is three keys upstream, but the two-key `chunkId` is
+   already unique — no collision exists.** womblex joins vectors to chunks on
+   `(source_hash, chunk_index, content_type)`. An earlier revision recorded this
+   as an **open finding**: that a document with both narrative and table chunks at
+   the same `chunk_index` would collide under redline's two-key
+   `chunkId = {source_hash}:{chunk_index}`. **A real 0.3.0 run falsifies that.**
+   womblex assigns `chunk_index` as a single monotonic per-document sequence
+   spanning narrative *then* table chunks (`process/chunker.py` re-sequences the
+   concatenated list: `chunk_index = len(repaired)` — e.g. a real REOI is
+   narrative 0–21, table 22–29). So `(source_hash, chunk_index)` is **already
+   unique across content types**; the third key never disambiguates a real
+   collision. `content_type` is kept as **provenance carried alongside a row**,
+   not as part of the join key. No `content_type`-aware `chunkId` and no
+   seam-identity change are needed. (Resolved.)
 
 4. **Table cells carry no currency flag, and `value_type` cannot supply one.**
    womblex's `TABLE_CELLS_SCHEMA` is `(source_hash, parent_elem_order, row, col,
@@ -435,7 +458,8 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
   engine is installed in the same environment. Producing the shards (and any query
   embedding) requires the engine and, for embeddings, Isaacus.
 - `ISAACUS_API_KEY` is the single switch that turns retrieval on. Without it:
-  extraction and chunk shards land, but there are no embeddings and no retrieval
+  extraction shards land, but there are **no chunks and no embeddings** (both the
+  `chunk` and `embed` stages are Isaacus-gated in v0.3.0), and no retrieval
   classification. redline treats that as a misconfiguration, not a supported mode
   (§2; ADR-0008, amended 2026-07-27).
 
