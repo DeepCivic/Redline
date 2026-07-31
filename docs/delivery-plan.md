@@ -1,6 +1,6 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-01
+> **Status:** the live tracking document · **Date:** 2026-08-01 (item 3 step 1 done)
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -104,18 +104,57 @@ with no money sidecar. Unblocked by the 0.3.0 bump; still needs item 1.
 _Exit: the review grid shows numeric AUD for a real tender's priced rows; the
 per-brand pivot totals them._
 
-### 3 — The Next.js shell
+### 3 — Mount the review UI into the forked Wayfinder
 
-**The only genuinely missing piece.** React/Next matching Wayfinder's `apps/web`
-([ADR-0006](./adr/0006-inherit-wayfinder-auth-roles.adr.md)), serving
-`/evaluations/:id/grouping`, `/evaluations/:id/review` (incl. Export to Excel) and
-`/evaluations/:id/pivots` over the existing `WorkflowController`. No new logic —
-the view models, sorting, filtering, deep links and export are all built and
-tested; this renders them. Wires the existing Playwright specs
-(`apps/redline-web/e2e/`) into CI, closing the `/e2e` deviation in `CLAUDE.md` and
-the browser half of the review-grid / pivots / export work.
+**The only genuinely missing piece.** The review grid, pricing pivots, Excel
+export and control surface are all built as framework-free brains + pure view
+models in `apps/redline-web/src/lib/` (green under `./validate.sh`); what is
+missing is the thing that *serves* them inside Wayfinder's UI.
 
-_Exit: Playwright green in CI against served routes._
+Per [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md)
+(**Accepted** 2026-08-01), this is **not** a standalone Next.js shell in
+`apps/redline-web`. It mounts into a **forked Wayfinder** carried as the
+`services/wayfinder` submodule (branch `redline-integration`), so the review UI
+sits *inside* Wayfinder's chrome, auth and router — modelled 1:1 on Wayfinder's
+own `extraction` feature (`apps/web/.../extraction/*`, `server/routers/extraction.ts`,
+`lib/container-extraction.ts`). The mount lives in the fork, never in redline's
+tree and never in upstream `main`; the fork's `main` stays a clean upstream
+mirror for later upstreaming (guarded by `validate.sh` #15).
+
+**Foundation done (2026-08-01):** commit `966361b` — `wayfinder.pin` → 0.20.0;
+the fork added as `services/wayfinder`; static guards (#9 size, ruff, eslint)
+exclude it; new fork-hygiene guard #15; ADR-0019 Accepted (amends 0006's
+delivery vehicle, narrows 0001's "never a fork"). **Step 1 done** (commit
+`a8bca49` on the fork's `redline-integration`, gitlink bumped in `11b18b7`):
+the fork's `apps/web` resolves the four `@redline/*` packages via
+`../../apps/*` + `../../packages/*` workspace globs — the reversible local
+reference ADR-0019 called for — with a resolution test standing as its exit.
+Both suites green (redline **15/15**, fork **20/20**). Recorded in
+[`architecture.md`](./architecture.md) §3/§6.
+
+The stitching build that remains, all on the fork's `redline-integration`
+branch, in order:
+1. **`evaluation` tRPC router** over `WorkflowController.openReviewGrid /
+   openPricingPivot / buildWorkbook`, returning the existing `renderReviewGridView` /
+   pricing view-model output; registered in the fork's `router.ts`.
+2. **`container-redline.ts`** — wire `WorkflowController` (via `buildContainer` +
+   `buildColdStartClassifier`) off the fork's container, mirroring
+   `container-extraction.ts`.
+3. **Routes + `"use client"` components** at `/evaluations/:id/{grouping,review,pivots}`
+   (incl. Export to Excel), mirroring `run-results.tsx` / `synthesise/`. No new
+   logic — they render the built view models.
+4. **Auth** — reuse Wayfinder's `viewProcedure` / Better Auth session; add an
+   `evaluation:review` permission key on the fork branch (ADR-0006).
+5. **Playwright** — point the existing specs (`apps/redline-web/e2e/`) at the
+   served fork, closing the `/e2e` deviation in `CLAUDE.md`.
+
+> One genuine integration point remains, not glue: the **live Better Auth
+> session** (step 4, which ADR-0006 flagged only resolves when the shell +
+> Wayfinder run together). The cross-workspace link (now done) was the other.
+> The rest is `extraction` one type over.
+
+_Exit: Playwright green against the served fork — a specialist opens
+`/evaluations/:id/review` inside Wayfinder and sees the grid, pivots and export._
 
 ### 4 — Real corpus, end to end
 
@@ -166,7 +205,7 @@ should shape the lens work rather than be assumed. In dependency order:
 | Item | Package(s) | Notes |
 |---|---|---|
 | Collision selection, ordering & capping | domain | Bounded, deterministic selection of genuinely ambiguous documents. |
-| `BoundaryDecision` entity | domain | Net-new modelling. Owns "primary/secondary semantics" (§4.4). |
+| `BoundaryDecision` entity | domain | Net-new modelling. Owns "primary/secondary semantics" (see §4 item 2). |
 | Decision persistence + corrections push | adapters | Shrunk: upstream owns corrections + audit — an adapter call over an existing API, not a build. |
 | Lens persistence | adapters | `redline_` tables for the lens + its Numbatch bindings (references, not copies). |
 | Lens portability | application | Apply a saved lens to a different corpus; its boundary decisions still bite. |
@@ -180,31 +219,13 @@ should shape the lens work rather than be assumed. In dependency order:
 
 ## 4. Carried-forward items
 
-1. **The `content_type` join-key gap is retired — no collision exists.** A real
-   0.3.0 run showed womblex assigns `chunk_index` as a single monotonic
-   per-document sequence spanning narrative *then* table chunks
-   (`process/chunker.py` re-sequences the concatenated list:
-   `chunk_index = len(repaired)` — e.g. a real REOI is narrative 0–21, table
-   22–29). So `(source_hash, chunk_index)` — redline's two-key `chunkId` — is
-   **already unique across content types**; there is nothing to disambiguate.
-   `content_type` is kept as **provenance carried alongside a row** (useful to the
-   report tools), not as a third join key. No `content_type`-aware `chunkId` and no
-   seam-identity change are needed. (`architecture.md` §7.3 now records this.)
-2. **Restore `validate.sh` check #13 to a hard `pass`.** The pin-drift guard keeps
-   the engine build and the sidecar `womblex==0.3.0` pin honest. Upstream merged
-   `0.3.0` on its `main` but never pushed the `v0.3.0` **tag**, so the gitlink
-   tracks the merged commit and #13 **warn+skips** (it compares against an exact
-   tag by design). This is quiet-by-consent, not silent. When womblex tags
-   `v0.3.0`: `git -C services/womblex fetch --tags && git checkout v0.3.0`,
-   `git add services/womblex`, and confirm #13 reports
-   `pass "womblex pin (submodule v0.3.0 == sidecar pin 0.3.0)"`.
-3. **The skill layer points at deleted paths.** `.claude/CLAUDE.md` and all five
+1. **The skill layer points at deleted paths.** `.claude/CLAUDE.md` and all five
    `.claude/commands/*.md` reference `docs/comprehension-lens-design.md`,
    `docs/procurement-evaluation-plan.md` and `docs/threads/` — none of which
    exist. Every code-writing skill fails at its first instruction. They also
    encode a thread-doc lifecycle that `architecture.md` abolished, so this is a
    rewrite against the live documents, not a path fix.
-4. **Open questions still owned here** (from the retired lens design): tenancy
+2. **Open questions still owned here** (from the retired lens design): tenancy
    mapping — Numbatch `organisation_id` ↔ Wayfinder identity (needs an ADR before
    a lens is shared between users); primary/secondary semantics (net-new
    modelling — Numbatch returns score-sorted ≤3 topics with no primary/secondary
@@ -233,8 +254,13 @@ should shape the lens work rather than be assumed. In dependency order:
    is already done (item 0); item 2 unblocks pricing without Numbatch. Item 2 sits
    behind **item 1** (run the money stage); if that proves slow, run **item 3
    first** — item 2 is the only one that needs the money sidecars.
-2. **Item 3** — the shell. The only piece that is genuinely new *frontend* code,
-   and the only reason the product cannot be looked at today.
+2. **Item 3** — the mount. The only genuinely new *frontend* code, and the only
+   reason the product cannot be looked at today. It lands in the forked Wayfinder
+   (`services/wayfinder`, branch `redline-integration`), not in `apps/redline-web`
+   — [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md); the
+   foundation (submodule + guards, `966361b`) and the `@redline/*` workspace link
+   (step 1, `a8bca49` / `11b18b7`) are merged, so what remains is the tRPC router,
+   container, routes, auth and Playwright.
 3. **Item 4** — the real corpus run. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally

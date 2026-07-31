@@ -95,8 +95,10 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 ```
 ┌──────────────────────────── redline (this repo) ────────────────────────────┐
 │                                                                              │
-│  apps/redline-web        Control surface: workflow, review grid, pricing     │
-│    (TypeScript)          pivots, Excel export. No Wayfinder imports in prod. │
+│  apps/redline-web        Control surface as framework-free brains + pure     │
+│    (TypeScript)          view models: workflow, review grid, pricing pivots, │
+│                          Excel export. Served by the forked Wayfinder (below)│
+│                          — no Wayfinder imports leak back into these packages.│
 │        │                                                                     │
 │        ▼                                                                     │
 │  packages/redline-application   Use-cases (orchestration): IngestDocuments,  │
@@ -132,6 +134,15 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 │        ▼                                                                     │
 │  MinIO  proc/{evaluationId}/*.parquet   ◄── written by ──┐                   │
 │  (redline-owned bucket, ADR-0002)                        │                   │
+│                                                          │                   │
+│  services/wayfinder  ◄ SUBMODULE: the Wayfinder FORK (branch                 │
+│    (TypeScript)        redline-integration, ADR-0019). Its apps/web SERVES    │
+│                        the redline-web brains + view models inside Wayfinder's│
+│                        chrome/auth/router. It resolves @redline/* as workspace│
+│                        packages (../../apps/*, ../../packages/* globs) exactly │
+│                        as it resolves @rbrasier/*. The mount lives only here, │
+│                        never in redline's tree; the fork's main stays a clean │
+│                        upstream mirror (validate.sh #15).                     │
 └──────────────────────────────────────────────────────────┼──────────────────┘
                                                             │
                             ┌───────────────────────────────┘
@@ -341,8 +352,12 @@ redline/
 │   │   │                          shard_reader (schema map), storage, embedding
 │   │   └── Dockerfile             the light API image
 │   ├── numbatch/                  ◄ SUBMODULE: the Numbatch fork @ 72bcead
-│   └── numbatch-extension/        redline's additive overlay (financial_extension
-│                                  + bootstrap-profile.py), grafts onto the fork
+│   ├── numbatch-extension/        redline's additive overlay (financial_extension
+│   │                              + bootstrap-profile.py), grafts onto the fork
+│   └── wayfinder/                 ◄ SUBMODULE: the Wayfinder FORK (ADR-0019),
+│                                  branch redline-integration. apps/web serves
+│                                  the redline-web UI; resolves @redline/* as
+│                                  workspace packages. Mount lives here only.
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
 │   └── womblex/redline.yaml       redline's pipeline config for the engine
@@ -376,8 +391,18 @@ redline/
   which chose a build-time pin for consistency with Wayfinder; Wayfinder's pin
   exists because a submodule drags its package set into the pnpm workspace, which
   is a JavaScript problem Numbatch does not have (D14, ADR-0015).
-- **Wayfinder** — materialised read-only from `wayfinder.pin` into
-  `vendor/wayfinder`, never committed (ADR-0012).
+- **Wayfinder** — consumed through **two** distinct seams, mechanism following
+  runtime (ADR-0015, ADR-0019):
+  - the **build-time typed-reuse seam** — materialised read-only from
+    `wayfinder.pin` into `vendor/wayfinder`, never committed (ADR-0012);
+  - the **runtime UI-mount seam** — the Wayfinder **fork** as a submodule at
+    `services/wayfinder`, tracking branch `redline-integration`. This is a
+    submodule redline *runs and edits* (unlike the byte-identical
+    womblex/numbatch submodules): the review UI mounts into the fork's `apps/web`,
+    which resolves redline's `@redline/*` packages as workspace members. The
+    invariant that replaces "never modified" is enforced by `validate.sh` #15 —
+    the checkout stays on `redline-integration` and the fork's `main` never
+    diverges from upstream, so upstreaming stays a clean diff (ADR-0019).
 
 ---
 
