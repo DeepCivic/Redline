@@ -1,6 +1,6 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-01 (item 3 step 1 done)
+> **Status:** the live tracking document · **Date:** 2026-08-01 (item 3 step 2 done)
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -134,17 +134,24 @@ Both suites green (redline **15/15**, fork **20/20**). Recorded in
 
 The stitching build that remains, all on the fork's `redline-integration`
 branch, in order:
-1. **`evaluation` tRPC router** over `WorkflowController.openReviewGrid /
-   openPricingPivot / buildWorkbook`, returning the existing `renderReviewGridView` /
-   pricing view-model output; registered in the fork's `router.ts`.
+1. **`evaluation` tRPC router** — **done** (commit `79bc493`): read-side
+   `reviewGrid` / `pricingPivot` / `workbook` procedures over
+   `WorkflowController.openReviewGrid / openPricingPivot / buildWorkbook`,
+   returning the existing `renderReviewGridView` / `renderPivotView` /
+   `EvaluationWorkbook` view models; registered as `evaluation` in the fork's
+   `router.ts`. Binds the controller via `ctx.container.redline.workflowController`
+   — the seam step 2 populates. Both suites green (redline **15/15**, fork
+   **20/20**).
 2. **`container-redline.ts`** — wire `WorkflowController` (via `buildContainer` +
-   `buildColdStartClassifier`) off the fork's container, mirroring
-   `container-extraction.ts`.
+   `buildColdStartClassifier`) onto the fork's container as
+   `ctx.container.redline.workflowController` (the seam step 1's router reads),
+   mirroring `container-extraction.ts`.
 3. **Routes + `"use client"` components** at `/evaluations/:id/{grouping,review,pivots}`
    (incl. Export to Excel), mirroring `run-results.tsx` / `synthesise/`. No new
    logic — they render the built view models.
 4. **Auth** — reuse Wayfinder's `viewProcedure` / Better Auth session; add an
-   `evaluation:review` permission key on the fork branch (ADR-0006).
+   `evaluation:review` permission key on the fork branch (ADR-0006). Swaps the
+   router's placeholder `authenticatedProcedure` gate.
 5. **Playwright** — point the existing specs (`apps/redline-web/e2e/`) at the
    served fork, closing the `/e2e` deviation in `CLAUDE.md`.
 
@@ -258,9 +265,10 @@ should shape the lens work rather than be assumed. In dependency order:
    reason the product cannot be looked at today. It lands in the forked Wayfinder
    (`services/wayfinder`, branch `redline-integration`), not in `apps/redline-web`
    — [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md); the
-   foundation (submodule + guards, `966361b`) and the `@redline/*` workspace link
-   (step 1, `a8bca49` / `11b18b7`) are merged, so what remains is the tRPC router,
-   container, routes, auth and Playwright.
+   foundation (submodule + guards, `966361b`), the `@redline/*` workspace link
+   (step 1, `a8bca49` / `11b18b7`) and the `evaluation` tRPC router (step 2,
+   `79bc493`) are merged, so what remains is the container wiring, routes, auth
+   and Playwright.
 3. **Item 4** — the real corpus run. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
