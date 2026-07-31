@@ -34,14 +34,15 @@ Each ADR is a file named `NNN-short-title.adr.md` and follows:
 
 ## Lifecycle
 
-Most ADRs are **preconditions**: drafted at planning (`/new-thread`) at status
-**Proposed**, reviewed (`/doc-review`), approved, then built — `/build` flips
-them to **Accepted** in the thread's commit and must not build past an unapproved
-one. Some are **discovered** during a build, when contact with the code forces a
-choice that could not honestly have been made in advance (ADR-0002 and ADR-0003
-were both locked mid-thread); those are recorded in the thread's own commit.
-ADR-0007 to ADR-0009 are **track-level** — they gate many threads and belong to
-none, so they were written once, ahead of the track.
+Most ADRs are **preconditions**: drafted at planning (adding the item to
+`docs/delivery-plan.md`) at status **Proposed**, reviewed (`/doc-review`),
+approved, then built — `/build` flips them to **Accepted** in the item's commit
+and must not build past an unapproved one. Some are **discovered** during a
+build, when contact with the code forces a choice that could not honestly have
+been made in advance (ADR-0002 and ADR-0003 were both locked mid-build); those
+are recorded in the item's own commit. ADR-0007 to ADR-0009 are **track-level**
+— they gate many items and belong to none, so they were written once, ahead of
+the work.
 
 ## Index
 

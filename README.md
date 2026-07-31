@@ -21,18 +21,19 @@ Under construction. Two documents govern:
 Durable design rationale lives in [`docs/design-principles.md`](./docs/design-principles.md)
 and the [ADRs](./docs/adr/); neither tracks work.
 
-Threads 1–15 and 17–25 are ✅ complete: scaffold, `redline-domain` (user-defined
-requirements + the lens domain), the `womblex-ingest` sidecar + embeddings seam,
-the extraction/embedding reader adapters, the Numbatch classifier + service
-scaffold, the financial extension, the `redline_` persistence layer, the
-orchestration use-cases, the workflow-manager control surface, the review
-grid/pivots/Excel export, the first-pass classification path (hard-rule /
-retrieval / adjudication) and the comprehension read models.
+The foundations are built and green under `./validate.sh`: the scaffold,
+`redline-domain` (user-defined requirements + the lens domain), the
+`womblex-ingest` sidecar + store-side chunk surface, the extraction reader
+adapters, the Numbatch classifier + service scaffold, the financial extension,
+the `redline_` persistence layer, the orchestration use-cases, the
+workflow-manager control surface, the review grid/pivots/Excel export, and the
+cold-start classification path (hard-rule + adjudication over exact fetch).
 
-**Current focus — Track V, the lean vertical**: get a real procurement corpus
-ingested and rendered on screen, delineated by topic and brand. The
-comprehension-lens work is deferred until that exists. See
-[`delivery-plan.md`](./docs/delivery-plan.md) §4.
+**Current focus — the lean vertical**: get a real procurement corpus ingested and
+rendered on screen, delineated by topic and brand. The comprehension-lens work is
+deferred until that exists. The outstanding items are the money-sidecar financial
+extractor, mounting the review UI into the forked Wayfinder, and the real-corpus
+run — see [`delivery-plan.md`](./docs/delivery-plan.md) §2.
 
 ## Architecture
 
@@ -105,6 +106,6 @@ committed tree and the real Wayfinder tree are never touched) and runs pnpm ther
 ```bash
 WAYFINDER_DIR=/path/to/wayfinder scripts/podman-run.sh            # install + build + test
 WAYFINDER_DIR=/path/to/wayfinder scripts/podman-run.sh "pnpm typecheck"
-# widen the vendored Wayfinder set when later threads need more packages:
+# widen the vendored Wayfinder set when later work needs more packages:
 WAYFINDER_PACKAGES="domain shared" scripts/podman-run.sh
 ```

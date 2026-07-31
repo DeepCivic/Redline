@@ -23,12 +23,19 @@ run `./validate.sh` and fix all failures before declaring done.
 
 | If the user is asking to…                                        | Run            |
 | ---------------------------------------------------------------- | -------------- |
-| Plan a new thread/track, design something, start a component     | `/new-thread`  |
-| Review a planned thread before building it                       | `/doc-review`  |
-| Implement a thread from the delivery plan, write code            | `/build`       |
+| Plan a new build step or component (add/refine an item in the plan) | Answer directly, then `/doc-review` |
+| Review a planned build step before building it                   | `/doc-review`  |
+| Implement an outstanding item from the delivery plan, write code | `/build`       |
 | Change or extend something already built                         | `/enhance`     |
 | Fix something broken or not working                              | `/bugfix`      |
 | Anything else                                                    | Answer directly |
+
+Planning new work is not its own skill: add or refine the item directly in
+`docs/delivery-plan.md` (§2/§3) against the build-step contract in §1 — one build
+step including its test, one commit, one package where possible, an explicit
+`_Exit: …_` test — then route to `/doc-review`. Split the item if its exit test
+joins two independently-testable behaviours, spans two languages, or introduces a
+new entity *and* port *and* adapter at once.
 
 ---
 
@@ -43,8 +50,11 @@ Our own packages live under `@redline/*` in `packages/`. Wayfinder is consumed
 read-only under `@rbrasier/*` (see ADR-0001). Two documents govern:
 [`docs/architecture.md`](../docs/architecture.md) is what redline **is**, and
 [`docs/delivery-plan.md`](../docs/delivery-plan.md) is what is **left to build**.
-`docs/dev-iteration-2.md` is frozen design rationale (the D1–D13 register) and
-tracks nothing.
+[`docs/design-principles.md`](../docs/design-principles.md) holds the durable
+adopted principles and non-goals (the D1–D13 decision register lives there and in
+the ADRs). The delivery plan tracks outstanding work only; it does not restate
+design, and its item numbers are local to that file and renumbered whenever the
+outstanding set changes.
 
 Both upstream Python engines are **git submodules** consumed for their existing
 capabilities, not reimplemented (**ADR-0015**): `services/womblex` (`v0.3.0`) and
@@ -105,26 +115,27 @@ reality demands it. These are decisions, not omissions:
 
 | Area | Wayfinder | redline | Why |
 |---|---|---|---|
-| Planning artefact | PRD + ADR + phase doc per feature | `architecture.md` (design) + `delivery-plan.md` (numbered **threads**); ADRs as needed | One-repo delivery already sequenced into threads |
-| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | Thread rows in `delivery-plan.md` §5 flip to ✅ with their exit-test evidence. **No per-thread docs** — `docs/threads/` was deleted deliberately | Keeps the whole delivery legible in one file |
-| Validation | `validate.sh` assuming local Node + services | `validate.sh` runs via **Podman** when no local Node; services added per-thread | Host here has no local Node |
-| E2E | Playwright suite exists day one (`/e2e`) | Playwright specs authored alongside the control surface, review grid, pricing pivots and Excel export; their executable exit gate is the vitest suite over the framework-free UI core until the Next.js shell serves the routes | UI logic lives in a pure, testable core; no browser/app server in this build environment yet |
-| Release model | alpha branches, `VERSION` sync | Pre-1.0; no alpha branches yet. Version bumps tracked per thread | Not yet releasing |
+| Planning artefact | PRD + ADR + phase doc per feature | `architecture.md` (design) + `delivery-plan.md` (outstanding **items**, locally numbered); ADRs as needed | One-repo delivery, sequenced directly in the plan |
+| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed item is **removed** from `delivery-plan.md`; its reasoning lives in git history and any durable change lands in `architecture.md` / an ADR. **No per-item docs** — `docs/threads/` was deleted deliberately | Keeps the plan to outstanding work only |
+| Validation | `validate.sh` assuming local Node + services | `validate.sh` runs via **Podman** when no local Node; services added per build step | Host here has no local Node |
+| E2E | Playwright suite exists day one (`/e2e`) | Playwright specs are built as framework-free UI cores + view models under `apps/redline-web/`; their executable exit gate is the vitest suite until the review UI is served inside the forked Wayfinder | UI logic lives in a pure, testable core; the mount into the fork is the outstanding piece |
+| Release model | alpha branches, `VERSION` sync | Pre-1.0; no alpha branches yet. Version bumps stated per build step | Not yet releasing |
 | Scope | `@rbrasier/*` | `@redline/*`, consuming `@rbrasier/*` read-only | This is an adapter, not the framework |
 
 When a deviation stops making sense, add the corresponding Wayfinder
 convention and update this table. The Playwright specs in
-`apps/redline-web/e2e/` wire into CI once the Next.js shell serving
-`/evaluations/:id/grouping`, `/evaluations/:id/review` (incl. the Export to Excel
-button) and `/evaluations/:id/pivots` lands — that is Track V thread 59, the
-current priority. The shell is Next.js/React to match Wayfinder's own `apps/web`
-(ADR-0006), not Numbatch's unused SvelteKit stack.
+`apps/redline-web/e2e/` wire into CI once the review UI is served inside the
+forked Wayfinder (`services/wayfinder`, branch `redline-integration`) at
+`/evaluations/:id/{grouping,review,pivots}` — the current priority
+(`delivery-plan.md` §2 item 2). The mount is Next.js/React inside Wayfinder's own
+`apps/web` (ADR-0006/ADR-0019), not a standalone shell and not Numbatch's unused
+SvelteKit stack.
 
 ---
 
 ## Versioning
 
-Pre-1.0, in active thread-by-thread development. Each code-writing skill states a
+Pre-1.0, in active step-by-step development. Each code-writing skill states a
 version bump intent (MAJOR / MINOR / PATCH) even though we are not yet cutting
 releases, so the history is honest when we do. `validate.sh` will enforce
 `VERSION` ↔ `package.json` sync once a `VERSION` file exists.

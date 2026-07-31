@@ -132,8 +132,8 @@ branch, in order:
    returning the existing `renderReviewGridView` / `renderPivotView` /
    `EvaluationWorkbook` view models; registered as `evaluation` in the fork's
    `router.ts`. Binds the controller via `ctx.container.redline.workflowController`
-   — the seam step 2 populates. Both suites green (redline **15/15**, fork
-   **20/20**).
+   — the seam step 2 (`container-redline.ts`) populates. Both suites green
+   (redline **15/15**, fork **20/20**).
 2. **`container-redline.ts`** — **done** (commit `2246be1`): `buildRedlineModule`
    composes redline's `WorkflowController` (via `buildContainer`) and returns it
    for the fork's container to expose as `ctx.container.redline.workflowController`
@@ -145,13 +145,14 @@ branch, in order:
    redline↔fork `ILanguageModel` bridge are **not yet built**, so the module
    constructs no port itself (no invention, no dead code). Its vitest exercises
    the module against in-memory ports; the live `getContainer()` wiring — the
-   one-line `buildRedlineModule(…)` call — waits on those adapters (items 1/3).
+   one-line `buildRedlineModule(…)` call — waits on those adapters (item 1's money
+   `IFinancialExtractor` and the store/adjudicator adapters item 3's live run needs).
    Fork suite green (**14/14** across the redline-mount surface: this module +
-   step 1 link + step 2 router).
+   the workspace link + step 1's router).
 3. **Routes + `"use client"` components** at `/evaluations/:id/{grouping,review,pivots}`
    (incl. Export to Excel), mirroring `run-results.tsx` / `synthesise/`. No new
    logic — they render the built view models. This and the live `getContainer()`
-   wiring both need the injected ports step 2 stubbed — principally item 1's money
+   wiring both need the ports step 2 left injected — principally item 1's money
    `IFinancialExtractor` and the cold-start store/adjudicator adapters — before
    the served UI shows real data end to end.
 4. **Auth** — reuse Wayfinder's `viewProcedure` / Better Auth session; add an
@@ -219,7 +220,7 @@ should shape the lens work rather than be assumed. In dependency order:
 | Item | Package(s) | Notes |
 |---|---|---|
 | Collision selection, ordering & capping | domain | Bounded, deterministic selection of genuinely ambiguous documents. |
-| `BoundaryDecision` entity | domain | Net-new modelling. Owns "primary/secondary semantics" (see §4 item 2). |
+| `BoundaryDecision` entity | domain | Net-new modelling. Owns "primary/secondary semantics" (see §4 item 1). |
 | Decision persistence + corrections push | adapters | Shrunk: upstream owns corrections + audit — an adapter call over an existing API, not a build. |
 | Lens persistence | adapters | `redline_` tables for the lens + its Numbatch bindings (references, not copies). |
 | Lens portability | application | Apply a saved lens to a different corpus; its boundary decisions still bite. |
@@ -233,13 +234,7 @@ should shape the lens work rather than be assumed. In dependency order:
 
 ## 4. Carried-forward items
 
-1. **The skill layer points at deleted paths.** `.claude/CLAUDE.md` and all five
-   `.claude/commands/*.md` reference `docs/comprehension-lens-design.md`,
-   `docs/procurement-evaluation-plan.md` and `docs/threads/` — none of which
-   exist. Every code-writing skill fails at its first instruction. They also
-   encode a thread-doc lifecycle that `architecture.md` abolished, so this is a
-   rewrite against the live documents, not a path fix.
-2. **Open questions still owned here** (from the retired lens design): tenancy
+1. **Open questions still owned here** (from the retired lens design): tenancy
    mapping — Numbatch `organisation_id` ↔ Wayfinder identity (needs an ADR before
    a lens is shared between users); primary/secondary semantics (net-new
    modelling — Numbatch returns score-sorted ≤3 topics with no primary/secondary
@@ -274,9 +269,10 @@ should shape the lens work rather than be assumed. In dependency order:
    (`services/wayfinder`, branch `redline-integration`), not in `apps/redline-web`
    — [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md); the
    foundation (submodule + guards, `966361b`), the `@redline/*` workspace link
-   (step 1, `a8bca49` / `11b18b7`), the `evaluation` tRPC router (step 2,
-   `79bc493`) and the `container-redline.ts` seam (step 3, `2246be1`) are merged,
-   so what remains is the live container wiring, routes, auth and Playwright.
+   (`a8bca49` / `11b18b7`), the `evaluation` tRPC router (stitching step 1,
+   `79bc493`) and the `container-redline.ts` seam (stitching step 2, `2246be1`)
+   are merged, so what remains is the stitching's live container wiring, routes
+   (step 3), auth (step 4) and Playwright (step 5).
 3. **Item 3** — the real corpus run. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
