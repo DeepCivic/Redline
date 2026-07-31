@@ -143,6 +143,17 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 │                        as it resolves @rbrasier/*. The mount lives only here, │
 │                        never in redline's tree; the fork's main stays a clean │
 │                        upstream mirror (validate.sh #15).                     │
+│                        As built: the `evaluation` tRPC router (read-side      │
+│                        reviewGrid/pricingPivot/workbook) and container-redline  │
+│                        .ts (buildRedlineModule → WorkflowController behind      │
+│                        ctx.container.redline.workflowController) mirror the     │
+│                        fork's own extraction feature. The controller's ports   │
+│                        cross container-redline's boundary as INJECTED deps —    │
+│                        the repository + extraction reader adapters exist; the   │
+│                        cold-start classifier's store/adjudicator and the money  │
+│                        IFinancialExtractor are not yet built, so the live       │
+│                        getContainer() wiring waits on them (routes/auth/e2e     │
+│                        remain — delivery-plan item 3).                          │
 └──────────────────────────────────────────────────────────┼──────────────────┘
                                                             │
                             ┌───────────────────────────────┘
@@ -358,6 +369,10 @@ redline/
 │                                  branch redline-integration. apps/web serves
 │                                  the redline-web UI; resolves @redline/* as
 │                                  workspace packages. Mount lives here only.
+│                                  As built: server/routers/evaluation.ts (tRPC,
+│                                  read-side) + lib/container-redline.ts
+│                                  (buildRedlineModule → WorkflowController).
+│                                  Routes, auth key + Playwright still to land.
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
 │   └── womblex/redline.yaml       redline's pipeline config for the engine

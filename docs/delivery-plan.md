@@ -1,6 +1,7 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-01 (item 3 step 2 done)
+> **Status:** the live tracking document · **Date:** 2026-08-02 (item 3 step 3 —
+> `container-redline.ts` — done)
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -142,13 +143,26 @@ branch, in order:
    `router.ts`. Binds the controller via `ctx.container.redline.workflowController`
    — the seam step 2 populates. Both suites green (redline **15/15**, fork
    **20/20**).
-2. **`container-redline.ts`** — wire `WorkflowController` (via `buildContainer` +
-   `buildColdStartClassifier`) onto the fork's container as
-   `ctx.container.redline.workflowController` (the seam step 1's router reads),
-   mirroring `container-extraction.ts`.
+2. **`container-redline.ts`** — **done** (commit `2246be1`): `buildRedlineModule`
+   composes redline's `WorkflowController` (via `buildContainer`) and returns it
+   for the fork's container to expose as `ctx.container.redline.workflowController`
+   — the seam step 1's router reads — mirroring `container-extraction.ts`. Per
+   **Option A**, the controller's six ports cross the module boundary as
+   *injected* dependencies: the `IEvaluationRepository` and
+   `IProcurementExtractionReader` adapters exist, but the cold-start classifier's
+   `IChunkStore`/`IAdjudicator`, the money `IFinancialExtractor` (item 2) and a
+   redline↔fork `ILanguageModel` bridge are **not yet built**, so the module
+   constructs no port itself (no invention, no dead code). Its vitest exercises
+   the module against in-memory ports; the live `getContainer()` wiring — the
+   one-line `buildRedlineModule(…)` call — waits on those adapters (items 1/2/4).
+   Fork suite green (**14/14** across the redline-mount surface: this module +
+   step 1 link + step 2 router).
 3. **Routes + `"use client"` components** at `/evaluations/:id/{grouping,review,pivots}`
    (incl. Export to Excel), mirroring `run-results.tsx` / `synthesise/`. No new
-   logic — they render the built view models.
+   logic — they render the built view models. This and the live `getContainer()`
+   wiring both need the injected ports step 2 stubbed — principally item 2's money
+   `IFinancialExtractor` and the cold-start store/adjudicator adapters — before
+   the served UI shows real data end to end.
 4. **Auth** — reuse Wayfinder's `viewProcedure` / Better Auth session; add an
    `evaluation:review` permission key on the fork branch (ADR-0006). Swaps the
    router's placeholder `authenticatedProcedure` gate.
@@ -157,8 +171,10 @@ branch, in order:
 
 > One genuine integration point remains, not glue: the **live Better Auth
 > session** (step 4, which ADR-0006 flagged only resolves when the shell +
-> Wayfinder run together). The cross-workspace link (now done) was the other.
-> The rest is `extraction` one type over.
+> Wayfinder run together). The cross-workspace link and the container seam (both
+> now done) were the other two. The rest is `extraction` one type over — plus
+> populating `container-redline.ts`'s injected ports once items 1/2 land their
+> adapters.
 
 _Exit: Playwright green against the served fork — a specialist opens
 `/evaluations/:id/review` inside Wayfinder and sees the grid, pivots and export._
@@ -266,9 +282,9 @@ should shape the lens work rather than be assumed. In dependency order:
    (`services/wayfinder`, branch `redline-integration`), not in `apps/redline-web`
    — [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md); the
    foundation (submodule + guards, `966361b`), the `@redline/*` workspace link
-   (step 1, `a8bca49` / `11b18b7`) and the `evaluation` tRPC router (step 2,
-   `79bc493`) are merged, so what remains is the container wiring, routes, auth
-   and Playwright.
+   (step 1, `a8bca49` / `11b18b7`), the `evaluation` tRPC router (step 2,
+   `79bc493`) and the `container-redline.ts` seam (step 3, `2246be1`) are merged,
+   so what remains is the live container wiring, routes, auth and Playwright.
 3. **Item 4** — the real corpus run. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
