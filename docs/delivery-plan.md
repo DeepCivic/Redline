@@ -1,7 +1,7 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-02 (item 3 step 3 —
-> `container-redline.ts` — done)
+> **Status:** the live tracking document · **Date:** 2026-08-02 (money-stage
+> invocation done — migrated to architecture.md §2/§4/§7; removed from the plan)
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -50,34 +50,25 @@ materialises womblex's chunks + embeddings into `redline_`, and the cold-start
 See [`architecture.md`](./architecture.md) §4/§5 for how they sit in the dataflow.
 What remains, in order:
 
-### 1 — Run the money stage
-
-The `money:` section is already in `infra/womblex/redline.yaml` (inert until the
-0.3.0 bump; pydantic ignores unknown sections). This step is the *invocation*: a
-`womblex money --shards` step after the run. It is not part of `womblex run` /
-`worker`, and `money_shards()` takes a local `Path` while the distributed lane
-publishes to object storage — so it needs a stage-in / stage-out decision.
-Unblocks item 2.
-
-_Exit: a run over a real corpus produces `*.money_spans.parquet` +
-`*.money_columns.parquet` siblings in object storage._
-
-### 2 — Currency from table cells, no Numbatch
+### 1 — Currency from table cells, no Numbatch
 
 An `IFinancialExtractor` backed by the money data, mapped to (document,
 requirement) via the classification's `sourceChunkId`. Cruder than the Numbatch
 financial extension and explicitly a first pass; `architecture.md` §7 item 4 notes
-the verbatim-cell derivation is the interim source and the Numbatch extension the
+the money-sidecar source is the interim one and the Numbatch extension the
 better long-term one. One adapter, and it removes a whole
 stack from the critical path.
 
 Read `*.money_spans.parquet` (`locus='table_cell'`, joined on
 `(source_hash, parent_elem_order, row, col)`) rather than deriving `isCurrency` at
-the seam. The exit test gains a real `Decimal` and an explicit currency, and must
-cover a **header-evidenced bare-number column** — the ~98.7% case redline is blind
-to today. Supersedes [ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md);
+the seam. The money-stage invocation that lands those sidecars is **built**
+(`services/womblex-ingest/.../money_stage.py`, the `money` compose profile;
+`architecture.md` §4 step 2'). The exit test gains a real `Decimal` and an
+explicit currency, and must cover a **header-evidenced bare-number column** — the
+~98.7% case redline is blind to today. Supersedes
+[ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md);
 decide there whether `derive_is_currency` is retained as a fallback for shards
-with no money sidecar. Unblocked by the 0.3.0 bump; still needs item 1.
+with no money sidecar.
 
 > **One upstream limitation to carry into the exit test, because no config can
 > fix it.** `classify_column` checks vetoes *before* money terms and returns
@@ -100,12 +91,12 @@ with no money sidecar. Unblocked by the 0.3.0 bump; still needs item 1.
 > vocabulary that are not money — and each still yields to a header declaring its
 > own currency, so `Warranty ($)` survives. Treat the lists as **provisional**
 > and tune them against `*.money_columns.parquet` on the first real corpus
-> (item 4).
+> (item 3).
 
 _Exit: the review grid shows numeric AUD for a real tender's priced rows; the
 per-brand pivot totals them._
 
-### 3 — Mount the review UI into the forked Wayfinder
+### 2 — Mount the review UI into the forked Wayfinder
 
 **The only genuinely missing piece.** The review grid, pricing pivots, Excel
 export and control surface are all built as framework-free brains + pure view
@@ -150,17 +141,17 @@ branch, in order:
    **Option A**, the controller's six ports cross the module boundary as
    *injected* dependencies: the `IEvaluationRepository` and
    `IProcurementExtractionReader` adapters exist, but the cold-start classifier's
-   `IChunkStore`/`IAdjudicator`, the money `IFinancialExtractor` (item 2) and a
+   `IChunkStore`/`IAdjudicator`, the money `IFinancialExtractor` (item 1) and a
    redline↔fork `ILanguageModel` bridge are **not yet built**, so the module
    constructs no port itself (no invention, no dead code). Its vitest exercises
    the module against in-memory ports; the live `getContainer()` wiring — the
-   one-line `buildRedlineModule(…)` call — waits on those adapters (items 1/2/4).
+   one-line `buildRedlineModule(…)` call — waits on those adapters (items 1/3).
    Fork suite green (**14/14** across the redline-mount surface: this module +
    step 1 link + step 2 router).
 3. **Routes + `"use client"` components** at `/evaluations/:id/{grouping,review,pivots}`
    (incl. Export to Excel), mirroring `run-results.tsx` / `synthesise/`. No new
    logic — they render the built view models. This and the live `getContainer()`
-   wiring both need the injected ports step 2 stubbed — principally item 2's money
+   wiring both need the injected ports step 2 stubbed — principally item 1's money
    `IFinancialExtractor` and the cold-start store/adjudicator adapters — before
    the served UI shows real data end to end.
 4. **Auth** — reuse Wayfinder's `viewProcedure` / Better Auth session; add an
@@ -173,13 +164,13 @@ branch, in order:
 > session** (step 4, which ADR-0006 flagged only resolves when the shell +
 > Wayfinder run together). The cross-workspace link and the container seam (both
 > now done) were the other two. The rest is `extraction` one type over — plus
-> populating `container-redline.ts`'s injected ports once items 1/2 land their
-> adapters.
+> populating `container-redline.ts`'s injected ports once item 1 lands its
+> adapter.
 
 _Exit: Playwright green against the served fork — a specialist opens
 `/evaluations/:id/review` inside Wayfinder and sees the grid, pivots and export._
 
-### 4 — Real corpus, end to end
+### 3 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
@@ -221,7 +212,7 @@ document delineated by topic and brand, with provenance back to source._
 
 ## 3. Deferred — comprehension lens & release
 
-Deferred until the lean vertical is complete. Revisit **after** item 4 has shown
+Deferred until the lean vertical is complete. Revisit **after** item 3 has shown
 what the cold-start path actually gets right on a real corpus — that evidence
 should shape the lens work rather than be assumed. In dependency order:
 
@@ -254,7 +245,7 @@ should shape the lens work rather than be assumed. In dependency order:
    modelling — Numbatch returns score-sorted ≤3 topics with no primary/secondary
    distinction; owned by the `BoundaryDecision` item in §3); ambiguity thresholds
    (the signal register needs initial values, unmeasured until a real corpus runs
-   — item 4).
+   — item 3).
 
 ---
 
@@ -273,11 +264,12 @@ should shape the lens work rather than be assumed. In dependency order:
    fetch, no nearest-neighbour step. The store-backing sub-choice for the eventual
    index (`pgvector` vs ANN over the shards) is a follow-on ADR decided *then*, not
    now.
-1. **Items 1 and 2** are independent of each other. Classification without Numbatch
-   is already done (item 0); item 2 unblocks pricing without Numbatch. Item 2 sits
-   behind **item 1** (run the money stage); if that proves slow, run **item 3
-   first** — item 2 is the only one that needs the money sidecars.
-2. **Item 3** — the mount. The only genuinely new *frontend* code, and the only
+1. **Items 1 and 2 are independent** of each other. Classification without Numbatch
+   is already done (item 0), and the money-stage invocation that lands the pricing
+   sidecars is built (architecture.md §4 step 2'), so **item 1** (pricing without
+   Numbatch) has the sidecars it reads and **item 2** (the UI mount) can proceed in
+   parallel.
+2. **Item 2** — the mount. The only genuinely new *frontend* code, and the only
    reason the product cannot be looked at today. It lands in the forked Wayfinder
    (`services/wayfinder`, branch `redline-integration`), not in `apps/redline-web`
    — [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md); the
@@ -285,7 +277,7 @@ should shape the lens work rather than be assumed. In dependency order:
    (step 1, `a8bca49` / `11b18b7`), the `evaluation` tRPC router (step 2,
    `79bc493`) and the `container-redline.ts` seam (step 3, `2246be1`) are merged,
    so what remains is the live container wiring, routes, auth and Playwright.
-3. **Item 4** — the real corpus run. The point of the exercise.
+3. **Item 3** — the real corpus run. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.

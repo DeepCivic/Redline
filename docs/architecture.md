@@ -13,7 +13,7 @@
 >
 > It is written against the *actual* behaviour of
 > the upstream engines (womblex is vendored as a submodule at `services/womblex`,
-> pinned to `v0.2.0`; Numbatch is a submodule at `services/numbatch`), not against
+> pinned to `v0.3.0`; Numbatch is a submodule at `services/numbatch`), not against
 > aspiration. Where an earlier assumption proved false, the correction is stated
 > plainly under **Corrections to earlier assumptions**.
 
@@ -42,7 +42,7 @@ adjudication — lives behind a seam in an upstream system or an external API.
 
 | System | What it is | How redline consumes it |
 |---|---|---|
-| **womblex** (`services/womblex`, submodule @ `v0.2.0`) | Python document-extraction pipeline: detect → extract → (redact) → chunk → (embed / enrich / pii). Writes **Parquet shards** to object storage. | As a **worker pod** that lands shards in MinIO, plus a thin **FastAPI read sidecar** (`services/womblex-ingest`) that reads those shards and serves **JSON** (ADR-0003). redline's TypeScript never links a Parquet reader. |
+| **womblex** (`services/womblex`, submodule @ `v0.3.0`) | Python document-extraction pipeline: detect → extract → (redact) → chunk → (embed / enrich / pii), plus the offline **`money`** annotation op (added `v0.3.0`). Writes **Parquet shards** to object storage. | As a **worker pod** that lands shards in MinIO, plus a thin **FastAPI read sidecar** (`services/womblex-ingest`) that reads those shards and serves **JSON** (ADR-0003). redline's TypeScript never links a Parquet reader. The sidecar also carries the **money-stage invocation** (`run_money_stage` / the `money` compose profile). |
 | **Numbatch** (`services/numbatch`, submodule @ `72bcead`) | Python no-code multi-topic classifier: curated samples → LoRA adapter → per-document classification. FastAPI backend + Arq worker + DB-free inference service. Ships a corrections API with an append-only audit trail, topic-scoped sample dedupe, and user-controlled adapter activation with replay comparison. | As a **backend+worker+inference stack** (SvelteKit frontend excluded — redline owns its UI), built from the fork's own Dockerfiles. A redline requirement ↔ a Numbatch topic; a requirement set ↔ a profile. redline **extends** the backend for financial-figure extraction via `services/numbatch-extension/`. |
 | **Isaacus** (external SaaS API) | The Kanon model family: `kanon-2-embedder` (retrieval embeddings), `kanon-2-enricher` (entity/graph enrichment + AI chunking), `kanon-universal-classifier`, `kanon-answer-extractor`. | **Only** through womblex's embed/enrich stages. redline never calls Isaacus directly. Requires `ISAACUS_API_KEY`. |
 
@@ -56,6 +56,7 @@ Womblex's stages split cleanly into offline and Isaacus-gated:
 |---|---|---|
 | `detect` / `extract` | **No** — PyMuPDF + PaddleOCR/YOLO, all local | `*.elements`, `*.table_cells`, `*.form_fields`, `*._manifest` parquet |
 | `redact` | No — local detector | `*.redactions.parquet` |
+| **`money`** | **No** — offline, API-free amount recognition (v0.3.0) | **`*.money_spans.parquet`** (one row per amount, exact `Decimal` + currency) + `*.money_columns.parquet` (per-column verdict audit) |
 | `chunk` (default) | **Yes** (v0.3.0) — `semchunk` sized with the Kanon-2 *tokeniser*, which is API-only (Kanon-2 is not on Hugging Face) | `*.chunks.parquet` |
 | `chunk` (AI mode, `chunking.chunking_model` set) | Yes — enricher-driven boundaries | `*.chunks.parquet` (better boundaries) |
 | `pii` | No — graph-driven (needs enrich) or a local MiniLM backstop | `*.pii_spans`, `*.clean_text` parquet |
@@ -158,13 +159,19 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
                                                             │
                             ┌───────────────────────────────┘
                             │ writes shards
-                  services/womblex  (submodule @ v0.2.0)
+                  services/womblex  (submodule @ v0.3.0)
                     the REAL engine, built from its OWN Dockerfile
                     and run through its OWN cloud runner (Postgres
                     job queue + scalable worker, native S3 staging):
                     extract → chunk → (embed)
                     embed stage calls ──────────────────────► Isaacus API
                                                               (ISAACUS_API_KEY)
+
+                  services/womblex-ingest  ALSO runs the `money` op on demand
+                    (money_stage.py / `money` compose profile): stages an
+                    evaluation's shards down, runs womblex `money_shards()`,
+                    publishes *.money_spans / *.money_columns back — offline,
+                    no Isaacus. See §4 step (2').
 ```
 
 ### Why womblex is split into a pod + a sidecar
@@ -214,6 +221,21 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
     --shards`) over the run's shard dir.
     All shards land in MinIO under  proc/{evaluationId}/  (batch-NNNN.<role>.parquet).
     source_hash (SHA-256 of the source bytes) is the document identity throughout.
+
+(2') Money annotation  — the womblex-ingest SIDECAR, on demand (v0.3.0)
+    Not part of `womblex run`/`worker` (offline, API-free, no ordering dependency),
+    so it runs after a run drains — the same lifecycle as `womblex finalize`.
+    `womblex money --shards` takes a LOCAL dir but the shards live in object
+    storage, so `services/womblex-ingest/.../money_stage.py` (run_money_stage) is
+    the stage-in / run / stage-out step: it downloads each batch's *.elements +
+    *.table_cells, runs womblex's own money_shards() (config sourced from
+    infra/womblex/redline.yaml via WOMBLEX_CONFIG — the tuning is never restated),
+    and publishes *.money_spans.parquet + *.money_columns.parquet back under
+    proc/{evaluationId}/documents/. Runnable via the `money` compose profile
+    (`compose --profile money run --rm money --evaluation-id <id>`), which builds
+    the sidecar Dockerfile's `womblex` target (the read seam keeps the light
+    `sidecar` target). The IFinancialExtractor (delivery-plan item 2) reads the
+    money_spans sidecar back over the object-storage seam.
 
 (3) Read seam  — the womblex-ingest SIDECAR (WOMBLEX_MODE=real)
     POST /ingest  reads the pod's shards, maps womblex's schema → JSON read model,
@@ -357,11 +379,12 @@ redline/
 │   ├── redline-adapters/          port implementations (the only code at the seams)
 │   └── redline-shared/            shared kernel
 ├── services/
-│   ├── womblex/                   ◄ SUBMODULE: the real womblex engine @ v0.2.0
+│   ├── womblex/                   ◄ SUBMODULE: the real womblex engine @ v0.3.0
 │   ├── womblex-ingest/            FastAPI read sidecar (reads MinIO Parquet → JSON)
 │   │   ├── src/womblex_ingest/    stub + real extractor, records (wire shape),
-│   │   │                          shard_reader (schema map), storage, embedding
-│   │   └── Dockerfile             the light API image
+│   │   │                          shard_reader (schema map), storage, embedding,
+│   │   │                          money_stage (the `money` op invocation)
+│   │   └── Dockerfile             `sidecar` (light) + `womblex` (money) targets
 │   ├── numbatch/                  ◄ SUBMODULE: the Numbatch fork @ 72bcead
 │   ├── numbatch-extension/        redline's additive overlay (financial_extension
 │   │                              + bootstrap-profile.py), grafts onto the fork
@@ -389,8 +412,8 @@ redline/
 
 ### Vendoring / pinning discipline
 
-- **womblex** — git **submodule** at `services/womblex`, pinned to tag `v0.2.0`
-  (`2c40e65`). This is the on-disk source of truth for the Parquet schema the
+- **womblex** — git **submodule** at `services/womblex`, pinned to tag `v0.3.0`
+  (`b5730b0`). This is the on-disk source of truth for the Parquet schema the
   sidecar maps, **and the source the engine image is built from** — the `womblex`
   compose profile builds the submodule's own `Dockerfile`. Initialise it with
   `git submodule update --init`; CI checks it out (`submodules: true`). The
@@ -463,19 +486,32 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    page column. redline's `TableCellRecord.isCurrency` must be **derived**.
 
    An earlier revision of this section said to infer it from `value_type`. That is
-   **falsified**: `value_type` is always `"text"` at `v0.2.0`
-   (`ingest/spreadsheet.py:13`, and the only literal ever assigned in the engine's
+   **falsified**: `value_type` was always `"text"` at the `v0.2.0` pin this note
+   was first written from
+   (`ingest/spreadsheet.py:13`, the only literal ever assigned in that engine's
    source), `number_format` is a column of `ELEMENT_SCHEMA` rather than of
-   `table_cells` and is left unset, and womblex has no currency capability
-   anywhere in `src/`. Currency is therefore derived from the **verbatim `value`
-   string**, and requires an explicit currency marker — a bare number is not
+   `table_cells` and is left unset, and that engine had no currency capability
+   anywhere in `src/`. So `isCurrency` was derived from the **verbatim `value`
+   string**, requiring an explicit currency marker — a bare number is not
    currency. See [ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md),
    which owns the rule and its limits. Both columns are still read first, so a
    future openpyxl-based reader upgrades the signal with no redline change.
 
-   The financial figures redline needs come primarily from the **Numbatch
-   financial extension**, not from raw cell typing; the derivation above is what
-   the lean vertical (Track V, thread 58) uses to stay off that stack.
+   **Superseded by the `money` op (v0.3.0).** The engine is now at `v0.3.0`, whose
+   `money` annotation op recovers currency-typed amounts directly —
+   column-evidenced (a bare number whose money-ness comes from its header, ~98.7%
+   of amounts) as well as self-evidencing — writing exact `Decimal` values and a
+   resolved currency into `*.money_spans.parquet`. redline's lean-vertical pricing
+   leg therefore reads that sidecar (delivery-plan item 2) rather than the
+   `isCurrency`-at-the-seam derivation ADR-0016 describes; that derivation remains
+   only as a fallback for shards produced without a money sidecar. The one
+   upstream limit no config fixes: `classify_column` checks vetoes before money
+   terms, so a bare `Hourly Rate` / `Day Rate` column (no currency in the header)
+   yields nothing — an upstream change request, not a redline fix.
+
+   The larger financial roll-up redline may later want still comes from the
+   **Numbatch financial extension**; the money op is the interim, Numbatch-free
+   source that keeps the lean vertical off that stack.
 
 5. **There is no `womblex.embed_query` / public embedding helper.**
    `womblex/__init__.py` exports only a docstring and `__version__`. The real query

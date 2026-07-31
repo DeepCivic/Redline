@@ -14,6 +14,11 @@
 #   ingest    — womblex-ingest + minio + redline-postgres (the ingestion path;
 #               an ingest lands the MinIO shards AND projects chunks + embeddings
 #               into the redline_ chunk store — item 1a, ADR-0017/0018)
+#   money     — the money annotation step (run on demand after a womblex run):
+#               stages an evaluation's shards down, runs `womblex money`, and
+#               publishes the *.money_spans/*.money_columns siblings back
+#               (`compose --profile money run --rm money --evaluation-id <id>`).
+#               Needs the `[womblex]` extra, so it builds its own image target.
 #   womblex   — the real womblex engine, built from the ../services/womblex
 #               submodule using ITS OWN Dockerfile and run through ITS OWN cloud
 #               runner (Postgres job queue + scalable `worker`), sharing MinIO.
@@ -84,6 +89,7 @@ services:
     build:
       context: ../services/womblex-ingest
       dockerfile: Dockerfile
+      target: sidecar
     profiles: ["ingest"]
     depends_on:
       minio:
@@ -107,6 +113,39 @@ services:
       REDLINE_DATABASE_URL: ${REDLINE_DATABASE_URL:-postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}}
     ports:
       - "8000:8000"
+
+  # ── money annotation step (item 1) ────────────────────────────────────────
+  # Not part of `womblex run`/`worker`: the money op is offline, API-free and has
+  # no ordering dependency on the pipeline, so it runs ON DEMAND once the fleet
+  # has drained — the same lifecycle as `womblex finalize`. It stages an
+  # evaluation's `*.elements`/`*.table_cells` shards down from object storage,
+  # runs womblex's own `money_shards()`, and publishes the two sidecars back
+  # beside them. Unlike the read-seam sidecar above, this needs `womblex`
+  # installed, so it builds the `[womblex]` image target.
+  #
+  #   podman compose -f infra/docker-compose.yml --profile money \
+  #     run --rm money --evaluation-id <evaluationId>
+  money:
+    build:
+      context: ../services/womblex-ingest
+      dockerfile: Dockerfile
+      target: womblex
+    profiles: ["money"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      REDLINE_BUCKET: ${REDLINE_BUCKET:-redline}
+      # The `money:` section (vocabulary, vetoes, currency default) is read from
+      # the same config the womblex worker runs with, so redline never restates
+      # the engine's tuning.
+      WOMBLEX_CONFIG: /app/redline-config/redline.yaml
+    volumes:
+      - ./womblex:/app/redline-config:ro
+    entrypoint: ["python", "-m", "womblex_ingest.money_stage"]
 
   # ── womblex engine (the submodule's OWN image) ────────────────────────────
   # The REAL womblex pipeline (extract → chunk → embed), built from

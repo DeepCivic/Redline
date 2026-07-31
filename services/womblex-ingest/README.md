@@ -114,6 +114,34 @@ text against ~3 kB packed. The vectors are immutable and content-addressed, so
 the Thread 20 adapter is expected to parse into `Float32Array` and cache per
 evaluation rather than re-fetching per run.
 
+## The money annotation step
+
+Pricing recovery is womblex's own `money` op, not a redline reimplementation.
+After a run's shards land, `womblex money` reads each batch's
+`*.elements.parquet` + `*.table_cells.parquet` and writes two siblings —
+`*.money_spans.parquet` (one row per amount, exact `Decimal`, with its currency)
+and `*.money_columns.parquet` (the per-column verdict audit). It is offline and
+API-free (no Isaacus spend), and it never rewrites element or chunk text.
+
+Because `womblex money --shards` only takes a *local* directory but the shards
+live in object storage, `money_stage.py` is the stage-in / run / stage-out step
+that bridges the gap (mirroring `womblex finalize`): it downloads an evaluation's
+money inputs to a scratch dir, runs womblex's `money_shards()`, and publishes the
+two sidecars back under `proc/{evaluationId}/documents/`. Run it on demand once a
+run has drained:
+
+```sh
+podman compose -f ../../infra/docker-compose.yml --profile money \
+  run --rm money --evaluation-id <evaluationId>
+```
+
+The `money:` section (vocabulary, vetoes, currency default) is read from the same
+`infra/womblex/redline.yaml` the worker runs with (`WOMBLEX_CONFIG`), so the
+tuning is never restated. It builds the Dockerfile's `womblex` target — the read
+seam above stays the light, womblex-free `sidecar` target. The `IFinancialExtractor`
+adapter (delivery-plan item 1) reads `*.money_spans.parquet` back over the
+object-storage seam.
+
 ## Extraction modes & the womblex pod
 
 **womblex is a required subsystem of redline**, not an optional extra: the
@@ -126,7 +154,7 @@ requirement: the sidecar image is `python:3.12-slim` (inside womblex's 3.11/3.12
 support), so the engine can equally be co-located with the sidecar on one host.
 Either way the seam is object storage (ADR-0002), and what backs it — an S3
 bucket or an AWS-managed equivalent — is config. The engine source is pinned as a
-submodule at `services/womblex` (tag `v0.2.0`).
+submodule at `services/womblex` (tag `v0.3.0`).
 
 `WOMBLEX_MODE` selects which extractor this API sidecar uses:
 
