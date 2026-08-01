@@ -110,11 +110,22 @@ branch, in order:
    Fork suite green (**14/14** across the redline-mount surface: this module +
    the workspace link + step 1's router).
 3. **Routes + `"use client"` components** at `/evaluations/:id/{grouping,review,pivots}`
-   (incl. Export to Excel), mirroring `run-results.tsx` / `synthesise/`. No new
-   logic — they render the built view models. This and the live `getContainer()`
-   wiring both need the ports step 2 left injected — principally the cold-start
-   store/adjudicator adapters (the money `IFinancialExtractor` is built) — before
-   the served UI shows real data end to end.
+   — **done** (fork commit `6cc2469`, gitlink bumped in redline `5644c8c`):
+   the `review` and `pivots` `"use client"` surfaces (`components/evaluation/
+   review-table.tsx`, `pricing-pivots.tsx`) bind to the `evaluation` router's
+   `renderReviewGridView` / `renderPivotView` view models; the review grid's
+   Export to Excel builds the workbook server-side (the `workbook` procedure)
+   and the browser only writes it via the new `writeEvaluationWorkbook` /
+   `toWriterSheets` in `@redline/redline-web`. No new shaping logic: the
+   `reviewGrid` procedure now forwards `sort`/`filter` so `renderReviewGridView`
+   does the shaping. The `grouping` route is a read-side landing into
+   review/pivots — the interactive composition surface (assign/advance) is the
+   `WorkflowManager`, whose write-side procedures land with the lens stage
+   machine (§3), not here. Both suites green (redline **63**, fork **392**;
+   `./validate.sh` **15/15**). What still gates the *served* UI showing real
+   data end to end is the live `getContainer()` wiring — principally the
+   cold-start store/adjudicator adapters (the money `IFinancialExtractor` is
+   built) — plus auth (step 4).
 4. **Auth** — reuse Wayfinder's `viewProcedure` / Better Auth session; add an
    `evaluation:review` permission key on the fork branch (ADR-0006). Swaps the
    router's placeholder `authenticatedProcedure` gate.
@@ -228,9 +239,10 @@ should shape the lens work rather than be assumed. In dependency order:
    — [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md); the
    foundation (submodule + guards, `966361b`), the `@redline/*` workspace link
    (`a8bca49` / `11b18b7`), the `evaluation` tRPC router (stitching step 1,
-   `79bc493`) and the `container-redline.ts` seam (stitching step 2, `2246be1`)
-   are merged, so what remains is the stitching's live container wiring, routes
-   (step 3), auth (step 4) and Playwright (step 5).
+   `79bc493`), the `container-redline.ts` seam (stitching step 2, `2246be1`) and
+   the routes + components (stitching step 3, fork `6cc2469` / redline `5644c8c`)
+   are merged, so what remains is the stitching's live container wiring, auth
+   (step 4) and Playwright (step 5).
 2. **Item 2** — the real corpus run. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
