@@ -105,12 +105,13 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 │  packages/redline-application   Use-cases (orchestration): IngestDocuments,  │
 │    (TypeScript)                  ColdStartClassifier, ClassifyWithHardRules,  │
 │        │                         AdjudicateUnclear, ClassifyResponseGroup,    │
+│        │                         MoneySpanFinancialExtractor,                │
 │        │                         BuildEvaluationTable, DocumentMap, pivots.  │
 │        ▼                                                                     │
 │  packages/redline-domain    Entities + PORTS (Result pattern, zero deps):    │
 │    (TypeScript)               IProcurementExtractionReader, IChunkStore,      │
 │        │                      IProcurementClassifier, IFinancialExtractor,    │
-│        │                      IAdjudicator, ILanguageModel,                   │
+│        │                      IMoneySpanStore, IAdjudicator, ILanguageModel,  │
 │        │                      IEvaluationRepository.                          │
 │        ▼                                                                     │
 │  packages/redline-adapters   Port implementations — the ONLY code that       │
@@ -150,11 +151,11 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 │                        ctx.container.redline.workflowController) mirror the     │
 │                        fork's own extraction feature. The controller's ports   │
 │                        cross container-redline's boundary as INJECTED deps —    │
-│                        the repository + extraction reader adapters exist; the   │
-│                        cold-start classifier's store/adjudicator and the money  │
-│                        IFinancialExtractor are not yet built, so the live       │
-│                        getContainer() wiring waits on them (routes/auth/e2e     │
-│                        remain — delivery-plan item 3).                          │
+│                        the repository, extraction reader and money             │
+│                        IFinancialExtractor adapters exist; the cold-start       │
+│                        classifier's store/adjudicator is not yet built, so the  │
+│                        live getContainer() wiring waits on it (routes/auth/e2e  │
+│                        remain — delivery-plan item 2).                          │
 └──────────────────────────────────────────────────────────┼──────────────────┘
                                                             │
                             ┌───────────────────────────────┘
@@ -234,8 +235,9 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
     proc/{evaluationId}/documents/. Runnable via the `money` compose profile
     (`compose --profile money run --rm money --evaluation-id <id>`), which builds
     the sidecar Dockerfile's `womblex` target (the read seam keeps the light
-    `sidecar` target). The IFinancialExtractor (delivery-plan item 2) reads the
-    money_spans sidecar back over the object-storage seam.
+    `sidecar` target). The money spans are materialised into redline's own store
+    (redline_money_spans) and read through IMoneySpanStore — the seam the money
+    IFinancialExtractor sums over (§4 step 7).
 
 (3) Read seam  — the womblex-ingest SIDECAR (WOMBLEX_MODE=real)
     POST /ingest  reads the pod's shards, maps womblex's schema → JSON read model,
@@ -287,9 +289,20 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
     Numbatch LoRA adapter is trained and activated; subsequent runs use it via
     IProcurementClassifier. Same port, same output shape — consumers can't tell.
 
-(7) Financial extraction
-    The Numbatch backend extension extracts currency figures per requirement;
-    IFinancialExtractor maps topic_id → requirementId, yields estimateAud + provenance.
+(7) Financial extraction  — the money IFinancialExtractor (MoneySpanFinancialExtractor)
+    The real IFinancialExtractor reads a document's table-cell money spans over
+    IMoneySpanStore (materialised from *.money_spans.parquet — ADR-0017) and sums
+    them into one AUD figure per (document, requirement). A span carries no
+    requirement, so attribution is the extractor's job: a document's spans attach
+    to the ONE requirement its classification matched with the HIGHEST confidence
+    (ties → lexicographically-least requirementId), summed once onto that single
+    row so a document matching >1 requirement never double-counts its priced total
+    in the per-brand pivot. Amounts sum in fixed-point (scaled integers) not float,
+    so the decimal128(38,4) exactness the store carries survives aggregation.
+    Composed as MoneySpanFinancialExtractor (redline-application) and wired behind
+    the IFinancialExtractor port in lib/container.ts (buildMoneySpanFinancialExtractor).
+    The Numbatch financial extension remains the better long-term roll-up (§7
+    item 4); it satisfies the same port and would swap in at the same seam.
 
 (8) Review model
     BuildEvaluationTable joins classifications + financials + provenance into
@@ -497,17 +510,21 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    which owns the rule and its limits. Both columns are still read first, so a
    future openpyxl-based reader upgrades the signal with no redline change.
 
-   **Superseded by the `money` op (v0.3.0).** The engine is now at `v0.3.0`, whose
-   `money` annotation op recovers currency-typed amounts directly —
-   column-evidenced (a bare number whose money-ness comes from its header, ~98.7%
-   of amounts) as well as self-evidencing — writing exact `Decimal` values and a
-   resolved currency into `*.money_spans.parquet`. redline's lean-vertical pricing
-   leg therefore reads that sidecar (delivery-plan item 2) rather than the
-   `isCurrency`-at-the-seam derivation ADR-0016 describes; that derivation remains
-   only as a fallback for shards produced without a money sidecar. The one
-   upstream limit no config fixes: `classify_column` checks vetoes before money
-   terms, so a bare `Hourly Rate` / `Day Rate` column (no currency in the header)
-   yields nothing — an upstream change request, not a redline fix.
+   **Superseded by the `money` op (v0.3.0), and now the real pricing leg.** The
+   engine is at `v0.3.0`, whose `money` annotation op recovers currency-typed
+   amounts directly — column-evidenced (a bare number whose money-ness comes from
+   its header, ~98.7% of amounts) as well as self-evidencing — writing exact
+   `Decimal` values and a resolved currency into `*.money_spans.parquet`. redline
+   materialises those spans into `redline_money_spans` and its **money
+   `IFinancialExtractor` (`MoneySpanFinancialExtractor`) is built** — it sums a
+   document's spans over `IMoneySpanStore` into grid AUD (§4 step 7), covering the
+   header-evidenced bare-number column. This is the lean-vertical pricing leg,
+   replacing the `isCurrency`-at-the-seam derivation ADR-0016 describes; that
+   derivation remains only as a fallback for shards produced without a money
+   sidecar. The one upstream limit no config fixes: `classify_column` checks
+   vetoes before money terms, so a bare `Hourly Rate` / `Day Rate` column (no
+   currency in the header) yields nothing — an upstream change request, not a
+   redline fix.
 
    The larger financial roll-up redline may later want still comes from the
    **Numbatch financial extension**; the money op is the interim, Numbatch-free

@@ -1,7 +1,8 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-02 (money-stage
-> invocation done — migrated to architecture.md §2/§4/§7; removed from the plan)
+> **Status:** the live tracking document · **Date:** 2026-08-02 (money
+> `IFinancialExtractor` done — the real pricing leg puts AUD in the grid;
+> migrated to architecture.md §4 step 7 / §7 item 4; removed from the plan)
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -47,56 +48,14 @@ rebuilt on a store: ADR-0017/0018 (**Accepted** 2026-07-31) superseded the
 in-TypeScript vector path, and both halves — the store-side chunk surface that
 materialises womblex's chunks + embeddings into `redline_`, and the cold-start
 `IProcurementClassifier` over it — are **built, tested and merged** (2026-08-01).
-See [`architecture.md`](./architecture.md) §4/§5 for how they sit in the dataflow.
-What remains, in order:
+The pricing leg is likewise built: the money `IFinancialExtractor`
+(`MoneySpanFinancialExtractor`) sums a document's table-cell money spans into
+grid AUD, wired behind the port in `lib/container.ts` (2026-08-02;
+`architecture.md` §4 step 7 / §7 item 4). See
+[`architecture.md`](./architecture.md) §4/§5/§7 for how they sit in the
+dataflow. What remains, in order:
 
-### 1 — Currency from table cells, no Numbatch
-
-An `IFinancialExtractor` backed by the money data, mapped to (document,
-requirement) via the classification's `sourceChunkId`. Cruder than the Numbatch
-financial extension and explicitly a first pass; `architecture.md` §7 item 4 notes
-the money-sidecar source is the interim one and the Numbatch extension the
-better long-term one. One adapter, and it removes a whole
-stack from the critical path.
-
-Read `*.money_spans.parquet` (`locus='table_cell'`, joined on
-`(source_hash, parent_elem_order, row, col)`) rather than deriving `isCurrency` at
-the seam. The money-stage invocation that lands those sidecars is **built**
-(`services/womblex-ingest/.../money_stage.py`, the `money` compose profile;
-`architecture.md` §4 step 2'). The exit test gains a real `Decimal` and an
-explicit currency, and must cover a **header-evidenced bare-number column** — the
-~98.7% case redline is blind to today. Supersedes
-[ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md);
-decide there whether `derive_is_currency` is retained as a fallback for shards
-with no money sidecar.
-
-> **One upstream limitation to carry into the exit test, because no config can
-> fix it.** `classify_column` checks vetoes *before* money terms and returns
-> early (`money_columns.py:340-344`); the only escape is the header declaring its
-> own currency. `rate` is a built-in veto term, and `extra_header_terms` is
-> consulted too late to rescue a vetoed column. So `Hourly Rate ($)` classifies
-> as money (via `header_currency`) but a bare **`Hourly Rate` / `Day Rate` column
-> yields nothing** — a common tender pricing shape. `extra_veto_terms` only adds;
-> nothing removes a built-in. If the real corpus hits this, it is an upstream
-> change request, not a redline fix.
->
-> **The `money:` section in `infra/womblex/redline.yaml` is already written**, and
-> its vocabulary was exercised against upstream's real `classify_column`. Every
-> term in it is load-bearing — with stock womblex vocabulary, `Subtotal`,
-> `Extended`, `RRP`, `Freight` and `Disbursements` columns yield **nothing**
-> (header matching is whole-token, so the built-in `total` does not cover
-> `subtotal`), while `Cost Centre`, `Payment Terms`, `Value Weighting` and
-> `Price Band` are promoted to **money** and would be summed into the pivots as
-> prices. The five vetoes exist for that second failure — headers carrying money
-> vocabulary that are not money — and each still yields to a header declaring its
-> own currency, so `Warranty ($)` survives. Treat the lists as **provisional**
-> and tune them against `*.money_columns.parquet` on the first real corpus
-> (item 3).
-
-_Exit: the review grid shows numeric AUD for a real tender's priced rows; the
-per-brand pivot totals them._
-
-### 2 — Mount the review UI into the forked Wayfinder
+### 1 — Mount the review UI into the forked Wayfinder
 
 **The only genuinely missing piece.** The review grid, pricing pivots, Excel
 export and control surface are all built as framework-free brains + pure view
@@ -141,19 +100,20 @@ branch, in order:
    **Option A**, the controller's six ports cross the module boundary as
    *injected* dependencies: the `IEvaluationRepository` and
    `IProcurementExtractionReader` adapters exist, but the cold-start classifier's
-   `IChunkStore`/`IAdjudicator`, the money `IFinancialExtractor` (item 1) and a
-   redline↔fork `ILanguageModel` bridge are **not yet built**, so the module
-   constructs no port itself (no invention, no dead code). Its vitest exercises
+   `IChunkStore`/`IAdjudicator` and a redline↔fork `ILanguageModel` bridge are
+   **not yet built**, so the module constructs no port itself (no invention, no
+   dead code). Its vitest exercises
    the module against in-memory ports; the live `getContainer()` wiring — the
-   one-line `buildRedlineModule(…)` call — waits on those adapters (item 1's money
-   `IFinancialExtractor` and the store/adjudicator adapters item 3's live run needs).
+   one-line `buildRedlineModule(…)` call — waits on those adapters (the money
+   `IFinancialExtractor` is now built; the store/adjudicator adapters item 2's
+   live run needs remain).
    Fork suite green (**14/14** across the redline-mount surface: this module +
    the workspace link + step 1's router).
 3. **Routes + `"use client"` components** at `/evaluations/:id/{grouping,review,pivots}`
    (incl. Export to Excel), mirroring `run-results.tsx` / `synthesise/`. No new
    logic — they render the built view models. This and the live `getContainer()`
-   wiring both need the ports step 2 left injected — principally item 1's money
-   `IFinancialExtractor` and the cold-start store/adjudicator adapters — before
+   wiring both need the ports step 2 left injected — principally the cold-start
+   store/adjudicator adapters (the money `IFinancialExtractor` is built) — before
    the served UI shows real data end to end.
 4. **Auth** — reuse Wayfinder's `viewProcedure` / Better Auth session; add an
    `evaluation:review` permission key on the fork branch (ADR-0006). Swaps the
@@ -165,13 +125,13 @@ branch, in order:
 > session** (step 4, which ADR-0006 flagged only resolves when the shell +
 > Wayfinder run together). The cross-workspace link and the container seam (both
 > now done) were the other two. The rest is `extraction` one type over — plus
-> populating `container-redline.ts`'s injected ports once item 1 lands its
-> adapter.
+> populating `container-redline.ts`'s injected store/adjudicator ports once item 2's
+> live run lands their adapters.
 
 _Exit: Playwright green against the served fork — a specialist opens
 `/evaluations/:id/review` inside Wayfinder and sees the grid, pivots and export._
 
-### 3 — Real corpus, end to end
+### 2 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
@@ -213,7 +173,7 @@ document delineated by topic and brand, with provenance back to source._
 
 ## 3. Deferred — comprehension lens & release
 
-Deferred until the lean vertical is complete. Revisit **after** item 3 has shown
+Deferred until the lean vertical is complete. Revisit **after** item 2 has shown
 what the cold-start path actually gets right on a real corpus — that evidence
 should shape the lens work rather than be assumed. In dependency order:
 
@@ -240,7 +200,7 @@ should shape the lens work rather than be assumed. In dependency order:
    modelling — Numbatch returns score-sorted ≤3 topics with no primary/secondary
    distinction; owned by the `BoundaryDecision` item in §3); ambiguity thresholds
    (the signal register needs initial values, unmeasured until a real corpus runs
-   — item 3).
+   — item 2).
 
 ---
 
@@ -248,23 +208,21 @@ should shape the lens work rather than be assumed. In dependency order:
 
 **The lean vertical runs to completion before the deferred work starts.**
 
-0. **The store-backed retrieval leg is built** (merged 2026-08-01). ADR-0017 and
-   ADR-0018 (Accepted 2026-07-31) overturned ADR-0014 and set the store the
-   retrieval leg is built on; the store-side chunk surface and the cold-start
-   classifier over it now exist and are green under `./validate.sh`. They replaced
-   the old in-TypeScript retrieval leg (the former `ClassifyByRetrieval` /
-   `IEmbeddingReader` / embeddings adapter are superseded). **ADR-0018's addendum
-   still defers vector *similarity search*** — the `pgvector`/ANN index and
-   `findSimilar` — so the classifier runs hard rules + adjudication over exact
-   fetch, no nearest-neighbour step. The store-backing sub-choice for the eventual
-   index (`pgvector` vs ANN over the shards) is a follow-on ADR decided *then*, not
-   now.
-1. **Items 1 and 2 are independent** of each other. Classification without Numbatch
-   is already done (item 0), and the money-stage invocation that lands the pricing
-   sidecars is built (architecture.md §4 step 2'), so **item 1** (pricing without
-   Numbatch) has the sidecars it reads and **item 2** (the UI mount) can proceed in
-   parallel.
-2. **Item 2** — the mount. The only genuinely new *frontend* code, and the only
+0. **The store-backed retrieval leg and the pricing leg are built** (merged
+   2026-08-01 / 2026-08-02). ADR-0017 and ADR-0018 (Accepted 2026-07-31)
+   overturned ADR-0014 and set the store the retrieval leg is built on; the
+   store-side chunk surface and the cold-start classifier over it now exist and
+   are green under `./validate.sh`. They replaced the old in-TypeScript retrieval
+   leg (the former `ClassifyByRetrieval` / `IEmbeddingReader` / embeddings adapter
+   are superseded). The money `IFinancialExtractor` (`MoneySpanFinancialExtractor`)
+   is likewise built: it sums a document's table-cell money spans over
+   `IMoneySpanStore` into grid AUD, wired behind the port in `lib/container.ts`
+   (architecture.md §4 step 7 / §7 item 4). **ADR-0018's addendum still defers
+   vector *similarity search*** — the `pgvector`/ANN index and `findSimilar` — so
+   the classifier runs hard rules + adjudication over exact fetch, no
+   nearest-neighbour step. The store-backing sub-choice for the eventual index
+   (`pgvector` vs ANN over the shards) is a follow-on ADR decided *then*, not now.
+1. **Item 1** — the mount. The only genuinely new *frontend* code, and the only
    reason the product cannot be looked at today. It lands in the forked Wayfinder
    (`services/wayfinder`, branch `redline-integration`), not in `apps/redline-web`
    — [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md); the
@@ -273,7 +231,7 @@ should shape the lens work rather than be assumed. In dependency order:
    `79bc493`) and the `container-redline.ts` seam (stitching step 2, `2246be1`)
    are merged, so what remains is the stitching's live container wiring, routes
    (step 3), auth (step 4) and Playwright (step 5).
-3. **Item 3** — the real corpus run. The point of the exercise.
+2. **Item 2** — the real corpus run. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.
