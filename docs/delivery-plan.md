@@ -1,8 +1,10 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-02 (money
-> `IFinancialExtractor` done — the real pricing leg puts AUD in the grid;
-> migrated to architecture.md §4 step 7 / §7 item 4; removed from the plan)
+> **Status:** the live tracking document · **Date:** 2026-08-02 (UI mount steps
+> 1–3 done — the `evaluation` tRPC router, `container-redline.ts` seam and the
+> `/evaluations/:id/{review,pivots,grouping}` routes + components are merged;
+> the served surface + design are now in architecture.md §3/§6; removed from the
+> plan)
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -58,86 +60,35 @@ dataflow. What remains, in order:
 ### 1 — Mount the review UI into the forked Wayfinder
 
 **The only genuinely missing piece.** The review grid, pricing pivots, Excel
-export and control surface are all built as framework-free brains + pure view
-models in `apps/redline-web/src/lib/` (green under `./validate.sh`); what is
-missing is the thing that *serves* them inside Wayfinder's UI.
+export and control surface are built as framework-free brains + pure view models
+in `apps/redline-web/src/lib/`, and the fork now *serves* the read-side surface:
+per [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md) the mount
+lives in the `services/wayfinder` submodule (branch `redline-integration`) inside
+Wayfinder's chrome/auth/router. The `@redline/*` workspace link, the `evaluation`
+tRPC router (read-side `reviewGrid`/`pricingPivot`/`workbook`), the
+`container-redline.ts` seam (`buildRedlineModule` → `WorkflowController`) and the
+`/evaluations/:id/{review,pivots,grouping}` routes + `"use client"` components
+are **built, tested and merged** — see [`architecture.md`](./architecture.md)
+§3/§6 for how they sit. The fork's `main` stays a clean upstream mirror (guarded
+by `validate.sh` #15).
 
-Per [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md)
-(**Accepted** 2026-08-01), this is **not** a standalone Next.js shell in
-`apps/redline-web`. It mounts into a **forked Wayfinder** carried as the
-`services/wayfinder` submodule (branch `redline-integration`), so the review UI
-sits *inside* Wayfinder's chrome, auth and router — modelled 1:1 on Wayfinder's
-own `extraction` feature (`apps/web/.../extraction/*`, `server/routers/extraction.ts`,
-`lib/container-extraction.ts`). The mount lives in the fork, never in redline's
-tree and never in upstream `main`; the fork's `main` stays a clean upstream
-mirror for later upstreaming (guarded by `validate.sh` #15).
+What remains, on the fork's `redline-integration` branch:
 
-**Foundation done (2026-08-01):** commit `966361b` — `wayfinder.pin` → 0.20.0;
-the fork added as `services/wayfinder`; static guards (#9 size, ruff, eslint)
-exclude it; new fork-hygiene guard #15; ADR-0019 Accepted (amends 0006's
-delivery vehicle, narrows 0001's "never a fork"). **Step 1 done** (commit
-`a8bca49` on the fork's `redline-integration`, gitlink bumped in `11b18b7`):
-the fork's `apps/web` resolves the four `@redline/*` packages via
-`../../apps/*` + `../../packages/*` workspace globs — the reversible local
-reference ADR-0019 called for — with a resolution test standing as its exit.
-Both suites green (redline **15/15**, fork **20/20**). Recorded in
-[`architecture.md`](./architecture.md) §3/§6.
-
-The stitching build that remains, all on the fork's `redline-integration`
-branch, in order:
-1. **`evaluation` tRPC router** — **done** (commit `79bc493`): read-side
-   `reviewGrid` / `pricingPivot` / `workbook` procedures over
-   `WorkflowController.openReviewGrid / openPricingPivot / buildWorkbook`,
-   returning the existing `renderReviewGridView` / `renderPivotView` /
-   `EvaluationWorkbook` view models; registered as `evaluation` in the fork's
-   `router.ts`. Binds the controller via `ctx.container.redline.workflowController`
-   — the seam step 2 (`container-redline.ts`) populates. Both suites green
-   (redline **15/15**, fork **20/20**).
-2. **`container-redline.ts`** — **done** (commit `2246be1`): `buildRedlineModule`
-   composes redline's `WorkflowController` (via `buildContainer`) and returns it
-   for the fork's container to expose as `ctx.container.redline.workflowController`
-   — the seam step 1's router reads — mirroring `container-extraction.ts`. Per
-   **Option A**, the controller's six ports cross the module boundary as
-   *injected* dependencies: the `IEvaluationRepository` and
-   `IProcurementExtractionReader` adapters exist, but the cold-start classifier's
-   `IChunkStore`/`IAdjudicator` and a redline↔fork `ILanguageModel` bridge are
-   **not yet built**, so the module constructs no port itself (no invention, no
-   dead code). Its vitest exercises
-   the module against in-memory ports; the live `getContainer()` wiring — the
-   one-line `buildRedlineModule(…)` call — waits on those adapters (the money
-   `IFinancialExtractor` is now built; the store/adjudicator adapters item 2's
-   live run needs remain).
-   Fork suite green (**14/14** across the redline-mount surface: this module +
-   the workspace link + step 1's router).
-3. **Routes + `"use client"` components** at `/evaluations/:id/{grouping,review,pivots}`
-   — **done** (fork commit `6cc2469`, gitlink bumped in redline `5644c8c`):
-   the `review` and `pivots` `"use client"` surfaces (`components/evaluation/
-   review-table.tsx`, `pricing-pivots.tsx`) bind to the `evaluation` router's
-   `renderReviewGridView` / `renderPivotView` view models; the review grid's
-   Export to Excel builds the workbook server-side (the `workbook` procedure)
-   and the browser only writes it via the new `writeEvaluationWorkbook` /
-   `toWriterSheets` in `@redline/redline-web`. No new shaping logic: the
-   `reviewGrid` procedure now forwards `sort`/`filter` so `renderReviewGridView`
-   does the shaping. The `grouping` route is a read-side landing into
-   review/pivots — the interactive composition surface (assign/advance) is the
-   `WorkflowManager`, whose write-side procedures land with the lens stage
-   machine (§3), not here. Both suites green (redline **63**, fork **392**;
-   `./validate.sh` **15/15**). What still gates the *served* UI showing real
-   data end to end is the live `getContainer()` wiring — principally the
-   cold-start store/adjudicator adapters (the money `IFinancialExtractor` is
-   built) — plus auth (step 4).
-4. **Auth** — reuse Wayfinder's `viewProcedure` / Better Auth session; add an
+1. **Auth** — reuse Wayfinder's `viewProcedure` / Better Auth session; add an
    `evaluation:review` permission key on the fork branch (ADR-0006). Swaps the
-   router's placeholder `authenticatedProcedure` gate.
-5. **Playwright** — point the existing specs (`apps/redline-web/e2e/`) at the
+   router's placeholder `authenticatedProcedure` gate. This is the one genuine
+   integration point ADR-0006 flagged as only resolving when the mount + Wayfinder
+   run together.
+2. **Playwright** — point the existing specs (`apps/redline-web/e2e/`) at the
    served fork, closing the `/e2e` deviation in `CLAUDE.md`.
 
-> One genuine integration point remains, not glue: the **live Better Auth
-> session** (step 4, which ADR-0006 flagged only resolves when the shell +
-> Wayfinder run together). The cross-workspace link and the container seam (both
-> now done) were the other two. The rest is `extraction` one type over — plus
-> populating `container-redline.ts`'s injected store/adjudicator ports once item 2's
-> live run lands their adapters.
+> The *served* UI does not show real data end to end until the live
+> `getContainer()` is wired — principally the cold-start classifier's
+> store/adjudicator adapters and a redline↔fork `ILanguageModel` bridge, the ports
+> `container-redline.ts` left injected (the repository, extraction reader and money
+> `IFinancialExtractor` adapters exist). Those adapters land with item 2's live
+> run; the grouping route's interactive composition surface (assign/advance over
+> the `WorkflowManager`) lands with the lens stage machine (§3).
 
 _Exit: Playwright green against the served fork — a specialist opens
 `/evaluations/:id/review` inside Wayfinder and sees the grid, pivots and export._
@@ -233,16 +184,14 @@ should shape the lens work rather than be assumed. In dependency order:
    the classifier runs hard rules + adjudication over exact fetch, no
    nearest-neighbour step. The store-backing sub-choice for the eventual index
    (`pgvector` vs ANN over the shards) is a follow-on ADR decided *then*, not now.
-1. **Item 1** — the mount. The only genuinely new *frontend* code, and the only
-   reason the product cannot be looked at today. It lands in the forked Wayfinder
-   (`services/wayfinder`, branch `redline-integration`), not in `apps/redline-web`
-   — [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md); the
-   foundation (submodule + guards, `966361b`), the `@redline/*` workspace link
-   (`a8bca49` / `11b18b7`), the `evaluation` tRPC router (stitching step 1,
-   `79bc493`), the `container-redline.ts` seam (stitching step 2, `2246be1`) and
-   the routes + components (stitching step 3, fork `6cc2469` / redline `5644c8c`)
-   are merged, so what remains is the stitching's live container wiring, auth
-   (step 4) and Playwright (step 5).
+1. **Item 1** — the mount. The reason the product cannot be looked at today. It
+   lands in the forked Wayfinder (`services/wayfinder`, branch
+   `redline-integration`), not in `apps/redline-web` —
+   [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md). The
+   workspace link, `evaluation` tRPC router, `container-redline.ts` seam and the
+   `/evaluations` routes + components are merged (architecture.md §3/§6), so what
+   remains is auth (step 1) and Playwright (step 2) plus the live `getContainer()`
+   wiring that waits on item 2's adapters.
 2. **Item 2** — the real corpus run. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally

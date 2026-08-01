@@ -21,7 +21,7 @@ language model) are injected as ports through
 | `src/lib/review-view.ts` | Pure `ReviewGrid` → view-model transform: header cells (active sort + next-click direction), sorted/filtered body rows, and a resolved source deep-link `href` per row. |
 | `src/lib/pricing-pivot.ts` | The **pivot brain**: rolls the `ProcurementResponse[]` up per brand, per requirement, or brand×requirement, summing/averaging the real-number `estimateAud` — mirroring Wayfinder's `computePivot` algorithm over redline's own domain type. |
 | `src/lib/pricing-view.ts` | Pure `PricingPivotResult` → table transform: axis/measure headers, one column per secondary group, currency-formatted display cells (the numeric result stays the source of truth). |
-| `src/lib/excel-export.ts` | The **export brain**: pure builders that turn the review grid + pricing pivots into `write-excel-file` sheet data — numeric currency cells, a source hyperlink per row, one `Review` sheet + one sheet per pivot — plus `exportEvaluationXlsx`, a lazy `write-excel-file/browser` trigger. Reuses Wayfinder's XLSX cell shape (plan §9) so currency stays a real numeric cell. |
+| `src/lib/excel-export.ts` | The **export brain**: pure builders that turn the review grid + pricing pivots into `write-excel-file` sheet data — numeric currency cells, a source hyperlink per row, one `Review` sheet + one sheet per pivot. `buildEvaluationWorkbook` produces the `EvaluationWorkbook`; `toWriterSheets` pairs each sheet's data with its name; `writeEvaluationWorkbook` is the lazy `write-excel-file/browser` trigger that writes an **already-built** workbook (so the fork's mount builds it server-side and the browser only writes it); `exportEvaluationXlsx` builds-then-writes for a caller that holds the grid + pivot. Reuses Wayfinder's XLSX cell shape (plan §9) so currency stays a real numeric cell. |
 | `e2e/workflow-manager.e2e.ts` | Playwright acceptance spec for the three shapes + a stage advance. |
 | `e2e/review-grid.e2e.ts` | Playwright acceptance spec for the review grid (all columns render, currency sorts numerically, source deep-links resolve, requirement filter). |
 | `e2e/pricing-pivots.e2e.ts` | Playwright acceptance spec for the pricing pivots (per-brand, per-requirement, brand×requirement, sum/average toggle). |
@@ -46,13 +46,15 @@ group can be (re)classified and the table built (`classifying → review`).
 
 ### Running the e2e
 
-`e2e/workflow-manager.e2e.ts` is the Playwright acceptance artifact. It runs once
-a Next.js shell serves the routes it drives (`/evaluations/:id/grouping`) — a
-follow-up within Track 4. Next.js/React matches Wayfinder's own `apps/web`
-(ADR-0006), so the adapter's control surface feels at home in Wayfinder rather
-than borrowing Numbatch's (unused) SvelteKit stack. In the current build
-environment there is no browser or
-app server (the same standalone posture as the service threads' captured-payload
-contract tests), so the vitest suite above is the proven exit gate; the e2e spec
-pins the DOM contract for when the shell lands. This deviation is recorded in
-[`.claude/CLAUDE.md`](../../.claude/CLAUDE.md).
+`e2e/workflow-manager.e2e.ts` is the Playwright acceptance artifact. It runs
+against the served **forked Wayfinder** (`services/wayfinder`, ADR-0019), whose
+`apps/web` now serves the `/evaluations/:id/{review,pivots,grouping}` routes that
+mount these brains + view models (the `evaluation` tRPC router + the
+`components/evaluation/*` `"use client"` surfaces). Next.js/React matches
+Wayfinder's own `apps/web` (ADR-0006), so the adapter's control surface feels at
+home in Wayfinder rather than borrowing Numbatch's (unused) SvelteKit stack. In
+the current build environment there is no browser or app server (the same
+standalone posture as the service threads' captured-payload contract tests), so
+the vitest suite above is the proven exit gate; the e2e spec pins the DOM
+contract, to be pointed at the served fork (delivery-plan item 1 step 5). This
+deviation is recorded in [`.claude/CLAUDE.md`](../../.claude/CLAUDE.md).

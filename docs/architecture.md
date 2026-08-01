@@ -146,16 +146,19 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 │                        never in redline's tree; the fork's main stays a clean │
 │                        upstream mirror (validate.sh #15).                     │
 │                        As built: the `evaluation` tRPC router (read-side      │
-│                        reviewGrid/pricingPivot/workbook) and container-redline  │
+│                        reviewGrid/pricingPivot/workbook), container-redline     │
 │                        .ts (buildRedlineModule → WorkflowController behind      │
-│                        ctx.container.redline.workflowController) mirror the     │
-│                        fork's own extraction feature. The controller's ports   │
-│                        cross container-redline's boundary as INJECTED deps —    │
-│                        the repository, extraction reader and money             │
+│                        ctx.container.redline.workflowController), and the       │
+│                        /evaluations/:id/{review,pivots,grouping} routes +       │
+│                        "use client" surfaces that render the view models        │
+│                        (grouping is a read-side landing) mirror the fork's own  │
+│                        extraction feature. The controller's ports cross         │
+│                        container-redline's boundary as INJECTED deps — the      │
+│                        repository, extraction reader and money                  │
 │                        IFinancialExtractor adapters exist; the cold-start       │
 │                        classifier's store/adjudicator is not yet built, so the  │
-│                        live getContainer() wiring waits on it (routes/auth/e2e  │
-│                        remain — delivery-plan item 2).                          │
+│                        live getContainer() wiring waits on it (auth + e2e       │
+│                        remain — delivery-plan item 1).                          │
 └──────────────────────────────────────────────────────────┼──────────────────┘
                                                             │
                             ┌───────────────────────────────┘
@@ -406,9 +409,13 @@ redline/
 │                                  the redline-web UI; resolves @redline/* as
 │                                  workspace packages. Mount lives here only.
 │                                  As built: server/routers/evaluation.ts (tRPC,
-│                                  read-side) + lib/container-redline.ts
-│                                  (buildRedlineModule → WorkflowController).
-│                                  Routes, auth key + Playwright still to land.
+│                                  read-side, forwards sort/filter),
+│                                  lib/container-redline.ts (buildRedlineModule →
+│                                  WorkflowController), and the
+│                                  app/(user)/evaluations/[id]/{review,pivots,
+│                                  grouping} routes + components/evaluation/*
+│                                  "use client" surfaces. Auth key + Playwright
+│                                  still to land.
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
 │   └── womblex/redline.yaml       redline's pipeline config for the engine
