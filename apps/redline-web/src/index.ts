@@ -76,10 +76,13 @@ export {
   buildEvaluationWorkbook,
   evaluationExportFileName,
   exportEvaluationXlsx,
+  toWriterSheets,
+  writeEvaluationWorkbook,
   type SheetCell,
   type SheetData,
   type EvaluationWorkbook,
   type EvaluationWorkbookInput,
   type PivotSheetInput,
   type ExportEvaluationInput,
+  type WriteEvaluationWorkbookInput,
 } from "./lib/excel-export";

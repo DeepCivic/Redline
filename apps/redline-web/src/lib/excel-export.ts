@@ -179,17 +179,42 @@ export interface ExportEvaluationInput {
   readonly pivot: PricingPivot;
 }
 
+// Pairs each built sheet's data with its name in the shape `write-excel-file`
+// consumes (an array of `{ name, data }` objects — verified against its bundled
+// types, not training data — CLAUDE.md). Pure so the mapping is unit-tested
+// without the browser writer.
+export const toWriterSheets = (
+  workbook: EvaluationWorkbook,
+): readonly { name: string; data: SheetData }[] =>
+  workbook.sheets.map((data, index) => ({ name: workbook.sheetNames[index]!, data }));
+
+export interface WriteEvaluationWorkbookInput {
+  readonly evaluationName: string;
+  readonly workbook: EvaluationWorkbook;
+}
+
+// Writes an already-built workbook to a `.xlsx` in the browser and triggers the
+// download. The workbook is built server-side (the fork's `evaluation.workbook`
+// procedure) so the write side is the only thing on the client. The writer is
+// lazy-loaded (dynamic import) so it stays out of the initial bundle, exactly as
+// Wayfinder's exportInsightsXlsx does.
+export const writeEvaluationWorkbook = async (
+  input: WriteEvaluationWorkbookInput,
+): Promise<void> => {
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+  const sheets = toWriterSheets(input.workbook).map((sheet) => ({
+    name: sheet.name,
+    data: sheet.data as SheetCell[][],
+  }));
+  await writeXlsxFile(sheets).toFile(evaluationExportFileName(input.evaluationName, new Date()));
+};
+
 // Builds the `.xlsx` in the browser and triggers the download. The writer is
 // lazy-loaded (dynamic import) so it stays out of the initial bundle, exactly as
 // Wayfinder's exportInsightsXlsx does. Multi-sheet: `write-excel-file` takes an
 // array of `{ data, name }` sheet objects (verified against its bundled types,
 // not training data — CLAUDE.md).
 export const exportEvaluationXlsx = async (input: ExportEvaluationInput): Promise<void> => {
-  const { default: writeXlsxFile } = await import("write-excel-file/browser");
   const workbook = buildEvaluationWorkbook(input);
-  const sheets = workbook.sheets.map((data, index) => ({
-    name: workbook.sheetNames[index]!,
-    data: data as SheetCell[][],
-  }));
-  await writeXlsxFile(sheets).toFile(evaluationExportFileName(input.evaluationName, new Date()));
+  await writeEvaluationWorkbook({ evaluationName: input.evaluationName, workbook });
 };

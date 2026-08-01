@@ -7,6 +7,7 @@ import {
   buildPivotSheetData,
   buildEvaluationWorkbook,
   evaluationExportFileName,
+  toWriterSheets,
 } from "./excel-export";
 
 // Thread 14 exit test — Excel export (build plan §1 "in-app review first; Excel
@@ -174,6 +175,22 @@ describe("buildEvaluationWorkbook", () => {
     // The by-vendor pivot sheet carries the numeric grand total.
     const byVendor = workbook.sheets[1];
     expect(byVendor[byVendor.length - 1][1]).toEqual({ value: 3500, type: Number });
+  });
+});
+
+describe("toWriterSheets", () => {
+  it("pairs each sheet's data with its name for the browser writer", () => {
+    const workbook = buildEvaluationWorkbook({
+      evaluationId: "eval-1",
+      grid: new ReviewGrid(fixture),
+      pivot: new PricingPivot(fixture),
+    });
+
+    const sheets = toWriterSheets(workbook);
+
+    expect(sheets.map((sheet) => sheet.name)).toEqual([...workbook.sheetNames]);
+    expect(sheets[0]!.data).toBe(workbook.sheets[0]);
+    expect(sheets).toHaveLength(workbook.sheets.length);
   });
 });
 
