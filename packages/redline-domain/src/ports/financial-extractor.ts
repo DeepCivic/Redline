@@ -4,10 +4,24 @@ import type { Result } from "../result";
 // financial-extraction worker wrote for a response group's documents,
 // with provenance back to womblex elements. Feeds ProcurementResponse.costing.
 
+// A document's money spans (womblex `money`) carry no requirementId — they are
+// (document, table, row, col) facts. The money-span-backed extractor attributes a
+// document's spans to the requirement its classification matched; `matchedRequirements`
+// carries that binding into the request so the extractor can key its output on
+// (documentId, requirementId). The Numbatch extractor ignores it (it reads its own
+// per-topic figures). Absent or empty ⇒ a money-span extractor emits nothing for
+// that document (no requirement to attribute the money to).
+export interface MatchedRequirement {
+  readonly documentId: string;
+  readonly requirementId: string;
+  readonly confidence: number;
+}
+
 export interface FinancialExtractionRequest {
   readonly evaluationId: string;
   readonly responseGroupId: string;
   readonly documentIds: readonly string[];
+  readonly matchedRequirements?: readonly MatchedRequirement[];
 }
 
 // estimateAud is null when only a prose description of costs was available — the

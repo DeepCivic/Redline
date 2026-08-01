@@ -51,6 +51,12 @@ export {
 export {
   DrizzleEvaluationRepository,
 } from "./persistence/drizzle-evaluation-repository";
+// The money-span query surface (delivery-plan §2 item 1, ADR-0017/0018): a
+// store-backed IMoneySpanStore over womblex's `money` sidecar, materialised into
+// the redline_ schema. Addressable pricing facts, no requirement alignment.
+export {
+  DrizzleMoneySpanStore,
+} from "./persistence/drizzle-money-span-store";
 export {
   createRedlinePostgres,
   schema as redlineSchema,

@@ -111,7 +111,17 @@ export class BuildEvaluationTable {
     const classifications = await this.classifyResponseGroup.execute(request);
     if (isErr(classifications)) return classifications;
 
-    const financials = await this.extractFinancials.execute(request);
+    // The money-span extractor attributes a document's spans to the requirement
+    // it matched; the Numbatch extractor ignores this field. Passing it keeps the
+    // real extractor's attribution rule fed while staying interchangeable.
+    const financials = await this.extractFinancials.execute({
+      ...request,
+      matchedRequirements: classifications.data.map((classification) => ({
+        documentId: classification.documentId,
+        requirementId: classification.requirementId,
+        confidence: classification.confidence,
+      })),
+    });
     if (isErr(financials)) return financials;
 
     const costingByMatch = new Map(

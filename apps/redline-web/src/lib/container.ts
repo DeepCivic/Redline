@@ -12,6 +12,7 @@ import {
   type IEvaluationRepository,
   type IFinancialExtractor,
   type ILanguageModel,
+  type IMoneySpanStore,
   type IProcurementClassifier,
   type IProcurementExtractionReader,
   type ProcurementResponse,
@@ -24,6 +25,7 @@ import {
   BuildEvaluationTable,
   ClassifyResponseGroup,
   ColdStartClassifier,
+  MoneySpanFinancialExtractor,
 } from "@redline/redline-application";
 import { WorkflowManager } from "./workflow-manager";
 import { ReviewGrid } from "./review-grid";
@@ -195,3 +197,19 @@ export const buildColdStartClassifier = (
     ruleSet: parts.ruleSet,
     candidates: parts.candidates,
   });
+
+// The item-1 seam: the real IFinancialExtractor, composed behind the same port
+// the Numbatch one satisfies. It reads womblex's money spans (IMoneySpanStore,
+// materialised from `*.money_spans.parquet` — ADR-0017) and attributes a
+// document's summed AUD to the requirement its classification matched with the
+// highest confidence. A deployment wires this as `parts.financialExtractor`,
+// replacing the Numbatch extractor at the port — the controller cannot tell which
+// is behind it. This is what puts real currency in the review grid and pivots.
+export interface MoneySpanFinancialExtractorParts {
+  readonly moneySpanStore: IMoneySpanStore;
+}
+
+export const buildMoneySpanFinancialExtractor = (
+  parts: MoneySpanFinancialExtractorParts,
+): IFinancialExtractor =>
+  new MoneySpanFinancialExtractor({ moneySpanStore: parts.moneySpanStore });

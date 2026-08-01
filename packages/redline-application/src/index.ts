@@ -71,6 +71,13 @@ export type {
 export { ExtractFinancials } from "./use-cases/extract-financials";
 export type { ExtractFinancialsDependencies } from "./use-cases/extract-financials";
 
+// The real IFinancialExtractor (delivery-plan §2 item 1): reads womblex's money
+// spans (IMoneySpanStore) and attributes a document's summed AUD to the
+// requirement its classification matched with the highest confidence. This is
+// what puts real currency in the review grid.
+export { MoneySpanFinancialExtractor } from "./use-cases/money-span-financial-extractor";
+export type { MoneySpanFinancialExtractorDependencies } from "./use-cases/money-span-financial-extractor";
+
 export { BuildEvaluationTable } from "./use-cases/build-evaluation-table";
 export type {
   BuildEvaluationTableDependencies,

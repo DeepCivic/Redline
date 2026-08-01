@@ -10,8 +10,11 @@ import type {
   IEvaluationRepository,
   IFinancialExtractor,
   ILanguageModel,
+  IMoneySpanStore,
   IProcurementClassifier,
   IProcurementExtractionReader,
+  MoneySpanFilter,
+  MoneySpanRow,
   ProcurementResponse,
   Result,
   ResponseGroup,
@@ -20,7 +23,12 @@ import type {
   Topic,
   Vendor,
 } from "@redline/redline-domain";
-import { WorkflowController, buildColdStartClassifier, buildContainer } from "./container";
+import {
+  WorkflowController,
+  buildColdStartClassifier,
+  buildContainer,
+  buildMoneySpanFinancialExtractor,
+} from "./container";
 
 // A small in-memory repository so the controller can be exercised end to end
 // without a database — the same standalone posture as the application tests.
@@ -484,5 +492,110 @@ describe("container — cold-start classifier wiring (item 1b)", () => {
     expect(result.data[0].requirementId).toBe("req-support");
     expect(result.data[0].sourceChunkId).toBeNull();
     expect(modelCalls).toBe(0);
+  });
+});
+
+// The delivery-plan §2 item 1 seam: buildMoneySpanFinancialExtractor composes the
+// real IFinancialExtractor (womblex money spans → summed AUD per matched
+// requirement) behind the same port the Numbatch one satisfies. This proves the
+// money-span path is wired *behind the port* — the controller, once built with it,
+// puts real currency in the review grid, and the per-brand pivot totals it.
+describe("container — money-span financial extractor wiring (item 1)", () => {
+  class FakeMoneySpanStore implements IMoneySpanStore {
+    constructor(private readonly rows: readonly MoneySpanRow[]) {}
+    async fetchByDocument(
+      evaluationId: string,
+      documentId: string,
+    ): Promise<Result<readonly MoneySpanRow[]>> {
+      void evaluationId;
+      return ok(this.rows.filter((row) => row.documentId === documentId));
+    }
+    async fetchByStructure(
+      evaluationId: string,
+      filter: MoneySpanFilter,
+    ): Promise<Result<readonly MoneySpanRow[]>> {
+      void evaluationId;
+      return ok(
+        this.rows.filter(
+          (row) => filter.documentId === undefined || row.documentId === filter.documentId,
+        ),
+      );
+    }
+  }
+
+  const money = (over: Partial<MoneySpanRow> = {}): MoneySpanRow => ({
+    documentId: "doc-1",
+    locus: "table_cell",
+    parentElementOrder: 4,
+    rowIndex: 1,
+    columnIndex: 0,
+    text: "1200",
+    value: "1200.0000",
+    currency: "AUD",
+    ...over,
+  });
+
+  it("builds a real tender's priced rows into numeric AUD in the review grid and pivot", async () => {
+    // The header-evidenced bare-number column (98.7% case): two priced rows whose
+    // money-ness came from the `Amount (AUD)` header, so the cell text is a bare
+    // number and the currency rides on the span.
+    const store = new FakeMoneySpanStore([
+      money({ rowIndex: 1, text: "1200", value: "1200.0000" }),
+      money({ rowIndex: 2, text: "800", value: "800.0000" }),
+    ]);
+    const realExtractor = buildMoneySpanFinancialExtractor({ moneySpanStore: store });
+
+    const repository = new InMemoryRepository();
+    const evaluation = makeEvaluation({ id: "eval-1", name: "Tender", stage: "classifying" });
+    if (isErr(evaluation)) throw new Error("bad seed");
+    repository.seed(evaluation.data);
+    await repository.saveVendor("eval-1", {
+      id: "v-acme",
+      displayName: "Acme",
+      isConsortium: false,
+      memberVendorIds: [],
+    });
+    await repository.saveResponseGroup({
+      id: "g-acme",
+      evaluationId: "eval-1",
+      vendorIds: ["v-acme"],
+      label: "Acme Bid",
+      documentIds: ["doc-1"],
+      isConsortiumResponse: false,
+    });
+
+    const container = buildContainer({
+      repository,
+      classifier,
+      financialExtractor: realExtractor,
+      extractionReader,
+      languageModel,
+      productName: "Platform",
+    });
+    expect(isOk(container)).toBe(true);
+    if (!isOk(container)) return;
+
+    const controller = new WorkflowController(container.data);
+    const built = await controller.buildTable({ evaluationId: "eval-1" });
+    expect(isOk(built)).toBe(true);
+    if (!isOk(built)) return;
+
+    // The priced rows summed to a real number on the matched requirement.
+    expect(built.data).toHaveLength(1);
+    expect(built.data[0].costing.estimateAud).toBe(2000);
+
+    // The review grid shows it numeric.
+    const grid = await controller.openReviewGrid({ evaluationId: "eval-1" });
+    if (!isOk(grid)) throw new Error("grid failed");
+    const rows = grid.data.all();
+    expect(rows[0].cells.estimateAud.isNumeric).toBe(true);
+    expect(rows[0].cells.estimateAud.sortValue).toBe(2000);
+
+    // The per-brand pivot totals the same figure.
+    const pivot = await controller.openPricingPivot({ evaluationId: "eval-1" });
+    if (!isOk(pivot)) throw new Error("pivot failed");
+    const perBrand = pivot.data.compute({ axis: "brand", measure: "sum" });
+    expect(perBrand.rows[0].key).toBe("Acme");
+    expect(perBrand.grandTotal.value).toBe(2000);
   });
 });

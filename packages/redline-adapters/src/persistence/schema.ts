@@ -2,7 +2,9 @@
 // Postgres). Every table uses the redline_ prefix (enforced by validate.sh #7),
 // snake_case columns, and the id / created_at / updated_at convention inherited
 // from Wayfinder (CLAUDE.md). The domain aggregate (Evaluation + its vendors,
-// response groups and responses) maps onto these four tables.
+// response groups and responses) maps onto four tables; a fifth,
+// redline_money_spans, holds womblex's `money` sidecar materialised into the
+// store (ADR-0017) and is not part of the aggregate.
 //
 // Kept free of any domain import: this is the storage shape, mapped to domain
 // entities in row-mapping.ts.
@@ -87,3 +89,30 @@ export type ResponseGroupRow = typeof redlineResponseGroups.$inferSelect;
 export type NewResponseGroupRow = typeof redlineResponseGroups.$inferInsert;
 export type ResponseRow = typeof redlineResponses.$inferSelect;
 export type NewResponseRow = typeof redlineResponses.$inferInsert;
+
+// One `locus='table_cell'` money span, materialised from womblex's
+// `*.money_spans.parquet` (ADR-0017 — bulk columnar data lives in redline's own
+// store, queried in place). Keyed on the womblex provenance the span was
+// annotated against: (evaluation, source_hash, parent_elem_order, row, col).
+// `value` is `numeric(38, 4)` — the exact `Decimal` womblex writes, never a
+// float, so summing amounts and reconciling for equality stay exact. `currency`
+// is nullable: a span can be money-marked with its currency unresolved. The
+// sidecar (the one reader of womblex's Parquet schema) loads this table; the
+// DrizzleMoneySpanStore only reads it.
+export const redlineMoneySpans = pgTable("redline_money_spans", {
+  id: text("id").primaryKey(),
+  evaluationId: text("evaluation_id")
+    .notNull()
+    .references(() => redlineEvaluations.id, { onDelete: "cascade" }),
+  documentId: text("document_id").notNull(),
+  parentElementOrder: integer("parent_element_order").notNull(),
+  rowIndex: integer("row_index").notNull(),
+  columnIndex: integer("column_index").notNull(),
+  cellText: text("cell_text").notNull(),
+  value: numeric("value", { precision: 38, scale: 4 }).notNull(),
+  currency: text("currency"),
+  ...timestamps,
+});
+
+export type MoneySpanRow = typeof redlineMoneySpans.$inferSelect;
+export type NewMoneySpanRow = typeof redlineMoneySpans.$inferInsert;

@@ -10,7 +10,10 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 
 // Ordered migration files. Append new ones here as the schema evolves.
-export const MIGRATION_FILES = ["0000_redline_initial.sql"] as const;
+export const MIGRATION_FILES = [
+  "0000_redline_initial.sql",
+  "0001_redline_money_spans.sql",
+] as const;
 
 export type SqlExecutor = (sql: string) => Promise<unknown>;
 
