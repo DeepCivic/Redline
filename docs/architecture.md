@@ -95,96 +95,85 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 
 ## 3. Component map
 
-```
-┌──────────────────────────── redline (this repo) ────────────────────────────┐
-│                                                                              │
-│  apps/redline-web        Control surface as framework-free brains + pure     │
-│    (TypeScript)          view models: workflow, review grid, pricing pivots, │
-│                          Excel export. Served by the forked Wayfinder (below)│
-│                          — no Wayfinder imports leak back into these packages.│
-│        │                                                                     │
-│        ▼                                                                     │
-│  packages/redline-application   Use-cases (orchestration): IngestDocuments,  │
-│    (TypeScript)                  ColdStartClassifier, ClassifyWithHardRules,  │
-│        │                         AdjudicateUnclear, ClassifyResponseGroup,    │
-│        │                         MoneySpanFinancialExtractor,                │
-│        │                         BuildEvaluationTable, DocumentMap, pivots.  │
-│        ▼                                                                     │
-│  packages/redline-domain    Entities + PORTS (Result pattern, zero deps):    │
-│    (TypeScript)               IProcurementExtractionReader, IChunkStore,      │
-│        │                      IProcurementClassifier, IFinancialExtractor,    │
-│        │                      IMoneySpanStore, IAdjudicator, ILanguageModel,  │
-│        │                      IEvaluationRepository.                          │
-│        ▼                                                                     │
-│  packages/redline-adapters   Port implementations — the ONLY code that       │
-│    (TypeScript)              speaks to the seams. Each is "as if C" (ADR-0001)│
-│        │  ├── womblex/         → HTTP+JSON to womblex-ingest sidecar          │
-│        │  ├── numbatch/        → HTTP to Numbatch backend (classify + finance)│
-│        │  └── persistence/     → redline_ Postgres (Drizzle), incl. the       │
-│        │       DrizzleChunkStore IChunkStore reader over redline_chunks (the   │
-│        │       sidecar writes it; this adapter reads it — see §4/§5)          │
-│        │                                                                     │
-│        └──── seams ────────────────────────────────────────────────────────┤
-│                 │ HTTP+JSON            │ HTTP+JSON        │ Postgres          │
-│                 ▼                      ▼                  ▼                   │
-│  services/womblex-ingest      services/numbatch      redline-postgres        │
-│    (FastAPI, Python)            (fork: backend +        (schema: redline_*)   │
-│    reads MinIO Parquet,          Arq worker +          redline_chunks: the    │
-│    serves JSON, AND loads        inference)            ADR-0018 store, WRITTEN │
-│    chunks+embeddings into                             by the sidecar's ingest │
-│    redline_chunks.                                    (chunk rows + provenance│
-│    WOMBLEX_MODE = stub | real.                        + embedding as data).   │
-│        │ reads                                                               │
-│        ▼                                                                     │
-│  MinIO  proc/{evaluationId}/*.parquet   ◄── written by ──┐                   │
-│  (redline-owned bucket, ADR-0002)                        │                   │
-│                                                          │                   │
-│  services/wayfinder  ◄ SUBMODULE: the Wayfinder FORK (branch                 │
-│    (TypeScript)        redline-integration, ADR-0019). Its apps/web SERVES    │
-│                        the redline-web brains + view models inside Wayfinder's│
-│                        chrome/auth/router. It resolves @redline/* as workspace│
-│                        packages (../../apps/*, ../../packages/* globs) exactly │
-│                        as it resolves @rbrasier/*. The mount lives only here, │
-│                        never in redline's tree; the fork's main stays a clean │
-│                        upstream mirror (validate.sh #15).                     │
-│                        As built: the `evaluation` tRPC router (read-side      │
-│                        reviewGrid/pricingPivot/workbook), container-redline     │
-│                        .ts (buildRedlineModule → WorkflowController behind      │
-│                        ctx.container.redline.workflowController), and the       │
-│                        /evaluations/:id/{review,pivots,grouping} routes +       │
-│                        "use client" surfaces that render the view models        │
-│                        (grouping is a read-side landing) mirror the fork's own  │
-│                        extraction feature. The controller's ports cross         │
-│                        container-redline's boundary as INJECTED deps — the      │
-│                        repository, extraction reader and money                  │
-│                        IFinancialExtractor adapters exist; the evaluation:review │
-│                        auth gate (reviewProcedure) and the served-fork Playwright │
-│                        specs are merged. The cold-start classifier's store        │
-│                        (DrizzleChunkStore) and adjudicator (HttpAdjudicator)       │
-│                        adapters now exist too. The live getContainer() wiring is   │
-│                        blocked ahead of its own seam: no evaluation-scoped lens can│
-│                        reach IProcurementClassifier at a process-wide              │
-│                        getContainer(), and nothing persists a lens at all. That is │
-│                        delivery-plan §2 items 1-2; the redline↔fork ILanguageModel │
-│                        bridge + the getContainer() call are then item 3.           │
-└──────────────────────────────────────────────────────────┼──────────────────┘
-                                                            │
-                            ┌───────────────────────────────┘
-                            │ writes shards
-                  services/womblex  (submodule @ v0.3.0)
-                    the REAL engine, built from its OWN Dockerfile
-                    and run through its OWN cloud runner (Postgres
-                    job queue + scalable worker, native S3 staging):
-                    extract → chunk → (embed)
-                    embed stage calls ──────────────────────► Isaacus API
-                                                              (ISAACUS_API_KEY)
+```mermaid
+flowchart TB
+    subgraph rl["redline (this repo) — TypeScript"]
+        direction TB
+        web["apps/redline-web<br/>framework-free brains + pure view models"]
+        app["packages/redline-application<br/>use-cases (orchestration)"]
+        dom["packages/redline-domain<br/>entities + PORTS · Result pattern · zero deps"]
+        adp["packages/redline-adapters<br/>port implementations —<br/>the ONLY code at the seams"]
+        web --> app --> dom --> adp
+    end
 
-                  services/womblex-ingest  ALSO runs the `money` op on demand
-                    (money_stage.py / `money` compose profile): stages an
-                    evaluation's shards down, runs womblex `money_shards()`,
-                    publishes *.money_spans / *.money_columns back — offline,
-                    no Isaacus. See §4 step (2').
+    adp -->|HTTP+JSON| sidecar["services/womblex-ingest<br/>FastAPI read sidecar (Python)<br/>WOMBLEX_MODE = stub or real"]
+    adp -->|HTTP| numbatch["services/numbatch — SUBMODULE<br/>fork: backend + Arq worker + inference"]
+    adp -->|Drizzle| pg[("redline-postgres<br/>schema redline_*")]
+
+    sidecar -->|reads Parquet| minio[("MinIO — redline-owned bucket<br/>proc/evaluationId/*.parquet")]
+    sidecar -->|loads chunk rows + embeddings| pg
+    engine["services/womblex — SUBMODULE @ v0.3.0<br/>the real engine: extract → chunk → embed"]
+    engine -->|writes shards| minio
+    engine -->|embed stage only| isaacus(["Isaacus API<br/>ISAACUS_API_KEY"])
+
+    fork["services/wayfinder — SUBMODULE<br/>the Wayfinder FORK, branch redline-integration<br/>its apps/web SERVES the redline-web brains"]
+    fork -.->|mounts + serves| web
+    fork --> pg
+
+    classDef ext fill:#eee,stroke:#999,color:#333
+    class isaacus,numbatch ext
 ```
+
+**Reading the map.** Each layer, and what the diagram compresses:
+
+- **`apps/redline-web`** — the control surface: workflow, review grid, pricing
+  pivots, Excel export. Served by the forked Wayfinder; **no Wayfinder imports
+  leak back** into these packages.
+- **`packages/redline-application`** — `IngestDocuments`, `ColdStartClassifier`,
+  `ClassifyWithHardRules`, `AdjudicateUnclear`, `ClassifyResponseGroup`,
+  `MoneySpanFinancialExtractor`, `BuildEvaluationTable`, `DocumentMap`, pivots.
+- **`packages/redline-domain`** — entities plus the ports:
+  `IProcurementExtractionReader`, `IChunkStore`, `IProcurementClassifier`,
+  `IFinancialExtractor`, `IMoneySpanStore`, `IAdjudicator`, `ILanguageModel`,
+  `IEvaluationRepository`.
+- **`packages/redline-adapters`** — each seam is "as if C" (ADR-0001):
+  `womblex/` speaks HTTP+JSON to the sidecar, `numbatch/` HTTP to the Numbatch
+  backend (classify + finance), `persistence/` Drizzle to `redline_` Postgres —
+  including the `DrizzleChunkStore` `IChunkStore` reader over `redline_chunks`
+  (the sidecar writes that table; this adapter reads it — see §4/§5).
+- **`redline_chunks`** is the ADR-0018 store, **written by the sidecar's ingest**:
+  chunk rows + provenance + the embedding as data.
+- **`services/womblex`** is built from its **own** Dockerfile and run through its
+  **own** cloud runner (Postgres job queue, scalable worker, native S3 staging).
+  Only its `embed` stage reaches Isaacus.
+- **`services/womblex-ingest` also runs the `money` op on demand**
+  (`money_stage.py` / the `money` compose profile): it stages an evaluation's
+  shards down, runs womblex's `money_shards()`, and publishes `*.money_spans` /
+  `*.money_columns` back — offline, no Isaacus. See §4 step (2').
+
+**The fork (`services/wayfinder`, ADR-0019).** Its `apps/web` serves the
+redline-web brains and view models inside Wayfinder's chrome, auth and router,
+resolving `@redline/*` as workspace packages (`../../apps/*`, `../../packages/*`
+globs) exactly as it resolves `@rbrasier/*`. **The mount lives only here**, never
+in redline's tree, and the fork's `main` stays a clean upstream mirror
+(`validate.sh` #15).
+
+As built: the `evaluation` tRPC router (read-side `reviewGrid` / `pricingPivot` /
+`workbook`); `container-redline.ts` (`buildRedlineModule` → `WorkflowController`
+behind `ctx.container.redline.workflowController`); and the
+`/evaluations/:id/{review,pivots,grouping}` routes plus `"use client"` surfaces
+that render the view models (grouping is a read-side landing) — all mirroring the
+fork's own extraction feature. The controller's ports cross `container-redline`'s
+boundary as **injected** dependencies. The repository, extraction-reader, money
+`IFinancialExtractor`, `DrizzleChunkStore` and `HttpAdjudicator` adapters all
+exist; the `evaluation:review` auth gate (`reviewProcedure`) and the served-fork
+Playwright specs are merged.
+
+**The live `getContainer()` wiring is blocked ahead of its own seam:** no
+evaluation-scoped lens can reach `IProcurementClassifier` at a process-wide
+`getContainer()`, and nothing persists a lens at all — `delivery-plan.md` §2
+items 1–2. The redline↔fork `ILanguageModel` bridge and the `getContainer()` call
+itself are then item 3.
 
 ### Why womblex is split into a pod + a sidecar
 
@@ -218,112 +207,133 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 
 ## 4. End-to-end dataflow
 
+```mermaid
+flowchart TB
+    s1["(1) Upload<br/>specialist uploads response documents"]
+    s2["(2) Extraction + chunking<br/>the womblex POD"]
+    s2b["(2') Money annotation<br/>the sidecar, on demand — offline"]
+    s3["(3) Read seam<br/>the sidecar, WOMBLEX_MODE=real"]
+    s4["(4) IngestDocuments<br/>documents_uploaded → grouping"]
+    s5["(5) Grouping<br/>documents → response groups / vendors"]
+    s6["(6) Classification — first pass<br/>hard rules → adjudication over exact fetch"]
+    s6b["(6') Classification — trained overlay<br/>later; same port, same output"]
+    s7["(7) Financial extraction<br/>money spans summed to AUD"]
+    s8["(8) Review model<br/>BuildEvaluationTable · PricingPivot · DocumentMap"]
+    s9["(9) Output<br/>review grid · pivots · Excel export"]
+
+    s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9
+    s2 -.->|after the run drains| s2b
+    s2b -.->|redline_money_spans| s7
+    s6 -.->|once samples clear the floor| s6b
+    s6b -.-> s7
+
+    classDef later fill:#eee,stroke:#999,stroke-dasharray:4 3,color:#333
+    class s6b later
 ```
-(1) Upload
-    Specialist uploads response documents for an evaluation via redline-web.
-    Files land in MinIO (redline bucket).
 
-(2) Extraction + chunking  — the womblex POD
-    The womblex pod runs over the evaluation's documents:
-        womblex extract  → *.elements / *.table_cells / *.form_fields / *._manifest
-        womblex chunk    → *.chunks.parquet          [Isaacus-gated; Kanon-2 tokeniser]
-        womblex embed    → *.embeddings.parquet       [ONLY if ISAACUS_API_KEY set]
-    NB (v0.3.0): `womblex run` persists only extract shards; `chunk` and `embed`
-    are separate per-stage commands (`womblex chunk --shards`, `womblex embed
-    --shards`) over the run's shard dir.
-    All shards land in MinIO under  proc/{evaluationId}/  (batch-NNNN.<role>.parquet).
-    source_hash (SHA-256 of the source bytes) is the document identity throughout.
+**(1) Upload.** Files land in MinIO (the redline bucket) via redline-web.
 
-(2') Money annotation  — the womblex-ingest SIDECAR, on demand (v0.3.0)
-    Not part of `womblex run`/`worker` (offline, API-free, no ordering dependency),
-    so it runs after a run drains — the same lifecycle as `womblex finalize`.
-    `womblex money --shards` takes a LOCAL dir but the shards live in object
-    storage, so `services/womblex-ingest/.../money_stage.py` (run_money_stage) is
-    the stage-in / run / stage-out step: it downloads each batch's *.elements +
-    *.table_cells, runs womblex's own money_shards() (config sourced from
-    infra/womblex/redline.yaml via WOMBLEX_CONFIG — the tuning is never restated),
-    and publishes *.money_spans.parquet + *.money_columns.parquet back under
-    proc/{evaluationId}/documents/. Runnable via the `money` compose profile
-    (`compose --profile money run --rm money --evaluation-id <id>`), which builds
-    the sidecar Dockerfile's `womblex` target (the read seam keeps the light
-    `sidecar` target). The money spans are materialised into redline's own store
-    (redline_money_spans) and read through IMoneySpanStore — the seam the money
-    IFinancialExtractor sums over (§4 step 7).
+**(2) Extraction + chunking — the womblex pod.** Over the evaluation's documents:
 
-(3) Read seam  — the womblex-ingest SIDECAR (WOMBLEX_MODE=real)
-    POST /ingest  reads the pod's shards, maps womblex's schema → JSON read model,
-                  writes {source_hash}.extraction.json + .embeddings.json beside
-                  the shards (durable read model surviving a restart), AND — when
-                  a redline_ DSN is wired — projects each document's chunk rows +
-                  embeddings into redline's own store (the redline_chunks table),
-                  addressable by provenance (ADR-0017/0018).
-    GET  /extractions/{eval}/{doc}   → { documentId, elements[], chunks[], tableCells[] }
-    GET  /embeddings/{eval}/{doc}    → { documentId, model, dimensions, vectors[] }
-    POST /embeddings/query {text}    → { model, dimensions, values[] }   (query vector)
-    NB: extraction provenance stays JSON (ADR-0003). Bulk vectors do NOT cross to
-    TypeScript for classification: at real corpus scale (~90k chunks) they are
-    loaded into the redline_ store as data and queried in place through
-    IChunkStore, superseding the embeddings-as-JSON path for the classifier
-    (ADR-0017/0018 amend ADR-0014). The /embeddings JSON routes remain for the
-    query-embed seam and small reads, but the classification leg no longer ships
-    bulk vectors to TS. The embeddings are loaded and addressable, but not yet
-    under a similarity index (ADR-0018 addendum defers pgvector/ANN + findSimilar).
+| Stage | Output | Gate |
+|---|---|---|
+| `womblex extract` | `*.elements` / `*.table_cells` / `*.form_fields` / `*._manifest` | — |
+| `womblex chunk` | `*.chunks.parquet` | Isaacus-gated (a policy refusal — §7.1) |
+| `womblex embed` | `*.embeddings.parquet` | only with `ISAACUS_API_KEY` |
 
-(4) Ingest use-case  — redline-application
-    IngestDocuments confirms every document reads back through the extraction port,
-    persists the evaluation, advances the stage.  documents_uploaded → grouping.
+NB (v0.3.0): `womblex run` persists only extract shards; `chunk` and `embed` are
+separate per-stage commands (`womblex chunk --shards`, `womblex embed --shards`)
+over the run's shard dir. All shards land under `proc/{evaluationId}/`
+(`batch-NNNN.<role>.parquet`). `source_hash` (SHA-256 of the source bytes) is the
+document identity throughout.
 
-(5) Grouping
-    Specialist assigns documents → response groups / vendors.
+**(2') Money annotation — the sidecar, on demand (v0.3.0).** Not part of `womblex
+run`/`worker` (offline, API-free, no ordering dependency), so it runs after a run
+drains — the same lifecycle as `womblex finalize`. `womblex money --shards` takes
+a *local* dir but the shards live in object storage, so
+`services/womblex-ingest/.../money_stage.py` (`run_money_stage`) is the stage-in /
+run / stage-out step: it downloads each batch's `*.elements` + `*.table_cells`,
+runs womblex's own `money_shards()` (config sourced from
+`infra/womblex/redline.yaml` via `WOMBLEX_CONFIG` — the tuning is never restated),
+and publishes `*.money_spans.parquet` + `*.money_columns.parquet` back under
+`proc/{evaluationId}/documents/`. Runnable via the `money` compose profile
+(`compose --profile money run --rm money --evaluation-id <id>`), which builds the
+sidecar Dockerfile's `womblex` target (the read seam keeps the light `sidecar`
+target). The spans are materialised into `redline_money_spans` and read through
+`IMoneySpanStore` — the seam step (7) sums over.
 
-(6) Classification (first pass — no trained model; ADR-0008)
-    For each (document, requirement):
-      a. HARD RULES resolve deterministically first — rule-claimed docs never
-         reach the store or a model (confidence 1, no source chunk).
-      b. ADJUDICATION over EXACT FETCH: for every unclaimed document, its passages
-         are read verbatim from the redline_ store by structure
-         (IChunkStore.fetchByStructure({ documentId })) and an LLM (IAdjudicator)
-         chooses among the lens topics, emitting a one-sentence rationale. The
-         chosen topic's id IS the requirementId it projects to (ADR-0010).
-    NB (ADR-0018 addendum): the nearest-neighbour PLACING step is deferred — it is
-    the only leg that needs vector similarity search (findSimilar), which is not
-    built this release. So the cold-start path runs hard rules + adjudication over
-    exact/structural fetch, WITHOUT a similarity ranking. The store's stable order
-    stands in for provenance (the first fetched chunk is the sourceChunkId).
-    Output: RequirementClassification { documentId, requirementId, confidence,
-            sourceChunkId } — identical shape whichever path produced it.
-    Composed as ColdStartClassifier (redline-application), an IProcurementClassifier
-    wired behind the port in lib/container.ts (buildColdStartClassifier).
+**(3) Read seam — the sidecar (`WOMBLEX_MODE=real`).**
 
-(6') Classification (overlay — later; ADR-0008/0009)
-    Once boundary decisions accumulate ≥ MIN_SAMPLES_PER_TOPIC per topic, a
-    Numbatch LoRA adapter is trained and activated; subsequent runs use it via
-    IProcurementClassifier. Same port, same output shape — consumers can't tell.
+| Route | Behaviour |
+|---|---|
+| `POST /ingest` | reads the pod's shards, maps womblex's schema → the JSON read model, writes `{source_hash}.extraction.json` + `.embeddings.json` beside the shards (durable across restart), **and** — when a `redline_` DSN is wired — projects each document's chunk rows + embeddings into `redline_chunks`, addressable by provenance (ADR-0017/0018) |
+| `GET /extractions/{eval}/{doc}` | `{ documentId, elements[], chunks[], tableCells[] }` |
+| `GET /embeddings/{eval}/{doc}` | `{ documentId, model, dimensions, vectors[] }` |
+| `POST /embeddings/query {text}` | `{ model, dimensions, values[] }` (query vector) |
 
-(7) Financial extraction  — the money IFinancialExtractor (MoneySpanFinancialExtractor)
-    The real IFinancialExtractor reads a document's table-cell money spans over
-    IMoneySpanStore (materialised from *.money_spans.parquet — ADR-0017) and sums
-    them into one AUD figure per (document, requirement). A span carries no
-    requirement, so attribution is the extractor's job: a document's spans attach
-    to the ONE requirement its classification matched with the HIGHEST confidence
-    (ties → lexicographically-least requirementId), summed once onto that single
-    row so a document matching >1 requirement never double-counts its priced total
-    in the per-brand pivot. Amounts sum in fixed-point (scaled integers) not float,
-    so the decimal128(38,4) exactness the store carries survives aggregation.
-    Composed as MoneySpanFinancialExtractor (redline-application) and wired behind
-    the IFinancialExtractor port in lib/container.ts (buildMoneySpanFinancialExtractor).
-    The Numbatch financial extension remains the better long-term roll-up (§7
-    item 4); it satisfies the same port and would swap in at the same seam.
+Extraction provenance stays JSON (ADR-0003). Bulk vectors do **not** cross to
+TypeScript for classification: at real corpus scale (~90k chunks) they are loaded
+into the `redline_` store as data and queried in place through `IChunkStore`,
+superseding the embeddings-as-JSON path for the classifier (ADR-0017/0018 amend
+ADR-0014). The `/embeddings` JSON routes remain for the query-embed seam and small
+reads. The embeddings are loaded and addressable, but **not yet under a similarity
+index** (ADR-0018's addendum defers pgvector/ANN + `findSimilar`).
 
-(8) Review model
-    BuildEvaluationTable joins classifications + financials + provenance into
-    ProcurementResponse[]. PricingPivot rolls estimateAud per brand/requirement.
-    DocumentMap derives the corpus roll-up (per-topic counts, Clear/Ambiguous split).
+**(4) Ingest use-case — redline-application.** `IngestDocuments` confirms every
+document reads back through the extraction port, persists the evaluation, and
+advances the stage: `documents_uploaded → grouping`.
 
-(9) Output
-    redline-web renders the review grid + pivots; Excel export writes a workbook
-    with real Number cells for currency and working deep-links to source locations.
-```
+**(5) Grouping.** The specialist assigns documents to response groups / vendors.
+
+**(6) Classification — first pass, no trained model (ADR-0008).** For each
+(document, requirement):
+
+1. **Hard rules** resolve deterministically first — rule-claimed documents never
+   reach the store or a model (confidence 1, no source chunk).
+2. **Adjudication over exact fetch** — for every unclaimed document its passages
+   are read verbatim from the `redline_` store by structure
+   (`IChunkStore.fetchByStructure({ documentId })`) and an LLM (`IAdjudicator`)
+   chooses among the lens topics, emitting a one-sentence rationale. The chosen
+   topic's id **is** the `requirementId` it projects to (ADR-0010).
+
+NB (ADR-0018 addendum): the nearest-neighbour **placing** step is deferred — it is
+the only leg needing vector similarity search (`findSimilar`), not built this
+release. So the cold-start path runs hard rules + adjudication over
+exact/structural fetch, **without** a similarity ranking; the store's stable order
+stands in for provenance (the first fetched chunk is the `sourceChunkId`). Output
+is `RequirementClassification { documentId, requirementId, confidence,
+sourceChunkId }` — identical shape whichever path produced it. Composed as
+`ColdStartClassifier` (redline-application), wired behind the port in
+`lib/container.ts` (`buildColdStartClassifier`).
+
+**(6') Classification — the trained overlay (later; ADR-0008/0009).** Once boundary
+decisions accumulate ≥ `MIN_SAMPLES_PER_TOPIC` per topic, a Numbatch LoRA adapter
+is trained and activated and subsequent runs use it via `IProcurementClassifier`.
+Same port, same output shape — consumers cannot tell.
+
+**(7) Financial extraction — `MoneySpanFinancialExtractor`.** The real
+`IFinancialExtractor` reads a document's table-cell money spans over
+`IMoneySpanStore` (materialised from `*.money_spans.parquet` — ADR-0017) and sums
+them into one AUD figure per (document, requirement). A span carries no
+requirement, so attribution is the extractor's job: a document's spans attach to
+the **one** requirement its classification matched with the highest confidence
+(ties → lexicographically-least `requirementId`), summed once onto that single row
+so a document matching more than one requirement never double-counts its priced
+total in the per-brand pivot. Amounts sum in fixed-point (scaled integers), not
+float, so the `decimal128(38,4)` exactness the store carries survives aggregation.
+Wired behind the port in `lib/container.ts`
+(`buildMoneySpanFinancialExtractor`). The Numbatch financial extension remains the
+better long-term roll-up (§7 item 4); it satisfies the same port and would swap in
+at the same seam.
+
+**(8) Review model.** `BuildEvaluationTable` joins classifications + financials +
+provenance into `ProcurementResponse[]`. `PricingPivot` rolls `estimateAud` per
+brand/requirement. `DocumentMap` derives the corpus roll-up (per-topic counts,
+Clear/Ambiguous split).
+
+**(9) Output.** redline-web renders the review grid + pivots; Excel export writes a
+workbook with real Number cells for currency and working deep-links to source
+locations.
 
 ### The join keys (womblex's real schema — see `services/womblex/docs/extraction.md`)
 
