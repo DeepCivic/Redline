@@ -155,10 +155,12 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 │                        extraction feature. The controller's ports cross         │
 │                        container-redline's boundary as INJECTED deps — the      │
 │                        repository, extraction reader and money                  │
-│                        IFinancialExtractor adapters exist; the cold-start       │
-│                        classifier's store/adjudicator is not yet built, so the  │
-│                        live getContainer() wiring waits on it (auth + e2e       │
-│                        remain — delivery-plan item 1).                          │
+│                        IFinancialExtractor adapters exist; the evaluation:review │
+│                        auth gate (reviewProcedure) and the served-fork Playwright │
+│                        specs are merged. The cold-start classifier's store/       │
+│                        adjudicator and a redline↔fork ILanguageModel bridge are   │
+│                        not yet built, so the live getContainer() wiring waits on  │
+│                        them (delivery-plan §2's corpus run).                       │
 └──────────────────────────────────────────────────────────┼──────────────────┘
                                                             │
                             ┌───────────────────────────────┘
@@ -414,8 +416,10 @@ redline/
 │                                  WorkflowController), and the
 │                                  app/(user)/evaluations/[id]/{review,pivots,
 │                                  grouping} routes + components/evaluation/*
-│                                  "use client" surfaces. Auth key + Playwright
-│                                  still to land.
+│                                  "use client" surfaces, the evaluation:review
+│                                  auth gate and the served-fork Playwright specs.
+│                                  Live getContainer() wiring waits on the corpus
+│                                  run (delivery-plan §2).
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
 │   └── womblex/redline.yaml       redline's pipeline config for the engine

@@ -1,12 +1,13 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-03 (UI mount steps
-> 1–3 done — the `evaluation` tRPC router, `container-redline.ts` seam and the
-> `/evaluations/:id/{review,pivots,grouping}` routes + components are merged;
-> the served surface + design are now in architecture.md §3/§6; removed from the
-> plan. Item 1's auth gate (`evaluation:review` on `reviewProcedure`) and the
-> Playwright specs pointed at the served fork are now done too — item 1 is
-> complete bar the live `getContainer()` wiring, which lands with item 2)
+> **Status:** the live tracking document · **Date:** 2026-08-03 (the UI mount is
+> complete — the `evaluation` tRPC router, `container-redline.ts` seam, the
+> `/evaluations/:id/{review,pivots,grouping}` routes + components, the
+> `evaluation:review` auth gate and the served-fork Playwright specs are all
+> merged; the served surface + how it sits now live in architecture.md §3/§6,
+> removed from this plan. The one remaining mount piece — the live
+> `getContainer()` wiring — is folded into the corpus run below, which is what
+> exercises it)
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -47,75 +48,25 @@ money sidecars. The Numbatch stack re-enters only when a *trained* overlay or th
 financial extension's roll-up is wanted; neither is needed to see the grid.
 
 Most of this slice already exists (use-cases, adapters, web core, the compose
-profiles — all green under `./validate.sh`). The retrieval leg has now been
-rebuilt on a store: ADR-0017/0018 (**Accepted** 2026-07-31) superseded the
-in-TypeScript vector path, and both halves — the store-side chunk surface that
-materialises womblex's chunks + embeddings into `redline_`, and the cold-start
-`IProcurementClassifier` over it — are **built, tested and merged** (2026-08-01).
-The pricing leg is likewise built: the money `IFinancialExtractor`
-(`MoneySpanFinancialExtractor`) sums a document's table-cell money spans into
-grid AUD, wired behind the port in `lib/container.ts` (2026-08-02;
-`architecture.md` §4 step 7 / §7 item 4). See
-[`architecture.md`](./architecture.md) §4/§5/§7 for how they sit in the
-dataflow. What remains, in order:
+profiles — all green under `./validate.sh`), and the retrieval, pricing and
+UI-mount legs are **built and merged** — see [`architecture.md`](./architecture.md)
+§3/§4/§5/§6 for the store-backed classifier, the money `IFinancialExtractor` and
+the served fork, and §5 below for how they were sequenced. What remains is a
+single vertical: wire the live container and run a real corpus through it.
 
-### 1 — Mount the review UI into the forked Wayfinder
+### 1 — Real corpus, end to end
 
-**The only genuinely missing piece.** The review grid, pricing pivots, Excel
-export and control surface are built as framework-free brains + pure view models
-in `apps/redline-web/src/lib/`, and the fork now *serves* the read-side surface:
-per [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md) the mount
-lives in the `services/wayfinder` submodule (branch `redline-integration`) inside
-Wayfinder's chrome/auth/router. The `@redline/*` workspace link, the `evaluation`
-tRPC router (read-side `reviewGrid`/`pricingPivot`/`workbook`), the
-`container-redline.ts` seam (`buildRedlineModule` → `WorkflowController`) and the
-`/evaluations/:id/{review,pivots,grouping}` routes + `"use client"` components
-are **built, tested and merged** — see [`architecture.md`](./architecture.md)
-§3/§6 for how they sit. The fork's `main` stays a clean upstream mirror (guarded
-by `validate.sh` #15).
+First the seam the *served* UI still waits on: **wire the live `getContainer()`**
+in the fork — principally the cold-start classifier's store/adjudicator adapters
+and a redline↔fork `ILanguageModel` bridge, the ports `container-redline.ts`
+leaves injected (the repository, extraction reader and money `IFinancialExtractor`
+adapters already exist). With those bound, the served fork shows real data end to
+end and the `E2E_REDLINE_EVALUATION_ID`-gated Playwright specs run green against a
+real evaluation. (The grouping route's interactive composition surface —
+assign/advance over the `WorkflowManager` — is not part of this; it lands with the
+lens stage machine, §3.)
 
-What remains, on the fork's `redline-integration` branch: nothing but the live
-`getContainer()` wiring below — both integration steps are done.
-
-1. **Auth — done (2026-08-02).** Reuses Wayfinder's Better Auth session; an
-   `evaluation:review` permission key was added on the fork branch (ADR-0006) and
-   `reviewProcedure = permissionProcedure("evaluation:review")` now gates every
-   `evaluation` procedure (`reviewGrid`/`pricingPivot`/`workbook`), replacing the
-   placeholder `authenticatedProcedure` gate — admins pass via the wildcard, Power
-   Users hold the key by default, an unauthenticated caller is rejected upstream.
-   This was the one genuine integration point ADR-0006 flagged as only resolving
-   when the mount + Wayfinder run together.
-2. **Playwright — done (2026-08-03).** The acceptance specs now live in the fork
-   beside Wayfinder's own suite (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`),
-   import the fork's console-capture + AI-mock base fixture, and run against the
-   served `/evaluations/:id/{review,pivots,grouping}` routes with the shared admin
-   session. Selectors bind to the served DOM (`review-table`/`review-row`/
-   `review-source-link`, `pivot-table`/`pivot-row`, the `Pivot axis`/`Pivot measure`
-   controls); the grouping spec pins only the served landing + its navigation, since
-   the interactive composition surface is deferred to the lens stage machine (§3).
-   They gate on `E2E_REDLINE_EVALUATION_ID` and skip otherwise — matching the fork's
-   other seed-gated phase specs — because a real redline evaluation only exists once
-   the live `getContainer()` is wired (item 2). This closes the `/e2e` deviation in
-   `CLAUDE.md`. The framework-free vitest suite under `apps/redline-web/` stays the
-   proof of the brains + view models the served DOM binds to.
-
-> The *served* UI does not show real data end to end until the live
-> `getContainer()` is wired — principally the cold-start classifier's
-> store/adjudicator adapters and a redline↔fork `ILanguageModel` bridge, the ports
-> `container-redline.ts` left injected (the repository, extraction reader and money
-> `IFinancialExtractor` adapters exist). Those adapters land with item 2's live
-> run; the grouping route's interactive composition surface (assign/advance over
-> the `WorkflowManager`) lands with the lens stage machine (§3).
-
-_Exit (met): the Playwright specs run green-or-skip against the served fork —
-with `E2E_REDLINE_EVALUATION_ID` set (a real evaluation, once the live
-`getContainer()` is wired) a specialist opens `/evaluations/:id/review` inside
-Wayfinder and sees the grid, pivots and export; without it the specs skip cleanly.
-The remaining `getContainer()` wiring lands with item 2._
-
-### 2 — Real corpus, end to end
-
-Run a real procurement corpus through: `womblex` profile ingests → the sidecar
+Then run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
 embeddings (as retrievable data) materialise into the `redline_` store (the
 store-load path, built) → group documents by vendor → cold-start classify over
@@ -155,9 +106,10 @@ document delineated by topic and brand, with provenance back to source._
 
 ## 3. Deferred — comprehension lens & release
 
-Deferred until the lean vertical is complete. Revisit **after** item 2 has shown
-what the cold-start path actually gets right on a real corpus — that evidence
-should shape the lens work rather than be assumed. In dependency order:
+Deferred until the lean vertical is complete. Revisit **after** the corpus run
+(§2) has shown what the cold-start path actually gets right on a real corpus —
+that evidence should shape the lens work rather than be assumed. In dependency
+order:
 
 | Item | Package(s) | Notes |
 |---|---|---|
@@ -182,7 +134,7 @@ should shape the lens work rather than be assumed. In dependency order:
    modelling — Numbatch returns score-sorted ≤3 topics with no primary/secondary
    distinction; owned by the `BoundaryDecision` item in §3); ambiguity thresholds
    (the signal register needs initial values, unmeasured until a real corpus runs
-   — item 2).
+   — §2).
 
 ---
 
@@ -190,8 +142,8 @@ should shape the lens work rather than be assumed. In dependency order:
 
 **The lean vertical runs to completion before the deferred work starts.**
 
-0. **The store-backed retrieval leg and the pricing leg are built** (merged
-   2026-08-01 / 2026-08-02). ADR-0017 and ADR-0018 (Accepted 2026-07-31)
+0. **The store-backed retrieval leg, the pricing leg and the UI mount are built**
+   (merged 2026-08-01 → 2026-08-03). ADR-0017 and ADR-0018 (Accepted 2026-07-31)
    overturned ADR-0014 and set the store the retrieval leg is built on; the
    store-side chunk surface and the cold-start classifier over it now exist and
    are green under `./validate.sh`. They replaced the old in-TypeScript retrieval
@@ -199,21 +151,20 @@ should shape the lens work rather than be assumed. In dependency order:
    are superseded). The money `IFinancialExtractor` (`MoneySpanFinancialExtractor`)
    is likewise built: it sums a document's table-cell money spans over
    `IMoneySpanStore` into grid AUD, wired behind the port in `lib/container.ts`
-   (architecture.md §4 step 7 / §7 item 4). **ADR-0018's addendum still defers
-   vector *similarity search*** — the `pgvector`/ANN index and `findSimilar` — so
-   the classifier runs hard rules + adjudication over exact fetch, no
-   nearest-neighbour step. The store-backing sub-choice for the eventual index
-   (`pgvector` vs ANN over the shards) is a follow-on ADR decided *then*, not now.
-1. **Item 1** — the mount. The reason the product cannot be looked at today. It
-   lands in the forked Wayfinder (`services/wayfinder`, branch
-   `redline-integration`), not in `apps/redline-web` —
-   [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md). The
-   workspace link, `evaluation` tRPC router, `container-redline.ts` seam, the
-   `/evaluations` routes + components, the `evaluation:review` auth gate and the
-   Playwright specs pointed at the served fork are all merged (architecture.md
-   §3/§6), so what remains of item 1 is only the live `getContainer()` wiring —
-   which waits on item 2's adapters.
-2. **Item 2** — the real corpus run. The point of the exercise.
+   (architecture.md §4 step 7 / §7 item 4). The UI mount lands in the forked
+   Wayfinder (`services/wayfinder`, branch `redline-integration`), not in
+   `apps/redline-web` —
+   [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md): the
+   `@redline/*` workspace link, the `evaluation` tRPC router, the
+   `container-redline.ts` seam, the `/evaluations` routes + components, the
+   `evaluation:review` auth gate and the served-fork Playwright specs are all
+   merged (architecture.md §3/§6). **ADR-0018's addendum still defers vector
+   *similarity search*** — the `pgvector`/ANN index and `findSimilar` — so the
+   classifier runs hard rules + adjudication over exact fetch, no nearest-neighbour
+   step. The store-backing sub-choice for the eventual index (`pgvector` vs ANN
+   over the shards) is a follow-on ADR decided *then*, not now.
+1. **The corpus run (§2)** — wire the live `getContainer()` (the seam the served
+   UI still waits on) and run a real corpus end to end. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.
