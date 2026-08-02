@@ -13,8 +13,10 @@ import {
   boolean,
   doublePrecision,
   integer,
+  jsonb,
   numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -116,3 +118,36 @@ export const redlineMoneySpans = pgTable("redline_money_spans", {
 
 export type MoneySpanRow = typeof redlineMoneySpans.$inferSelect;
 export type NewMoneySpanRow = typeof redlineMoneySpans.$inferInsert;
+
+// The ADR-0018 chunk store: womblex's chunks + embeddings materialised into
+// redline's own Postgres (ADR-0017), addressed by provenance and returned
+// byte-identical. WRITTEN by the womblex-ingest sidecar's load path (the one
+// reader of womblex's Parquet schema — chunk_store_postgres.py); this schema is
+// the TypeScript-side view the DrizzleChunkStore READS. It must mirror the
+// sidecar's REDLINE_CHUNK_STORE_DDL exactly — no `id`/timestamps, a composite
+// (evaluation_id, chunk_id) primary key, and `chunk_id` == "{source_hash}:{index}".
+//
+// The embedding rides as `embedding jsonb` (a plain float array) + `embedding_model`
+// — loaded and available (ADR-0018 addendum), NOT under a pgvector column or an
+// ANN index. It is deliberately absent from the domain ChunkRow: no vector
+// crosses the seam (ADR-0017), so this adapter never selects it.
+export const redlineChunks = pgTable(
+  "redline_chunks",
+  {
+    evaluationId: text("evaluation_id").notNull(),
+    chunkId: text("chunk_id").notNull(),
+    sourceHash: text("source_hash").notNull(),
+    chunkIndex: integer("chunk_index").notNull(),
+    contentType: text("content_type").notNull().default("narrative"),
+    page: integer("page"),
+    text: text("text").notNull(),
+    embedding: jsonb("embedding"),
+    embeddingModel: text("embedding_model"),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.evaluationId, table.chunkId] }),
+  }),
+);
+
+export type ChunkRow = typeof redlineChunks.$inferSelect;
+export type NewChunkRow = typeof redlineChunks.$inferInsert;

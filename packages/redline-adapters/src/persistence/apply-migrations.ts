@@ -13,6 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const MIGRATION_FILES = [
   "0000_redline_initial.sql",
   "0001_redline_money_spans.sql",
+  "0002_redline_chunks.sql",
 ] as const;
 
 export type SqlExecutor = (sql: string) => Promise<unknown>;

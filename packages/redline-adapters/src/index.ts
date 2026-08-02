@@ -57,6 +57,23 @@ export {
 export {
   DrizzleMoneySpanStore,
 } from "./persistence/drizzle-money-span-store";
+// The chunk store (delivery-plan §2 item 1, ADR-0017/0018): the store-side
+// query surface over redline_chunks, which the womblex-ingest sidecar's load
+// path writes and this adapter reads. Exact fetch + structural fetch; the domain
+// ChunkRow carries no vector (ADR-0017), and findSimilar refuses with
+// NOT_IMPLEMENTED until the pgvector/ANN index lands (ADR-0018 addendum).
+export { DrizzleChunkStore } from "./persistence/drizzle-chunk-store";
+// The adjudication seam (ADR-0008 cold-start leg): an IAdjudicator over an
+// OpenAI-style chat/completions LLM endpoint. It settles what hard rules and
+// structural fetch left unclear — the model picks one candidate topic and gives
+// a one-sentence rationale, and may never invent an off-list topic.
+export {
+  HttpAdjudicator,
+  type AdjudicatorHttpClient,
+  type AdjudicatorHttpRequest,
+  type AdjudicatorHttpResponse,
+  type HttpAdjudicatorOptions,
+} from "./adjudication/http-adjudicator";
 export {
   createRedlinePostgres,
   schema as redlineSchema,

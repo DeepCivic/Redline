@@ -118,9 +118,9 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 │    (TypeScript)              speaks to the seams. Each is "as if C" (ADR-0001)│
 │        │  ├── womblex/         → HTTP+JSON to womblex-ingest sidecar          │
 │        │  ├── numbatch/        → HTTP to Numbatch backend (classify + finance)│
-│        │  └── persistence/     → redline_ Postgres (Drizzle)                 │
-│        │       (a TS IChunkStore reader over redline_chunks is not yet built  │
-│        │        — the store is written by the sidecar; see §4/§5)            │
+│        │  └── persistence/     → redline_ Postgres (Drizzle), incl. the       │
+│        │       DrizzleChunkStore IChunkStore reader over redline_chunks (the   │
+│        │       sidecar writes it; this adapter reads it — see §4/§5)          │
 │        │                                                                     │
 │        └──── seams ────────────────────────────────────────────────────────┤
 │                 │ HTTP+JSON            │ HTTP+JSON        │ Postgres          │
@@ -157,10 +157,11 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 │                        repository, extraction reader and money                  │
 │                        IFinancialExtractor adapters exist; the evaluation:review │
 │                        auth gate (reviewProcedure) and the served-fork Playwright │
-│                        specs are merged. The cold-start classifier's store/       │
-│                        adjudicator and a redline↔fork ILanguageModel bridge are   │
-│                        not yet built, so the live getContainer() wiring waits on  │
-│                        them (delivery-plan §2's corpus run).                       │
+│                        specs are merged. The cold-start classifier's store        │
+│                        (DrizzleChunkStore) and adjudicator (HttpAdjudicator)       │
+│                        adapters now exist too; the live getContainer() wiring      │
+│                        waits only on a redline↔fork ILanguageModel bridge and the  │
+│                        getContainer() call itself (delivery-plan §2's corpus run). │
 └──────────────────────────────────────────────────────────┼──────────────────┘
                                                             │
                             ┌───────────────────────────────┘

@@ -1,13 +1,15 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-03 (the UI mount is
+> **Status:** the live tracking document · **Date:** 2026-08-04 (the UI mount is
 > complete — the `evaluation` tRPC router, `container-redline.ts` seam, the
 > `/evaluations/:id/{review,pivots,grouping}` routes + components, the
 > `evaluation:review` auth gate and the served-fork Playwright specs are all
 > merged; the served surface + how it sits now live in architecture.md §3/§6,
-> removed from this plan. The one remaining mount piece — the live
-> `getContainer()` wiring — is folded into the corpus run below, which is what
-> exercises it)
+> removed from this plan. The cold-start classifier's store (`DrizzleChunkStore`
+> over `redline_chunks`) and adjudicator (`HttpAdjudicator`) adapters are now
+> built too (architecture.md §3). The remaining mount pieces — a redline↔fork
+> `ILanguageModel` bridge and the live `getContainer()` call — are folded into the
+> corpus run below, which is what exercises them)
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -57,12 +59,17 @@ single vertical: wire the live container and run a real corpus through it.
 ### 1 — Real corpus, end to end
 
 First the seam the *served* UI still waits on: **wire the live `getContainer()`**
-in the fork — principally the cold-start classifier's store/adjudicator adapters
-and a redline↔fork `ILanguageModel` bridge, the ports `container-redline.ts`
-leaves injected (the repository, extraction reader and money `IFinancialExtractor`
-adapters already exist). With those bound, the served fork shows real data end to
-end and the `E2E_REDLINE_EVALUATION_ID`-gated Playwright specs run green against a
-real evaluation. (The grouping route's interactive composition surface —
+in the fork. The cold-start classifier's store (`DrizzleChunkStore` over
+`redline_chunks`) and adjudicator (`HttpAdjudicator`) adapters are now **built**
+(architecture.md §3), alongside the repository, extraction-reader and money
+`IFinancialExtractor` adapters `container-redline.ts` already takes injected. What
+remains to close the seam is a redline↔fork `ILanguageModel` bridge (redline's
+`summarise(...)` over the fork's `generateObject<T>(...)` port — a real adapter,
+not a pass-through) and the `getContainer()` call itself: bind the built ports and
+hang `buildRedlineModule`'s controller on `ctx.container.redline`. With those
+bound, the served fork shows real data end to end and the
+`E2E_REDLINE_EVALUATION_ID`-gated Playwright specs run green against a real
+evaluation. (The grouping route's interactive composition surface —
 assign/advance over the `WorkflowManager` — is not part of this; it lands with the
 lens stage machine, §3.)
 
@@ -162,9 +169,16 @@ order:
    *similarity search*** — the `pgvector`/ANN index and `findSimilar` — so the
    classifier runs hard rules + adjudication over exact fetch, no nearest-neighbour
    step. The store-backing sub-choice for the eventual index (`pgvector` vs ANN
-   over the shards) is a follow-on ADR decided *then*, not now.
-1. **The corpus run (§2)** — wire the live `getContainer()` (the seam the served
-   UI still waits on) and run a real corpus end to end. The point of the exercise.
+   over the shards) is a follow-on ADR decided *then*, not now. The cold-start
+   classifier's two production port adapters are also built (2026-08-04): the
+   `DrizzleChunkStore` `IChunkStore` reader over `redline_chunks` (the TS reader
+   the sidecar's write path had left unpaired) and the `HttpAdjudicator`
+   `IAdjudicator` over an OpenAI-style chat/completions seam — both green under
+   `./validate.sh` (architecture.md §3).
+1. **The corpus run (§2)** — finish the live `getContainer()` wiring (a
+   redline↔fork `ILanguageModel` bridge, then bind the built ports and hang
+   `buildRedlineModule`'s controller on `ctx.container.redline`) and run a real
+   corpus end to end. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.
