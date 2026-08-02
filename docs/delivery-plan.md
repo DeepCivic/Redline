@@ -1,10 +1,12 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-02 (UI mount steps
+> **Status:** the live tracking document · **Date:** 2026-08-03 (UI mount steps
 > 1–3 done — the `evaluation` tRPC router, `container-redline.ts` seam and the
 > `/evaluations/:id/{review,pivots,grouping}` routes + components are merged;
 > the served surface + design are now in architecture.md §3/§6; removed from the
-> plan)
+> plan. Item 1's auth gate (`evaluation:review` on `reviewProcedure`) and the
+> Playwright specs pointed at the served fork are now done too — item 1 is
+> complete bar the live `getContainer()` wiring, which lands with item 2)
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -72,15 +74,30 @@ are **built, tested and merged** — see [`architecture.md`](./architecture.md)
 §3/§6 for how they sit. The fork's `main` stays a clean upstream mirror (guarded
 by `validate.sh` #15).
 
-What remains, on the fork's `redline-integration` branch:
+What remains, on the fork's `redline-integration` branch: nothing but the live
+`getContainer()` wiring below — both integration steps are done.
 
-1. **Auth** — reuse Wayfinder's `viewProcedure` / Better Auth session; add an
-   `evaluation:review` permission key on the fork branch (ADR-0006). Swaps the
-   router's placeholder `authenticatedProcedure` gate. This is the one genuine
-   integration point ADR-0006 flagged as only resolving when the mount + Wayfinder
-   run together.
-2. **Playwright** — point the existing specs (`apps/redline-web/e2e/`) at the
-   served fork, closing the `/e2e` deviation in `CLAUDE.md`.
+1. **Auth — done (2026-08-02).** Reuses Wayfinder's Better Auth session; an
+   `evaluation:review` permission key was added on the fork branch (ADR-0006) and
+   `reviewProcedure = permissionProcedure("evaluation:review")` now gates every
+   `evaluation` procedure (`reviewGrid`/`pricingPivot`/`workbook`), replacing the
+   placeholder `authenticatedProcedure` gate — admins pass via the wildcard, Power
+   Users hold the key by default, an unauthenticated caller is rejected upstream.
+   This was the one genuine integration point ADR-0006 flagged as only resolving
+   when the mount + Wayfinder run together.
+2. **Playwright — done (2026-08-03).** The acceptance specs now live in the fork
+   beside Wayfinder's own suite (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`),
+   import the fork's console-capture + AI-mock base fixture, and run against the
+   served `/evaluations/:id/{review,pivots,grouping}` routes with the shared admin
+   session. Selectors bind to the served DOM (`review-table`/`review-row`/
+   `review-source-link`, `pivot-table`/`pivot-row`, the `Pivot axis`/`Pivot measure`
+   controls); the grouping spec pins only the served landing + its navigation, since
+   the interactive composition surface is deferred to the lens stage machine (§3).
+   They gate on `E2E_REDLINE_EVALUATION_ID` and skip otherwise — matching the fork's
+   other seed-gated phase specs — because a real redline evaluation only exists once
+   the live `getContainer()` is wired (item 2). This closes the `/e2e` deviation in
+   `CLAUDE.md`. The framework-free vitest suite under `apps/redline-web/` stays the
+   proof of the brains + view models the served DOM binds to.
 
 > The *served* UI does not show real data end to end until the live
 > `getContainer()` is wired — principally the cold-start classifier's
@@ -90,8 +107,11 @@ What remains, on the fork's `redline-integration` branch:
 > run; the grouping route's interactive composition surface (assign/advance over
 > the `WorkflowManager`) lands with the lens stage machine (§3).
 
-_Exit: Playwright green against the served fork — a specialist opens
-`/evaluations/:id/review` inside Wayfinder and sees the grid, pivots and export._
+_Exit (met): the Playwright specs run green-or-skip against the served fork —
+with `E2E_REDLINE_EVALUATION_ID` set (a real evaluation, once the live
+`getContainer()` is wired) a specialist opens `/evaluations/:id/review` inside
+Wayfinder and sees the grid, pivots and export; without it the specs skip cleanly.
+The remaining `getContainer()` wiring lands with item 2._
 
 ### 2 — Real corpus, end to end
 
@@ -188,10 +208,11 @@ should shape the lens work rather than be assumed. In dependency order:
    lands in the forked Wayfinder (`services/wayfinder`, branch
    `redline-integration`), not in `apps/redline-web` —
    [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md). The
-   workspace link, `evaluation` tRPC router, `container-redline.ts` seam and the
-   `/evaluations` routes + components are merged (architecture.md §3/§6), so what
-   remains is auth (step 1) and Playwright (step 2) plus the live `getContainer()`
-   wiring that waits on item 2's adapters.
+   workspace link, `evaluation` tRPC router, `container-redline.ts` seam, the
+   `/evaluations` routes + components, the `evaluation:review` auth gate and the
+   Playwright specs pointed at the served fork are all merged (architecture.md
+   §3/§6), so what remains of item 1 is only the live `getContainer()` wiring —
+   which waits on item 2's adapters.
 2. **Item 2** — the real corpus run. The point of the exercise.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally

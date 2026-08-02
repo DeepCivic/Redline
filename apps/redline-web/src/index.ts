@@ -2,8 +2,9 @@
 // the in-app review grid (Thread 11+). The workflow-manager core, its container
 // wiring, and the view model are framework-free and unit-tested; a thin
 // Next.js/React shell binds to them (matching Wayfinder's apps/web — ADR-0006),
-// and a Playwright e2e (e2e/) proves the three relationship shapes compose and
-// stages advance.
+// and the Playwright acceptance specs live in the forked Wayfinder
+// (services/wayfinder/apps/web/e2e/redline-*.spec.ts, ADR-0019) where they run
+// against the served routes.
 export {
   WorkflowManager,
   type WorkflowManagerInit,
