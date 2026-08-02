@@ -48,6 +48,21 @@ jobs:
           # womblex pin-drift guard in validate.sh cannot run.
           submodules: true
 
+      # `submodules: true` runs `git submodule update --init --depth=1`: each
+      # submodule lands detached at its pinned commit with NO remote-tracking
+      # branch refs. validate.sh #15 asserts the wayfinder fork sits on the
+      # branch .gitmodules names and compares commits to allow a detached-but-
+      # correct checkout — which needs that ref to exist. Without this step the
+      # check cannot resolve it and skips, so CI would stop exercising the
+      # guard ADR-0019 relies on. Shallow: we need the branch tip's SHA, not its
+      # history. Non-fatal — if the fetch fails, #15 skips rather than lying.
+      - name: Fetch the fork's branch ref (for validate.sh #15)
+        continue-on-error: true
+        run: |
+          branch="$(git config -f .gitmodules submodule.services/wayfinder.branch)"
+          git -C services/wayfinder fetch --depth=1 origin \
+            "+refs/heads/${branch}:refs/remotes/origin/${branch}"
+
       - name: Read the Wayfinder pin
         id: pin
         run: grep -E '^(repo|ref)=' wayfinder.pin >> "$GITHUB_OUTPUT"
