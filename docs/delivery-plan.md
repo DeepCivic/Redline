@@ -82,7 +82,8 @@ request's `documentIds` (identifier tokens, never prose — `hard-rule-evaluatio
 
 `IProcurementClassifier` keeps its exact signature, so `BuildEvaluationTable`,
 `ClassifyResponseGroup`, `WorkflowController` and `container-redline.ts` are
-untouched and ADR-0008's D2 interchangeability invariant holds. The classifier
+untouched and port interchangeability (D2; ADR-0008 *"consumers cannot tell which
+ran"*) holds. The classifier
 becomes a legitimate process-lifetime singleton. The trained overlay takes the
 same treatment when it re-enters (§3, *Train/activate policy*); it is off the lean
 path today (`NumbatchClassifier` is not rewired here).
@@ -104,17 +105,36 @@ against. This is the lean vertical's minimum: the classification-side subset of
 Numbatch bindings and the durable-asset surface).
 
 Migration + `DrizzleClassificationLensReader` implementing item 1's port:
-`redline_lenses`, `redline_lens_topics`, `redline_hard_rules` (the `redline_`
-prefix, snake_case columns, `id`/`created_at`/`updated_at` each), and the
-per-document `candidates` derived from the extraction reader's identifier tokens.
-A `Lens` carries no `evaluationId` (ADR-0009) — the binding to an evaluation is
-its own column, not a field on the lens.
+`redline_lenses` (lens identity), `redline_hard_rules`, and the lens↔evaluation
+binding — all three explicitly sanctioned by ADR-0009, which puts *"the lens (its
+identity, its criteria references, its hard rules, its boundary decisions) and
+the bindings"* in `redline_` tables. Standard conventions: `redline_` prefix,
+snake_case columns, `id`/`created_at`/`updated_at` each. A `Lens` carries no
+`evaluationId` (ADR-0009) — the binding is its own row, not a field on the lens.
+`candidates` are derived, not stored: identifier tokens from the extraction
+reader.
+
+> **Blocked on a decision, not on code: where do cold-start topic *definitions*
+> live?** ADR-0009 keeps `topics` in Numbatch as the system of record and permits
+> redline only *references*. But `ColdStartClassifier` adjudicates over each
+> topic's **definition text** (`cold-start-classifier.ts:52-56`), and §2 excludes
+> the Numbatch stack entirely — so on the lean path there is no system of record
+> to dereference. ADR-0009 half-anticipates this (*"under ADR-0008 the first pass
+> needs no Numbatch at all, so a lens stays definable… with the fork down"*) while
+> its *Alternatives considered* rejects mirroring the library into `redline_`
+> tables. That is unresolved, and it decides this item's schema. **Settle it in an
+> ADR before building** — the likely shape is that cold-start definitions are
+> redline-owned and Numbatch's library is the system of record only for the
+> *trained* overlay's topics and samples, which would amend ADR-0009 narrowly
+> rather than overturn it. Do not quietly add a `redline_lens_topics` table
+> instead.
 
 _Version bump: MINOR_ (schema change).
 
-_Exit: an integration test against a real Postgres — a lens saved with topics and
-hard rules reads back byte-identical through `IClassificationLensReader`, and a
-document's `candidates` derive from an extraction fixture._
+_Exit: an integration test against a real Postgres — a lens saved with its hard
+rules and its evaluation binding reads back byte-identical through
+`IClassificationLensReader`, and a document's `candidates` derive from an
+extraction fixture._
 
 ### 3 — The fork bridge and the live `getContainer()`
 
@@ -179,8 +199,13 @@ Also the owner of one open item: **measure the three OCR-table gates**
 > `result.chunks`. Chunking and embedding are separate per-stage commands
 > (`womblex chunk --shards` then `womblex embed --shards`) over the run's shard dir.
 > (b) But `run` still *computes* chunking when `chunking.enabled` (`batch.py:63-64`)
-> and then discards it, so a keyed run pays for it twice — set `chunking.enabled:
-> false` for the `run` pass and let the per-stage command do it. (c) The **chunk**
+> and then discards it, so a keyed run does the work twice. Wasted CPU and wall
+> clock, **not** Isaacus spend — redline sets no `chunking_model`, so chunking is
+> local semchunk over a vendored tokeniser. Setting `chunking.enabled: false` for
+> the `run` pass avoids it and is safe for the prescribed `chunk --shards` path,
+> which ignores that flag — but `womblex chunk --config` **refuses outright** when
+> it is false (`cli/pipeline.py:417-419`), so do not flip it if anyone uses the
+> `--config` composition. (c) The **chunk**
 > stage is Isaacus-gated in 0.3.0 and the gate is a **pre-flight policy refusal**,
 > not a capability limit — settled by reading the engine, see `architecture.md` §7.1;
 > plan around it rather than re-testing it. (d) The **embed** stage is
@@ -230,6 +255,16 @@ order:
    (the signal register needs initial values, unmeasured until a real corpus runs
    — §2).
 
+2. **Where cold-start topic definitions live** — ADR-0009 makes Numbatch's library
+   the system of record for `topics` and allows redline references only, but the
+   lean vertical runs with no Numbatch and the adjudicator needs definition text.
+   Blocks §2 item 2's schema; needs an ADR (see that item).
+
+3. **The D-register has gaps.** `design-principles.md`'s table starts at **D4**,
+   yet D1 (`.claude/CLAUDE.md`) and D2 (five files under `packages/`, meaning port
+   interchangeability) are cited as settled decisions. D1–D3 should be written into
+   the register or the citations retired.
+
 ---
 
 ## 5. Sequencing
@@ -266,7 +301,10 @@ order:
    reader port (1) has nothing behind it until a lens is persisted (2); the
    `getContainer()` wiring (3) cannot construct a classifier until both exist; and
    the corpus run (4) is what the wiring is for. The point of the exercise is (4);
-   1–3 are what a doc-review found standing between the plan and it.
+   1–3 are what a doc-review found standing between the plan and it. **Item 2 is
+   additionally gated on an ADR** — ADR-0009 puts topic definitions in Numbatch
+   while the lean vertical excludes it (§2 item 2, §4 item 2). Item 1 is
+   unblocked and can start now.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.

@@ -509,8 +509,13 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    are separate `--shards` commands. Note also that `run` still *computes* chunking
    in-batch when `chunking.enabled` (`batch.py:63-64`) and then drops it at write
    time — `write_batch_parquet` passes only `(doc_id, path, extraction)` to
-   `write_results` (`operations/persist.py:18-27`) — so a keyed run pays for
-   chunking twice unless the stage is disabled for the `run` pass.
+   `write_results` (`operations/persist.py:18-27`), and `DocumentResult.chunks`
+   never reaches a shard — so a keyed run does the work twice. That is wasted CPU
+   and wall clock, not Isaacus spend: redline sets no `chunking_model`, so chunking
+   is local `semchunk` over the vendored tokeniser. `chunking.enabled: false` for
+   the `run` pass avoids it and is safe for the `chunk --shards` command, which
+   ignores the flag; `womblex chunk --config` refuses outright when it is false
+   (`cli/pipeline.py:417-419`).
 
 2. **Retrieval requires Isaacus.** `*.embeddings.parquet` is produced only by
    `kanon-2-embedder` (Isaacus). redline's retrieval classification (ADR-0008)
