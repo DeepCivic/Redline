@@ -49,8 +49,14 @@ redaction:
   enabled: false
 
 chunking:
-  # Offline token chunking: the Kanon-2 tokeniser is free on Hugging Face, so
-  # this stage needs no Isaacus key. Only `chunking_model` (AI chunking) would.
+  # Token chunking, no `chunking_model` — so no AI-chunking API call is made. That
+  # does NOT make the stage keyless: upstream refuses the whole stage without one.
+  # `run_chunking` / `chunk_shards` return early when `isaacus_available()` is
+  # false (a network-free check for the isaacus package + ISAACUS_API_KEY), before
+  # any tokeniser is loaded — even though the engine vendors the Kanon-2 tokeniser
+  # in-tree at src/womblex/_models/kanon-2-tokenizer/ and prefers it offline.
+  # A policy gate, not a capability limit; see architecture.md §7.1. Moot in
+  # practice, since `embed` needs the key anyway.
   tokenizer: "isaacus/kanon-2-tokenizer"
   chunk_size: 480
   enabled: true
@@ -77,16 +83,17 @@ embedding:
   model: kanon-2-embedder
   task: retrieval/document
 
-# ── The pricing leg (delivery-plan.md §4 V3, threads 62 + 63) ────────────────
-# INERT until the submodule bump: the pinned v0.2.0 engine has no `money:`
-# section, and womblex's config models set no pydantic `extra=`, so v2's default
-# (`ignore`) makes this a silent no-op rather than an error — the same
-# convention this file's header already states. Verified, not assumed.
+# ── The pricing leg ──────────────────────────────────────────────────────────
+# LIVE as of the v0.3.0 submodule bump: the pinned engine defines `MoneyConfig`
+# (services/womblex/src/womblex/config.py:521, mounted at `WomblexConfig.money`),
+# so these keys are read rather than ignored. The redline side is built too — the
+# money stage runs over object storage (services/womblex-ingest money_stage.py)
+# and MoneySpanFinancialExtractor sums its spans into grid AUD.
 #
-# Not part of `womblex run`/`worker` either: this is a separate per-stage
-# command (`womblex money --shards <dir>`) run after the pipeline, writing
+# Not part of `womblex run`/`worker`: this is a separate per-stage command
+# (`womblex money --shards <dir>`) run after the pipeline, writing
 # *.money_spans.parquet + *.money_columns.parquet siblings. Offline and
-# API-free — no Isaacus spend. Wiring that invocation is thread 63.
+# API-free — no Isaacus spend.
 #
 # Why it matters: the column-evidenced path recovers bare numbers whose
 # money-ness comes from their column header, which womblex measures as ~98.7%

@@ -57,7 +57,7 @@ Womblex's stages split cleanly into offline and Isaacus-gated:
 | `detect` / `extract` | **No** — PyMuPDF + PaddleOCR/YOLO, all local | `*.elements`, `*.table_cells`, `*.form_fields`, `*._manifest` parquet |
 | `redact` | No — local detector | `*.redactions.parquet` |
 | **`money`** | **No** — offline, API-free amount recognition (v0.3.0) | **`*.money_spans.parquet`** (one row per amount, exact `Decimal` + currency) + `*.money_columns.parquet` (per-column verdict audit) |
-| `chunk` (default) | **Yes** (v0.3.0) — `semchunk` sized with the Kanon-2 *tokeniser*, which is API-only (Kanon-2 is not on Hugging Face) | `*.chunks.parquet` |
+| `chunk` (default) | **Yes** (v0.3.0) — but by a *pre-flight policy gate*, not by any API call: the stage refuses when no key is present even though `semchunk` sizes with a Kanon-2 tokeniser the engine vendors in-tree. See §7.1 | `*.chunks.parquet` |
 | `chunk` (AI mode, `chunking.chunking_model` set) | Yes — enricher-driven boundaries | `*.chunks.parquet` (better boundaries) |
 | `pii` | No — graph-driven (needs enrich) or a local MiniLM backstop | `*.pii_spans`, `*.clean_text` parquet |
 | **`embed`** | **YES** — `kanon-2-embedder` via `client.embeddings.create` | **`*.embeddings.parquet`** |
@@ -83,11 +83,13 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 - The only genuinely offline concern is **redline's own infra** (its MinIO/Postgres
   are its own, config-driven, never a hardcoded Wayfinder endpoint — ADR-0002).
   That is unrelated to the Isaacus dependency.
-- **Chunking is also Isaacus-gated (v0.3.0).** An earlier revision recorded the
-  default chunk stage as offline; a real 0.3.0 run falsifies that — the Kanon-2
-  tokeniser is API-only, so `chunk` skips without `ISAACUS_API_KEY`. Chunks *and*
-  embeddings therefore both require Isaacus; only `extract`/`table_cells`/`redact`
-  are offline. See §7.
+- **Chunking is also Isaacus-gated (v0.3.0) — by policy, not by capability.** An
+  earlier revision recorded the default chunk stage as offline; a later one blamed
+  an API-only tokeniser. Both are wrong: the engine refuses the whole stage without
+  a key (a network-free pre-flight check) while vendoring the Kanon-2 tokeniser
+  in-tree. The practical effect is unchanged — chunks *and* embeddings both require
+  `ISAACUS_API_KEY`, and only `extract`/`table_cells`/`redact`/`money` are offline —
+  but the reason matters for any upstream conversation. See §7.1.
 
 ---
 
@@ -159,9 +161,12 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
 │                        auth gate (reviewProcedure) and the served-fork Playwright │
 │                        specs are merged. The cold-start classifier's store        │
 │                        (DrizzleChunkStore) and adjudicator (HttpAdjudicator)       │
-│                        adapters now exist too; the live getContainer() wiring      │
-│                        waits only on a redline↔fork ILanguageModel bridge and the  │
-│                        getContainer() call itself (delivery-plan §2's corpus run). │
+│                        adapters now exist too. The live getContainer() wiring is   │
+│                        blocked ahead of its own seam: no evaluation-scoped lens can│
+│                        reach IProcurementClassifier at a process-wide              │
+│                        getContainer(), and nothing persists a lens at all. That is │
+│                        delivery-plan §2 items 1-2; the redline↔fork ILanguageModel │
+│                        bridge + the getContainer() call are then item 3.           │
 └──────────────────────────────────────────────────────────┼──────────────────┘
                                                             │
                             ┌───────────────────────────────┘
@@ -419,8 +424,9 @@ redline/
 │                                  grouping} routes + components/evaluation/*
 │                                  "use client" surfaces, the evaluation:review
 │                                  auth gate and the served-fork Playwright specs.
-│                                  Live getContainer() wiring waits on the corpus
-│                                  run (delivery-plan §2).
+│                                  Live getContainer() wiring is blocked on the lens
+│                                  reaching IProcurementClassifier (delivery-plan
+│                                  §2 items 1-2), then lands as item 3.
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
 │   └── womblex/redline.yaml       redline's pipeline config for the engine
@@ -474,15 +480,37 @@ redline/
 The per-thread docs and dev-iteration plans carried assumptions that the
 vendored womblex source contradicts. Recorded here so they are not re-derived:
 
-1. **Chunking IS Isaacus-gated (v0.3.0) — an earlier "offline chunking"
-   assumption is now falsified.** A real 0.3.0 run showed the default `chunk`
-   stage skips without `ISAACUS_API_KEY`: it sizes chunks with the **Kanon-2**
-   tokeniser, which is API-only (it is not on Hugging Face; the earlier note that
-   `semchunk` + a *free* Kanon tokeniser ran offline described a prior engine
-   version). A run without Isaacus therefore yields extraction shards **but no
-   chunks and no embeddings** — not a usable redline deployment (air-gap is a
-   non-goal; see §2). Operationally: `womblex run` persists only extract shards;
-   `chunk` and `embed` are separate `--shards` commands.
+1. **Chunking IS Isaacus-gated (v0.3.0), but the gate is a policy refusal, not a
+   capability limit.** Both earlier framings here were wrong in different
+   directions, and reading the pinned engine settles it without a corpus run.
+
+   **The gate is real and blocking.** `run_chunking` (`operations/chunk.py:35-41`)
+   and `chunk_shards` (`process/chunk_stage.py:91-98`) each return early when
+   `isaacus_available()` is false, writing no `*.chunks.parquet`. A run without
+   `ISAACUS_API_KEY` therefore yields extraction shards **but no chunks and no
+   embeddings** — not a usable redline deployment (air-gap is a non-goal; see §2).
+
+   **But the reason previously given was wrong.** This section used to say the
+   Kanon-2 tokeniser "is API-only (it is not on Hugging Face)". The engine
+   **vendors it in-tree** at `src/womblex/_models/kanon-2-tokenizer/`
+   (`tokenizer.json`, `vocab.json`, `merges.txt`), and `create_chunker` prefers
+   that local copy via `resolve_local_model_path` (`process/chunker.py:152-160`)
+   precisely so token counting is offline. `isaacus_available()`
+   (`utils/availability.py:16-25`) is a network-free check for the `isaacus`
+   package plus a non-empty key — it never attempts to load a tokeniser. So the
+   skip is a **pre-flight policy check upstream applies to the whole stage**,
+   including plain token chunking that needs no API call. The engine's own config
+   comments (and `infra/womblex/redline.yaml`, since corrected) describe the
+   chunker's real capability; the gate is what contradicts them. Relaxing it would
+   be an upstream change request, not a redline fix — and redline needs the key for
+   `embed` regardless, so nothing downstream turns on it.
+
+   Operationally: `womblex run` persists only extract shards; `chunk` and `embed`
+   are separate `--shards` commands. Note also that `run` still *computes* chunking
+   in-batch when `chunking.enabled` (`batch.py:63-64`) and then drops it at write
+   time — `write_batch_parquet` passes only `(doc_id, path, extraction)` to
+   `write_results` (`operations/persist.py:18-27`) — so a keyed run pays for
+   chunking twice unless the stage is disabled for the `run` pass.
 
 2. **Retrieval requires Isaacus.** `*.embeddings.parquet` is produced only by
    `kanon-2-embedder` (Isaacus). redline's retrieval classification (ADR-0008)
