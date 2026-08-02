@@ -349,7 +349,11 @@ else
   # (git's default submodule checkout) reads as "HEAD" and is allowed only when
   # it points at that branch's commit — so we compare commits, not branch names,
   # to stay robust to a detached-but-correct checkout.
-  WF_BRANCH_SHA="$(git -C services/wayfinder rev-parse "origin/${WF_CONFIGURED_BRANCH}" 2>/dev/null || git -C services/wayfinder rev-parse "${WF_CONFIGURED_BRANCH}" 2>/dev/null)"
+  # --verify --quiet, not a bare rev-parse: a bare `git rev-parse <unknown-ref>`
+  # ECHOES its argument to stdout before failing, so the fallback below would set
+  # this to the literal string "origin/redline-integration" rather than leaving
+  # it empty — silently defeating every emptiness test downstream.
+  WF_BRANCH_SHA="$(git -C services/wayfinder rev-parse --verify --quiet "origin/${WF_CONFIGURED_BRANCH}" 2>/dev/null || git -C services/wayfinder rev-parse --verify --quiet "${WF_CONFIGURED_BRANCH}" 2>/dev/null)"
   WF_HEAD_SHA="$(git -C services/wayfinder rev-parse HEAD 2>/dev/null)"
   WF_ON_BRANCH=false
   if [ "$WF_CURRENT_BRANCH" = "$WF_CONFIGURED_BRANCH" ]; then WF_ON_BRANCH=true;
@@ -369,7 +373,17 @@ else
     fi
   fi
 
-  if [ "$WF_ON_BRANCH" != true ]; then
+  if [ "$WF_ON_BRANCH" != true ] && [ -z "$WF_BRANCH_SHA" ]; then
+    # Neither a branch name nor a resolvable branch commit: a shallow submodule
+    # checkout (actions/checkout's `git submodule update --depth=1`) fetches the
+    # pinned commit detached and NO branch refs, so a correct checkout is
+    # indistinguishable from a wrong one. Refusing here failed every CI run from
+    # this check's introduction (966361b) onward. Skip rather than assert what
+    # cannot be observed — the same posture as #13 and (b) below. The workflow
+    # fetches the ref so CI still exercises the guard.
+    warn "wayfinder fork: '${WF_CONFIGURED_BRANCH}' is not resolvable in services/wayfinder — a shallow checkout carries no branch refs, so a detached-but-correct HEAD cannot be told from a wrong one"
+    skip "wayfinder fork — no ${WF_CONFIGURED_BRANCH} ref to compare HEAD against"
+  elif [ "$WF_ON_BRANCH" != true ]; then
     fail "wayfinder fork: checkout is not on '${WF_CONFIGURED_BRANCH}' (redline's mount must live only there). Run 'git submodule update --init' or 'git -C services/wayfinder checkout ${WF_CONFIGURED_BRANCH}'"
   elif [ "$WF_MAIN_DIVERGED" = true ]; then
     fail "wayfinder fork: origin/main has commits not in upstream/main — redline changes have leaked onto main. Keep main a clean upstream mirror; land redline work only on ${WF_CONFIGURED_BRANCH}"
