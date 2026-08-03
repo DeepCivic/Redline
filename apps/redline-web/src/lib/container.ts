@@ -104,6 +104,14 @@ export class WorkflowController {
     return this.buildEvaluationTable.execute(input);
   }
 
+  // Every evaluation in the store, newest first — what the /evaluations index
+  // lists so a specialist can reach a review grid without being handed an id out
+  // of band. Read side only, and deliberately thin: there is nothing to shape
+  // beyond the aggregate root's own name and stage.
+  listEvaluations(): Promise<Result<readonly Evaluation[]>> {
+    return this.container.repository.listEvaluations();
+  }
+
   // Opens the in-app review grid for an evaluation that has reached
   // the review stage: reads the persisted ProcurementResponse[] (built by
   // BuildEvaluationTable) and wraps them in a ReviewGrid the shell renders. Read

@@ -31,6 +31,11 @@ export class InMemoryEvaluationRepository implements IEvaluationRepository {
     return found ? ok(found) : err(domainError("NOT_FOUND", `no evaluation ${evaluationId}`));
   }
 
+  async listEvaluations() {
+    if (this.failWith) return err(this.failWith);
+    return ok([...this.evaluations.values()].reverse());
+  }
+
   async saveVendor(evaluationId: string, vendor: Vendor) {
     if (this.failWith) return err(this.failWith);
     const list = this.vendors.get(evaluationId) ?? [];
