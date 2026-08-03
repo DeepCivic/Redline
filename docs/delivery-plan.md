@@ -21,9 +21,9 @@
 > short of its own goal in three places, now tracked here rather than assumed:
 > the lens item's table list was missing the topics table ADR-0020 sanctions (now
 > built, with that table); **nothing creates an evaluation or builds the review
-> table** (item 2); and the review grid's provenance deep-link points at a route
-> that does not exist (item 3). Item 1 gained the three prerequisites it needs to
-> compile at all. Housekeeping that is not on the vertical but is wanted before
+> table** (item 1); and the review grid's provenance deep-link points at a route
+> that does not exist (item 2). The since-built wiring item gained the three
+> prerequisites it needed to compile at all, and they landed with it. Housekeeping that is not on the vertical but is wanted before
 > users is at the end of §2.
 >
 > **A note on ADRs, since an earlier revision got this wrong.** An ADR records a
@@ -76,73 +76,12 @@ UI-mount legs are **built and merged** — see [`architecture.md`](./architectur
 §3/§4/§5/§6 for the store-backed classifier, the money `IFinancialExtractor` and
 the served fork, and §5 below for how they were sequenced. The persisted lens is
 built too, so `IClassificationLensReader` now has an adapter behind it. What
-remains is one vertical in four steps: wire the live container (item 1), give it
-a write path that creates and builds an evaluation (item 2), serve the document
-view its provenance links point at (item 3), and run a real corpus through the
-lot (item 4).
+remains is one vertical in three steps: give the wired container a write path
+that creates and builds an evaluation (item 1), serve the document view its
+provenance links point at (item 2), and run a real corpus through the lot
+(item 3).
 
-### 1 — The fork bridge and the live `getContainer()`
-
-The seam the *served* UI waits on. Two pieces, both in the fork
-(`services/wayfinder`, branch `redline-integration` — ADR-0019 sanctions this
-tree; `vendor/wayfinder` and the Python submodules stay read-only):
-
-**The `ILanguageModel` bridge**, as `apps/web/src/lib/redline-language-model.ts`
-beside `container-redline.ts`. It lives in the fork, not `packages/redline-adapters`,
-because the fork's `apps/web` resolves `@rbrasier/*` and `@redline/*` alike, while
-redline-adapters can only reach `@rbrasier/domain` through ADR-0012's optional
-runtime load (the `wayfinder-contract.ts` dance) — a cost with nothing to buy here,
-since the fork's model instance only exists in the fork's container anyway.
-It maps redline's `summarise({ vendorName, productName, passages }) → Result<string>`
-onto the fork's **`generateText`** — verified at
-`services/wayfinder/packages/domain/src/ports/language-model.ts:96-98`, returning
-`Result<{ text: string; usage: TokenUsage }>`. **Not `generateObject<T>`**: that
-one demands a schema and returns `{ object: T }`, which would mean inventing a
-wrapper schema for a paragraph. `purpose` is required on every call and labels the
-usage record.
-
-**The `getContainer()` call** — bind the six ports (repository, extraction reader,
-cold-start classifier over `DrizzleChunkStore` + `HttpAdjudicator` + the lens
-reader, money `IFinancialExtractor`, the bridge, product name) and hang
-`buildRedlineModule`'s controller on `ctx.container.redline`, mirroring
-`buildExtractionModule` (`container.ts:204`, `:481`). Keep the wiring in the
-module, not inline: `container.ts` is already 795 lines.
-
-**Three prerequisites this item has to carry, none of which exist yet.** Each was
-verified absent; without them the wiring does not compile or does not boot:
-
-- **`@redline/redline-adapters` is not a dependency of the fork's `apps/web`.**
-  Its `package.json` lists `redline-application`, `redline-domain`,
-  `redline-shared` and `redline-web` — but not `redline-adapters`, which is where
-  every production adapter this item binds actually lives
-  (`DrizzleEvaluationRepository`, `DrizzleChunkStore`, `HttpAdjudicator`,
-  `DrizzleMoneySpanStore`, `WomblexExtractionReader`). The `../../packages/*`
-  workspace glob already covers it, so this is one dependency line.
-- **The fork's env schema has no `REDLINE_*` key at all.** `apps/web/src/lib/env.ts`
-  is a strict zod schema that fails fast on boot. The wiring needs redline's own
-  Postgres URL (`REDLINE_DATABASE_URL` — ADR-0002 keeps it separate from
-  Wayfinder's `DATABASE_URL`), the `HttpAdjudicator`'s `baseUrl` / `apiKey` /
-  `model`, the womblex-ingest base URL, and the evaluation's product name.
-- **No runtime story for running both stacks.** `infra/docker-compose.yml` has no
-  service for the fork's web app, and the fork needs its own Postgres/Redis/MinIO
-  beside redline's. Whether that is a compose profile here, a documented two-stack
-  runbook, or a `services/wayfinder` compose overlay is this item's call to make —
-  but user testing cannot start without one.
-
-(The grouping route's interactive composition surface — assign/advance over the
-`WorkflowManager` — is not part of this; it lands with the lens stage machine, §3.
-The served grouping page is a read-only landing that routes into review and
-pivots, which is honest but means testers cannot compose groups in the UI — see
-item 2.)
-
-_Version bump: MINOR_ (new adapter, new runtime wiring; no schema change).
-
-_Exit: a vitest suite asserting the bridge maps a summary request onto
-`generateText` with a `purpose` and surfaces a model failure as a `Result` error
-rather than a throw, and that `buildRedlineModule` composes green from the real
-adapters._
-
-### 2 — An evaluation can be created, grouped and built
+### 1 — An evaluation can be created, grouped and built
 
 **The vertical's missing middle, and the item most directly between here and user
 testing.** The store-load path fills `redline_chunks`; the review grid reads
@@ -155,7 +94,7 @@ nothing outside its own test**. `WorkflowController.buildTable()` exists
 procedure: the fork's `evaluationRouter` exposes `reviewGrid`, `pricingPivot` and
 `workbook`, all read-side. So after a corpus lands there is still no path — served
 or scripted — that creates the evaluation, records its vendors and response
-groups, runs the classifier and persists the rows the grid reads. Item 5's exit
+groups, runs the classifier and persists the rows the grid reads. Item 3's exit
 test is unreachable without this, and `E2E_REDLINE_EVALUATION_ID` has nothing to
 point at.
 
@@ -174,7 +113,7 @@ _Exit: running the driver against a seeded corpus produces an evaluation whose
 `listResponses` is non-empty and whose stage is `review`, and the id it prints
 opens the served review grid._
 
-### 3 — The document route the provenance link points at
+### 2 — The document route the provenance link points at
 
 Every review row renders a source deep-link, and every one of them 404s.
 `review-view.ts:63-67` builds
@@ -183,7 +122,7 @@ only `review`, `pivots` and `grouping` under `[id]`. The e2e spec does not catch
 it — `redline-review-grid.spec.ts:75` asserts the `href` *pattern* and never
 follows it.
 
-Item 5's exit test says *"with provenance back to source"*, and provenance a
+Item 3's exit test says *"with provenance back to source"*, and provenance a
 specialist cannot click is not provenance. Build the route in the fork beside the
 others: read the document's elements through `IProcurementExtractionReader` (the
 JSON presentation seam ADR-0003/0017 keeps for exactly this), anchor on the
@@ -195,7 +134,7 @@ _Exit: a Playwright spec that clicks a review row's source link and lands on the
 document view scrolled to the cited element — the assertion the current spec
 stops short of._
 
-### 4 — Real corpus, end to end
+### 3 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
@@ -353,15 +292,13 @@ order:
    the sidecar's write path had left unpaired) and the `HttpAdjudicator`
    `IAdjudicator` over an OpenAI-style chat/completions seam — both green under
    `./validate.sh` (architecture.md §3).
-1. **The four items of §2, in order.** Items 1–2 are strictly dependent: the
-   `getContainer()` wiring (1) can now construct a classifier, since the lens it
-   reads is persisted; and nothing can create an evaluation or build its table
-   until that wiring exists (2). The corpus run (4) is what all of it is for, and
-   is the point of the exercise.
+1. **The three items of §2, in order.** The `getContainer()` wiring is built, so
+   item 1's write path has a live container to drive. The corpus run (3) is what
+   all of it is for, and is the point of the exercise.
 
-   Item 3's document route can start immediately and in parallel — it depends
+   Item 2's document route can start immediately and in parallel — it depends
    only on the extraction reader, which is built. It is not a prerequisite of
-   item 4, but item 4's exit test asserts provenance a specialist can follow, so
+   item 3, but item 3's exit test asserts provenance a specialist can follow, so
    it must land before that test can honestly pass.
 
    **Nothing in §2 is gated on a decision.** ADR-0020 settled where cold-start

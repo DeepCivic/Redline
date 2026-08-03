@@ -192,7 +192,14 @@ ADR-0011); `candidates` are derived per call by an identifier-token pre-pass ove
 collaborator. Cold-start definition text is redline-owned (**ADR-0020**), so this
 works with no Numbatch deployed. **Nothing authors a lens yet** — every row is
 operator-seeded until a write path lands. The redline↔fork `ILanguageModel`
-bridge and the `getContainer()` call itself are `delivery-plan.md` §2 item 1.
+bridge and the `getContainer()` call are built too: `redline-language-model.ts`
+maps redline's `summarise` onto Wayfinder's `generateText` (never
+`generateObject`, which would need a schema to carry one paragraph), and
+`resolveRedlineModule` binds all six ports to their production adapters from
+`REDLINE_*` config. With `REDLINE_DATABASE_URL` unset it returns null and the
+fork boots as plain Wayfinder with the mount unavailable, so redline's absence
+never fails Wayfinder's fail-fast env parse. Running both stacks locally is
+[`guides/two-stack-local-run.md`](./guides/two-stack-local-run.md).
 
 ### Why womblex is split into a pod + a sidecar
 
@@ -453,8 +460,8 @@ redline/
 │                                  grouping} routes + components/evaluation/*
 │                                  "use client" surfaces, the evaluation:review
 │                                  auth gate and the served-fork Playwright specs.
-│                                  Live getContainer() wiring is delivery-plan
-│                                  §2 item 1; the lens it reads is now persisted.
+│                                  Live getContainer() wiring is built:
+│                                  resolveRedlineModule + redline-language-model.
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
 │   └── womblex/redline.yaml       redline's pipeline config for the engine
