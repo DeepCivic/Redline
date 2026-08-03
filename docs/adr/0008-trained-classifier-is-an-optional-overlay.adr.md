@@ -1,6 +1,7 @@
 # ADR-0008 — The trained classifier is an optional overlay; the first pass needs no samples
 
-- **Status**: Accepted — **amended 2026-07-27** (Isaacus is a hard requirement; air-gap is a non-goal — see the amendment at the end)
+- **Self-amended 2026-07-27**: Isaacus is a hard requirement; air-gap is a non-goal — see the amendment at the end of this file.
+- **Amended by**: [ADR-0018](./0018-retrieval-is-a-store-side-query-surface.adr.md) on the retrieval leg's mechanism only — the cold-start path *"hard rules → retrieval → adjudication"* is preserved.
 - **Date**: 2026-07-24
 
 ## Context
@@ -121,7 +122,6 @@ before Numbatch is usable at all*.
 
 ## Amendment — Isaacus is a hard requirement; air-gap is a non-goal
 
-- **Status**: Accepted
 - **Date**: 2026-07-27
 
 ### Context

@@ -1,11 +1,38 @@
 # ADR-0014 — Embeddings cross the JSON boundary as plain float arrays on a sibling resource
 
-- **Status**: Accepted
 - **Date**: 2026-07-25
+- **Superseded by**:
+  [ADR-0017](./0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
+  (bulk vectors no longer cross as JSON — they are materialised into redline's own
+  store and queried in place) and
+  [ADR-0018](./0018-retrieval-is-a-store-side-query-surface.adr.md) (the domain port
+  `IEmbeddingReader` decided here is replaced by a store-side query surface).
 - **Amends**: [ADR-0003](./0003-parquet-to-json-boundary.adr.md) — widens the sidecar's
   read seam from one document-scoped resource to two. ADR-0003's decision that the
   boundary is JSON, that the sidecar owns the Parquet stack, and that the TypeScript
   packages link no Parquet reader, all stand unchanged.
+
+> **Read this first — what is dead here and what is still binding.** This ADR is
+> cited widely, and most of those citations are to the parts that survived.
+>
+> **Superseded (do not build):** embeddings crossing the JSON boundary as float
+> arrays parsed into `Float32Array` in TypeScript; the `/embeddings` sibling
+> resource as the *bulk* read seam; the `IEmbeddingReader` domain port. Bulk
+> vectors are materialised into `redline_chunks` and queried in the store
+> (ADR-0017/0018). The retired TypeScript implementations of this seam were
+> deleted from the workspace; ADR-0018 is the live decision.
+>
+> **Still binding (carried forward verbatim by ADR-0017 and ADR-0018):** a vector
+> declares the `model` that produced it; a query vector must match the chunk
+> vectors' model or the match is **refused**, never silently degraded; and vectors
+> join to chunks on `(source_hash, chunk_index)`. Code and docs citing "ADR-0014's
+> model-match refusal" or "ADR-0014's join key" are citing these, and they are
+> current. The `/embeddings` JSON route also remains for the *query-embed* seam and
+> small presentation reads — ADR-0017 narrowed JSON to presentation, it did not
+> remove it.
+>
+> This ADR also wrote its own re-entry condition (*"if a corpus exceeds ~50k
+> chunks…"*); ADR-0017 is that revisit, triggered by a ~90k-chunk corpus.
 
 ## Context
 

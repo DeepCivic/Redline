@@ -1,6 +1,5 @@
 # ADR-0019 — redline's review UI mounts into a forked Wayfinder, carried as a submodule
 
-- **Status**: Accepted
 - **Date**: 2026-08-01
 - **Amends**: [ADR-0006](./0006-inherit-wayfinder-auth-roles.adr.md) (the delivery
   vehicle for the control surface — a redline-served "Next.js shell" becomes a
@@ -43,7 +42,7 @@ commit changes to Wayfinder `main`; if we must edit Wayfinder we fork it, and we
 carry a fork as a submodule.** The maintainer here is a Wayfinder contributor
 prototyping the integration in a fork first, then deciding how to upstream it.
 
-Two accepted ADRs bear directly on this and must be reconciled rather than
+Two standing ADRs bear directly on this and must be reconciled rather than
 quietly overridden:
 
 - **[ADR-0001](./0001-adapter-over-wayfinder.adr.md) — "never a Wayfinder fork".**

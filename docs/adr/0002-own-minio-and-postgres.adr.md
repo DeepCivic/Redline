@@ -1,6 +1,5 @@
 # ADR-0002 — redline owns its MinIO bucket and Postgres, not Wayfinder's
 
-- **Status**: Accepted
 - **Date**: 2026-07-24
 
 ## Context

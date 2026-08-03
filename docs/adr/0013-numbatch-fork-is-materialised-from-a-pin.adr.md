@@ -1,6 +1,6 @@
 # ADR-0013 — The Numbatch fork is materialised from a pin, not a submodule
 
-- **Status**: **Superseded** by [ADR-0015](./0015-upstream-python-engines-are-submodules.adr.md) (2026-07-27)
+- **Superseded in full** by [ADR-0015](./0015-upstream-python-engines-are-submodules.adr.md) (2026-07-27)
 - **Date**: 2026-07-25
 
 > **Superseded.** The consistency argument below copies Wayfinder's mechanism

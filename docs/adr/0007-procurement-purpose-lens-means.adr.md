@@ -1,6 +1,5 @@
 # ADR-0007 — Procurement is the purpose; the comprehension lens is the means
 
-- **Status**: Accepted
 - **Date**: 2026-07-24
 
 ## Context

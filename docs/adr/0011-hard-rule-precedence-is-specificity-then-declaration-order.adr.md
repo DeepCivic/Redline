@@ -1,6 +1,5 @@
 # ADR-0011 — Hard-rule precedence is specificity, then declaration order
 
-- **Status**: Accepted
 - **Date**: 2026-07-25
 
 ## Context
