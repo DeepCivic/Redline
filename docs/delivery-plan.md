@@ -7,11 +7,12 @@
 > merged; the served surface + how it sits now live in architecture.md §3/§6,
 > removed from this plan. The cold-start classifier's store (`DrizzleChunkStore`
 > over `redline_chunks`) and adjudicator (`HttpAdjudicator`) adapters are now
-> built too (architecture.md §3). **A doc-review of the former single "corpus run"
-> item split it into the four below** and surfaced its blocker: no evaluation-scoped
-> lens can reach `IProcurementClassifier` at the fork's process-wide
-> `getContainer()`, and nothing persists a lens at all. Items 1 and 2 close that;
-> only then do the bridge, the wiring and the run have anything to classify)
+> built too (architecture.md §3). `IClassificationLensReader` is built as well:
+> the classifier now resolves its evaluation's lens per call, so one instance
+> serves a process-wide `getContainer()` (architecture.md §3). What is still
+> missing under the wiring is the lens itself — nothing persists one, so the
+> reader has no adapter behind it. Item 1 closes that; only then do the bridge,
+> the wiring and the run have anything to classify)
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -56,55 +57,19 @@ profiles — all green under `./validate.sh`), and the retrieval, pricing and
 UI-mount legs are **built and merged** — see [`architecture.md`](./architecture.md)
 §3/§4/§5/§6 for the store-backed classifier, the money `IFinancialExtractor` and
 the served fork, and §5 below for how they were sequenced. What remains is one
-vertical in four steps: give the classifier a lens (items 1–2), wire the live
-container (item 3), run a real corpus through it (item 4).
+vertical in three steps: persist a lens (item 1), wire the live container
+(item 2), run a real corpus through it (item 3).
 
-### 1 — The classification lens resolves per request
-
-**The blocker under the wiring, found in doc-review.** `IProcurementClassifier`
-has no route from an evaluation to the lens it classifies against.
-`ColdStartClassifier` takes `topics`, `ruleSet` and `candidates` as constructor
-state (`cold-start-classifier.ts:49-63`), and `NumbatchClassifier` binds its
-profile the same way (`numbatch-classifier.ts:52-62`) — but the seam they must be
-bound at, the fork's `getContainer()`, is a **process-wide memoised singleton**
-(`services/wayfinder/apps/web/src/lib/container.ts:787-793`). `ClassificationRequest`
-carries `{ evaluationId, responseGroupId, documentIds }` and no lens, so the
-context cannot arrive at call time either. One process therefore cannot serve two
-evaluations. This is a gap in the port's design, not in either adapter.
-
-**Resolution: the evaluation-scoped context is read through a port, per call.**
-The domain gains `IClassificationLensReader` — `readLens({ evaluationId,
-documentIds }) → Result<{ topics, ruleSet, candidates }>` — and
-`ColdStartClassifier` takes `{ chunkStore, adjudicator, lensReader }`, resolving
-the lens inside `classifyResponseGroup` instead of holding it. `topics` and
-`ruleSet` are evaluation-scoped; `candidates` are derived per document from the
-request's `documentIds` (identifier tokens, never prose — `hard-rule-evaluation.ts:3-9`).
-
-`IProcurementClassifier` keeps its exact signature, so `BuildEvaluationTable`,
-`ClassifyResponseGroup`, `WorkflowController` and `container-redline.ts` are
-untouched and port interchangeability (D2; ADR-0008 *"consumers cannot tell which
-ran"*) holds. The classifier
-becomes a legitimate process-lifetime singleton. The trained overlay takes the
-same treatment when it re-enters (§3, *Train/activate policy*); it is off the lean
-path today (`NumbatchClassifier` is not rewired here).
-
-_Version bump: MINOR_ (new domain port, changed application constructor).
-
-_Exit: a vitest suite in which one `ColdStartClassifier`, constructed once with
-only `{ chunkStore, adjudicator, lensReader }`, classifies two response groups
-belonging to different evaluations against different lenses from a fake reader,
-and returns each group's own topics._
-
-### 2 — A persisted lens for the reader to read
+### 1 — A persisted lens for the reader to read
 
 Nothing stores a lens. `schema.ts` has no lens, topic, requirement or hard-rule
-table — `redline_evaluations` is `{ id, name, stage }` — so even with item 1's port
-there is nothing behind it, and a real corpus has nothing to be classified
+table — `redline_evaluations` is `{ id, name, stage }` — so `IClassificationLensReader`
+(built) has nothing behind it, and a real corpus has nothing to be classified
 against. This is the lean vertical's minimum: the classification-side subset of
 §3's *Lens persistence*, which shrinks accordingly (that item keeps the lens's
 Numbatch bindings and the durable-asset surface).
 
-Migration + `DrizzleClassificationLensReader` implementing item 1's port:
+Migration + `DrizzleClassificationLensReader` implementing that port:
 `redline_lenses` (lens identity), `redline_hard_rules`, and the lens↔evaluation
 binding — all three explicitly sanctioned by ADR-0009, which puts *"the lens (its
 identity, its criteria references, its hard rules, its boundary decisions) and
@@ -114,20 +79,17 @@ snake_case columns, `id`/`created_at`/`updated_at` each. A `Lens` carries no
 `candidates` are derived, not stored: identifier tokens from the extraction
 reader.
 
-> **Blocked on a decision, not on code: where do cold-start topic *definitions*
-> live?** ADR-0009 keeps `topics` in Numbatch as the system of record and permits
-> redline only *references*. But `ColdStartClassifier` adjudicates over each
-> topic's **definition text** (`cold-start-classifier.ts:52-56`), and §2 excludes
-> the Numbatch stack entirely — so on the lean path there is no system of record
-> to dereference. ADR-0009 half-anticipates this (*"under ADR-0008 the first pass
-> needs no Numbatch at all, so a lens stays definable… with the fork down"*) while
-> its *Alternatives considered* rejects mirroring the library into `redline_`
-> tables. That is unresolved, and it decides this item's schema. **Settle it in an
-> ADR before building** — the likely shape is that cold-start definitions are
-> redline-owned and Numbatch's library is the system of record only for the
-> *trained* overlay's topics and samples, which would amend ADR-0009 narrowly
-> rather than overturn it. Do not quietly add a `redline_lens_topics` table
-> instead.
+> **Blocked on an unapproved decision, not on code: where do cold-start topic
+> *definitions* live?** ADR-0009 keeps `topics` in Numbatch as the system of
+> record and permits redline only *references*. But `ColdStartClassifier`
+> adjudicates over each topic's **definition text** (`indexLens` maps
+> `topic.definition` into every `AdjudicationCandidate`), and §2 excludes the
+> Numbatch stack entirely — so on the lean path there is no system of record to
+> dereference. That decides this item's schema, and it is drafted but **not yet
+> approved**: [ADR-0020](./adr/0020-cold-start-topic-definitions-are-redline-owned.adr.md)
+> (**Proposed**) makes cold-start definitions redline-owned and narrows ADR-0009
+> to the trained overlay's topics, samples and corrections. **Do not build this
+> item until ADR-0020 is Accepted**; the build flips it.
 
 _Version bump: MINOR_ (schema change).
 
@@ -136,7 +98,7 @@ rules and its evaluation binding reads back byte-identical through
 `IClassificationLensReader`, and a document's `candidates` derive from an
 extraction fixture._
 
-### 3 — The fork bridge and the live `getContainer()`
+### 2 — The fork bridge and the live `getContainer()`
 
 The seam the *served* UI waits on. Two pieces, both in the fork
 (`services/wayfinder`, branch `redline-integration` — ADR-0019 sanctions this
@@ -157,7 +119,7 @@ wrapper schema for a paragraph. `purpose` is required on every call and labels t
 usage record.
 
 **The `getContainer()` call** — bind the six ports (repository, extraction reader,
-cold-start classifier over `DrizzleChunkStore` + `HttpAdjudicator` + item 1's lens
+cold-start classifier over `DrizzleChunkStore` + `HttpAdjudicator` + the lens
 reader, money `IFinancialExtractor`, the bridge, product name) and hang
 `buildRedlineModule`'s controller on `ctx.container.redline`, mirroring
 `buildExtractionModule` (`container.ts:204`, `:481`). Keep the wiring in the
@@ -173,7 +135,7 @@ _Exit: a vitest suite asserting the bridge maps a summary request onto
 rather than a throw, and that `buildRedlineModule` composes green from the real
 adapters._
 
-### 4 — Real corpus, end to end
+### 3 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
@@ -235,7 +197,7 @@ order:
 | Collision selection, ordering & capping | domain | Bounded, deterministic selection of genuinely ambiguous documents. |
 | `BoundaryDecision` entity | domain | Net-new modelling. Owns "primary/secondary semantics" (see §4 item 1). |
 | Decision persistence + corrections push | adapters | Shrunk: upstream owns corrections + audit — an adapter call over an existing API, not a build. |
-| Lens persistence | adapters | Shrunk by §2 item 2, which lands the classification-side tables. What remains: the lens's Numbatch bindings (references, not copies) and the durable-asset surface. |
+| Lens persistence | adapters | Shrunk by §2 item 1, which lands the classification-side tables. What remains: the lens's Numbatch bindings (references, not copies) and the durable-asset surface. |
 | Lens portability | application | Apply a saved lens to a different corpus; its boundary decisions still bite. |
 | Lens stage machine | redline-web | Define → map → resolve → save, its own machine. |
 | Collision resolution surface | redline-web | View model + controller for resolving a collision set. |
@@ -258,7 +220,7 @@ order:
 2. **Where cold-start topic definitions live** — ADR-0009 makes Numbatch's library
    the system of record for `topics` and allows redline references only, but the
    lean vertical runs with no Numbatch and the adjudicator needs definition text.
-   Blocks §2 item 2's schema; needs an ADR (see that item).
+   Blocks §2 item 1's schema; needs an ADR (see that item).
 
 3. **The D-register has gaps.** `design-principles.md`'s table starts at **D4**,
    yet D1 (`.claude/CLAUDE.md`) and D2 (five files under `packages/`, meaning port
@@ -297,14 +259,14 @@ order:
    the sidecar's write path had left unpaired) and the `HttpAdjudicator`
    `IAdjudicator` over an OpenAI-style chat/completions seam — both green under
    `./validate.sh` (architecture.md §3).
-1. **The four items of §2, in order.** They are strictly dependent: the lens
-   reader port (1) has nothing behind it until a lens is persisted (2); the
-   `getContainer()` wiring (3) cannot construct a classifier until both exist; and
-   the corpus run (4) is what the wiring is for. The point of the exercise is (4);
-   1–3 are what a doc-review found standing between the plan and it. **Item 2 is
-   additionally gated on an ADR** — ADR-0009 puts topic definitions in Numbatch
-   while the lean vertical excludes it (§2 item 2, §4 item 2). Item 1 is
-   unblocked and can start now.
+1. **The three items of §2, in order.** They are strictly dependent: the built
+   `IClassificationLensReader` has nothing behind it until a lens is persisted
+   (1); the `getContainer()` wiring (2) cannot construct a classifier until it
+   is; and the corpus run (3) is what the wiring is for. The point of the
+   exercise is (3). **Item 1 is gated on an ADR** — ADR-0009 puts topic
+   definitions in Numbatch while the lean vertical excludes it (§2 item 1, §4
+   item 2), and that decision sets its schema. The `ILanguageModel` bridge half
+   of item 2 needs neither the persisted lens nor the ADR, and can start now.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.

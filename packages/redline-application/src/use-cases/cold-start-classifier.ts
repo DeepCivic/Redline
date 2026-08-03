@@ -5,15 +5,16 @@ import {
   isErr,
   ok,
   type AdjudicationCandidate,
+  type ClassificationLens,
   type ClassificationRequest,
   type HardRuleCandidate,
   type HardRuleSet,
   type IAdjudicator,
   type IChunkStore,
+  type IClassificationLensReader,
   type IProcurementClassifier,
   type RequirementClassification,
   type Result,
-  type Topic,
 } from "@redline/redline-domain";
 
 // ColdStartClassifier — the untrained first-pass IProcurementClassifier
@@ -37,10 +38,13 @@ import {
 //      (`fetchByStructure({ documentId })`) — the transfer mechanic, not a
 //      similarity ranking — and the adjudicator chooses among the lens topics.
 //
-// The lens context (topics, rule set, per-document candidates) is fixed at
-// construction: it belongs to the evaluation's lens, not to a single
-// classifyResponseGroup call, the same way NumbatchClassifier holds its profile
-// binding. `classifyResponseGroup` therefore keeps the port's exact signature.
+// The lens context (topics, rule set, per-document candidates) is resolved
+// **per call** through `IClassificationLensReader`, not held as constructor
+// state. `ClassificationRequest` carries no lens, so a classifier that bound one
+// at construction could serve only one evaluation — fatal at the seam the served
+// UI binds at, where the fork's `getContainer()` is a process-wide memoised
+// singleton. Reading it per call makes this a legitimate process-lifetime
+// singleton, and `classifyResponseGroup` keeps the port's exact signature.
 //
 // `findSimilar` is deliberately never called — the class must run without the
 // deferred nearest-neighbour step. When vector search lands, a placing leg can
@@ -49,17 +53,8 @@ import {
 export interface ColdStartClassifierDependencies {
   readonly chunkStore: IChunkStore;
   readonly adjudicator: IAdjudicator;
-  // The lens's topics — the candidates the model chooses among, each carrying
-  // the definition it reasons over. A topic's id is the requirement's id it
-  // projects to (ADR-0010), so the chosen topic's id becomes the requirementId
-  // directly — no mapping table.
-  readonly topics: readonly Topic[];
-  // The lens's hard rules, in declaration order. May be empty — then every
-  // document is unclaimed and falls through to adjudication (ADR-0008).
-  readonly ruleSet: HardRuleSet;
-  // Per-document identifier tokens for the hard-rule pre-pass. A document with
-  // no candidate here offers no subjects: unclaimed, and adjudicated.
-  readonly candidates: readonly HardRuleCandidate[];
+  // The route from an evaluation to the lens it classifies against.
+  readonly lensReader: IClassificationLensReader;
 }
 
 // A hard-rule claim and an adjudicated match are both certainties, not ranked
@@ -67,29 +62,46 @@ export interface ColdStartClassifierDependencies {
 // elsewhere). Cold start carries no similarity score to report.
 const CERTAIN = 1;
 
-export class ColdStartClassifier implements IProcurementClassifier {
-  private readonly candidatesById: Map<string, HardRuleCandidate>;
-  private readonly adjudicationCandidates: readonly AdjudicationCandidate[];
+// The lens indexed for one call: candidates keyed by document so the rule
+// pre-pass is a lookup, and topics already in the adjudicator's shape.
+interface IndexedLens {
+  readonly ruleSet: HardRuleSet;
+  readonly candidatesByDocument: Map<string, HardRuleCandidate>;
+  readonly adjudicationCandidates: readonly AdjudicationCandidate[];
+}
 
-  constructor(private readonly dependencies: ColdStartClassifierDependencies) {
-    this.candidatesById = new Map(
-      dependencies.candidates.map((candidate) => [candidate.documentId, candidate]),
-    );
-    this.adjudicationCandidates = dependencies.topics.map((topic) => ({
-      topicId: topic.id,
-      name: topic.name,
-      definition: topic.definition,
-    }));
-  }
+const indexLens = (lens: ClassificationLens): IndexedLens => ({
+  ruleSet: lens.ruleSet,
+  candidatesByDocument: new Map(
+    lens.candidates.map((candidate) => [candidate.documentId, candidate]),
+  ),
+  // A topic's id is the requirement's id it projects to (ADR-0010), so the
+  // chosen topic's id becomes the requirementId directly — no mapping table.
+  adjudicationCandidates: lens.topics.map((topic) => ({
+    topicId: topic.id,
+    name: topic.name,
+    definition: topic.definition,
+  })),
+});
+
+export class ColdStartClassifier implements IProcurementClassifier {
+  constructor(private readonly dependencies: ColdStartClassifierDependencies) {}
 
   async classifyResponseGroup(
     request: ClassificationRequest,
   ): Promise<Result<readonly RequirementClassification[]>> {
+    const read = await this.dependencies.lensReader.readLens({
+      evaluationId: request.evaluationId,
+      documentIds: request.documentIds,
+    });
+    if (isErr(read)) return err(read.error);
+
+    const lens = indexLens(read.data);
     const rows: RequirementClassification[] = [];
 
     for (const documentId of request.documentIds) {
-      const candidate = this.candidatesById.get(documentId) ?? { documentId, subjects: [] };
-      const outcome = evaluateHardRules({ ruleSet: this.dependencies.ruleSet, candidate });
+      const candidate = lens.candidatesByDocument.get(documentId) ?? { documentId, subjects: [] };
+      const outcome = evaluateHardRules({ ruleSet: lens.ruleSet, candidate });
 
       // 1. A rule claim is deterministic and final: no store read, no model call.
       if (outcome.kind === "claimed") {
@@ -103,7 +115,11 @@ export class ColdStartClassifier implements IProcurementClassifier {
       }
 
       // 2. Unclaimed → adjudicate over exact-fetch passages (no similarity).
-      const adjudicated = await this.adjudicate(request.evaluationId, documentId);
+      const adjudicated = await this.adjudicate(
+        request.evaluationId,
+        documentId,
+        lens.adjudicationCandidates,
+      );
       if (isErr(adjudicated)) return adjudicated;
       if (adjudicated.data) rows.push(adjudicated.data);
     }
@@ -118,14 +134,15 @@ export class ColdStartClassifier implements IProcurementClassifier {
   private async adjudicate(
     evaluationId: string,
     documentId: string,
+    adjudicationCandidates: readonly AdjudicationCandidate[],
   ): Promise<Result<RequirementClassification | null>> {
     // Adjudication is a choice: with fewer than two topics there is nothing to
     // adjudicate. Refuse before touching the store or the model.
-    if (this.adjudicationCandidates.length < 2) {
+    if (adjudicationCandidates.length < 2) {
       return err(
         domainError(
           "VALIDATION_FAILED",
-          `cold-start classification needs at least two topics in contention; the lens has ${this.adjudicationCandidates.length}`,
+          `cold-start classification needs at least two topics in contention; the lens has ${adjudicationCandidates.length}`,
         ),
       );
     }
@@ -143,14 +160,14 @@ export class ColdStartClassifier implements IProcurementClassifier {
     const verdict = await this.dependencies.adjudicator.adjudicate({
       documentId,
       passages,
-      candidates: this.adjudicationCandidates,
+      candidates: adjudicationCandidates,
     });
     if (isErr(verdict)) return err(verdict.error);
 
     // The model must choose a topic it was offered — never invent one. The port
     // promises this; the classifier enforces it at the boundary.
-    const chosen = this.adjudicationCandidates.find(
-      (c) => c.topicId === verdict.data.chosenTopicId,
+    const chosen = adjudicationCandidates.find(
+      (candidate) => candidate.topicId === verdict.data.chosenTopicId,
     );
     if (!chosen) {
       return err(
@@ -163,7 +180,6 @@ export class ColdStartClassifier implements IProcurementClassifier {
 
     return ok({
       documentId,
-      // The chosen topic's id is the requirement's id it projects to (ADR-0010).
       requirementId: chosen.topicId,
       confidence: CERTAIN,
       // Provenance: the strongest signal is the first fetched chunk. Without a

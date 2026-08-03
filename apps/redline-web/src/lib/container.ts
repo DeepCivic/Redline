@@ -5,10 +5,9 @@ import {
   ok,
   type ClassificationRequest,
   type Evaluation,
-  type HardRuleCandidate,
-  type HardRuleSet,
   type IAdjudicator,
   type IChunkStore,
+  type IClassificationLensReader,
   type IEvaluationRepository,
   type IFinancialExtractor,
   type ILanguageModel,
@@ -18,7 +17,6 @@ import {
   type ProcurementResponse,
   type RequirementClassification,
   type Result,
-  type Topic,
 } from "@redline/redline-domain";
 import {
   AssignDocumentsToGroups,
@@ -179,12 +177,10 @@ export const buildContainer = (parts: ProductionContainerParts): Result<Workflow
 export interface ColdStartClassifierParts {
   readonly chunkStore: IChunkStore;
   readonly adjudicator: IAdjudicator;
-  // The evaluation's lens: the topics adjudication chooses among, the hard rules
-  // resolved before the model, and the per-document identifier tokens the rules
-  // match on.
-  readonly topics: readonly Topic[];
-  readonly ruleSet: HardRuleSet;
-  readonly candidates: readonly HardRuleCandidate[];
+  // The route from an evaluation to its lens (topics, hard rules, per-document
+  // identifier tokens), resolved per call rather than bound here — one composed
+  // classifier therefore serves every evaluation in the process.
+  readonly lensReader: IClassificationLensReader;
 }
 
 export const buildColdStartClassifier = (
@@ -193,9 +189,7 @@ export const buildColdStartClassifier = (
   new ColdStartClassifier({
     chunkStore: parts.chunkStore,
     adjudicator: parts.adjudicator,
-    topics: parts.topics,
-    ruleSet: parts.ruleSet,
-    candidates: parts.candidates,
+    lensReader: parts.lensReader,
   });
 
 // The item-1 seam: the real IFinancialExtractor, composed behind the same port

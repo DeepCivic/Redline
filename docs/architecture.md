@@ -134,8 +134,8 @@ flowchart TB
   `MoneySpanFinancialExtractor`, `BuildEvaluationTable`, `DocumentMap`, pivots.
 - **`packages/redline-domain`** — entities plus the ports:
   `IProcurementExtractionReader`, `IChunkStore`, `IProcurementClassifier`,
-  `IFinancialExtractor`, `IMoneySpanStore`, `IAdjudicator`, `ILanguageModel`,
-  `IEvaluationRepository`.
+  `IClassificationLensReader`, `IFinancialExtractor`, `IMoneySpanStore`,
+  `IAdjudicator`, `ILanguageModel`, `IEvaluationRepository`.
 - **`packages/redline-adapters`** — each seam is "as if C" (ADR-0001):
   `womblex/` speaks HTTP+JSON to the sidecar, `numbatch/` HTTP to the Numbatch
   backend (classify + finance), `persistence/` Drizzle to `redline_` Postgres —
@@ -169,11 +169,22 @@ boundary as **injected** dependencies. The repository, extraction-reader, money
 exist; the `evaluation:review` auth gate (`reviewProcedure`) and the served-fork
 Playwright specs are merged.
 
-**The live `getContainer()` wiring is blocked ahead of its own seam:** no
-evaluation-scoped lens can reach `IProcurementClassifier` at a process-wide
-`getContainer()`, and nothing persists a lens at all — `delivery-plan.md` §2
-items 1–2. The redline↔fork `ILanguageModel` bridge and the `getContainer()` call
-itself are then item 3.
+**How an evaluation reaches its lens.** `ClassificationRequest` carries no lens,
+so a classifier holding one as constructor state could serve only one evaluation
+— fatal at a process-wide memoised `getContainer()`. `IClassificationLensReader`
+(`readLens({ evaluationId, documentIds }) → Result<{ topics, ruleSet, candidates }>`)
+is the route: `ColdStartClassifier` takes `{ chunkStore, adjudicator, lensReader }`
+and resolves the lens **inside** `classifyResponseGroup`, which makes it a
+legitimate process-lifetime singleton. `IProcurementClassifier` is unchanged, so
+port interchangeability holds (D2) and no consumer moved. `topics` and `ruleSet`
+are evaluation-scoped through the lens↔evaluation binding; `candidates` are
+derived per call from the request's `documentIds` — identifier tokens, never
+prose. The trained overlay takes the same treatment when it re-enters.
+
+**The live `getContainer()` wiring is still blocked:** nothing persists a lens,
+so the reader has no adapter behind it — `delivery-plan.md` §2 item 1. The
+redline↔fork `ILanguageModel` bridge and the `getContainer()` call itself are
+then item 2.
 
 ### Why womblex is split into a pod + a sidecar
 
@@ -434,9 +445,9 @@ redline/
 │                                  grouping} routes + components/evaluation/*
 │                                  "use client" surfaces, the evaluation:review
 │                                  auth gate and the served-fork Playwright specs.
-│                                  Live getContainer() wiring is blocked on the lens
-│                                  reaching IProcurementClassifier (delivery-plan
-│                                  §2 items 1-2), then lands as item 3.
+│                                  Live getContainer() wiring is blocked on a
+│                                  persisted lens for IClassificationLensReader
+│                                  (delivery-plan §2 item 1), then lands as item 2.
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
 │   └── womblex/redline.yaml       redline's pipeline config for the engine

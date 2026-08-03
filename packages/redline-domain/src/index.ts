@@ -33,6 +33,10 @@ export * from "./ports/adjudicator";
 // fetch by provenance ships now; vector similarity (findSimilar) is declared
 // but deferred (ADR-0018 addendum). No vector ever crosses this seam.
 export * from "./ports/chunk-store";
+// The evaluation-scoped lens context, read per call so one classifier instance
+// serves every evaluation in a process (the fork's getContainer() is a
+// process-wide singleton).
+export * from "./ports/classification-lens-reader";
 export * from "./ports/embedding-reader";
 export * from "./ports/evaluation-repository";
 export * from "./ports/financial-extractor";

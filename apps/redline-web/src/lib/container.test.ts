@@ -4,9 +4,13 @@ import type {
   Adjudication,
   AdjudicationRequest,
   ChunkRow,
+  ClassificationLens,
   Evaluation,
+  HardRuleCandidate,
+  HardRuleSet,
   IAdjudicator,
   IChunkStore,
+  IClassificationLensReader,
   IEvaluationRepository,
   IFinancialExtractor,
   ILanguageModel,
@@ -402,6 +406,17 @@ describe("container — cold-start classifier wiring (item 1b)", () => {
     },
   };
 
+  // The evaluation-scoped lens the classifier resolves per call. A fixed lens
+  // stands in for the persisted one until DrizzleClassificationLensReader lands.
+  const lensReaderFor = (
+    ruleSet: HardRuleSet,
+    candidates: readonly HardRuleCandidate[] = [],
+  ): IClassificationLensReader => ({
+    async readLens(): Promise<Result<ClassificationLens>> {
+      return ok({ topics, ruleSet, candidates });
+    },
+  });
+
   it("reclassifies a group through a container wired with the cold-start path (no Numbatch)", async () => {
     const store = new FakeChunkStore([
       {
@@ -419,9 +434,7 @@ describe("container — cold-start classifier wiring (item 1b)", () => {
     const coldStart = buildColdStartClassifier({
       chunkStore: store,
       adjudicator,
-      topics,
-      ruleSet: ruleSet.data,
-      candidates: [],
+      lensReader: lensReaderFor(ruleSet.data),
     });
 
     const repository = new InMemoryRepository();
@@ -477,9 +490,7 @@ describe("container — cold-start classifier wiring (item 1b)", () => {
     const coldStart = buildColdStartClassifier({
       chunkStore: new FakeChunkStore([]),
       adjudicator: recordingAdjudicator,
-      topics,
-      ruleSet: ruleSet.data,
-      candidates: [{ documentId: "SEC-014", subjects: ["SEC-014"] }],
+      lensReader: lensReaderFor(ruleSet.data, [{ documentId: "SEC-014", subjects: ["SEC-014"] }]),
     });
 
     const result = await coldStart.classifyResponseGroup({
