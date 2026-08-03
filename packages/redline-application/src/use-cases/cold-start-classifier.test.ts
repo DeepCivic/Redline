@@ -9,8 +9,13 @@ import {
   type Adjudication,
   type AdjudicationRequest,
   type ChunkRow,
+  type ClassificationLens,
+  type ClassificationLensRequest,
+  type HardRuleCandidate,
+  type HardRuleSet,
   type IAdjudicator,
   type IChunkStore,
+  type IClassificationLensReader,
   type IProcurementClassifier,
   type Result,
   type ScoredChunkRef,
@@ -19,10 +24,12 @@ import {
 } from "@redline/redline-domain";
 import { ColdStartClassifier } from "./cold-start-classifier";
 
-// Item 1b's exit test. The cold-start IProcurementClassifier runs ADR-0008's
-// untrained first pass with the ADR-0018-addendum shape: hard rules + LLM
-// adjudication over *exact/structural* fetch — no nearest-neighbour placing,
-// because vector similarity search is deferred. The assertions turn on:
+// The cold-start IProcurementClassifier runs ADR-0008's untrained first pass in
+// the ADR-0018-addendum shape: hard rules + LLM adjudication over
+// *exact/structural* fetch — no nearest-neighbour placing, because vector
+// similarity search is deferred. The assertions turn on:
+//   - the lens is resolved per call through IClassificationLensReader, so one
+//     instance serves every evaluation in the process (delivery-plan item 1);
 //   - a hard-rule-claimed document never reaches the store or the model;
 //   - an unclaimed document's passages come from fetchByStructure (exact fetch),
 //     and the adjudicator's chosen topic becomes the requirementId;
@@ -99,23 +106,67 @@ class RecordingAdjudicator implements IAdjudicator {
   }
 }
 
+// An adjudicator that echoes back whichever candidate it was offered first, so a
+// test can prove *which lens* reached the model rather than a fixed answer.
+class FirstCandidateAdjudicator implements IAdjudicator {
+  public requests: AdjudicationRequest[] = [];
+  async adjudicate(request: AdjudicationRequest) {
+    this.requests.push(request);
+    const verdict: Adjudication = {
+      documentId: request.documentId,
+      chosenTopicId: request.candidates[0]!.topicId,
+      rationale: "the first candidate fits",
+    };
+    return ok(verdict);
+  }
+}
+
+// The lens reader the classifier resolves its evaluation context through. Binds
+// a lens per evaluation, so one classifier instance can be asked about two.
+class FakeLensReader implements IClassificationLensReader {
+  public requests: ClassificationLensRequest[] = [];
+  private readonly byEvaluation = new Map<string, ClassificationLens>();
+
+  bind(evaluationId: string, lens: ClassificationLens): void {
+    this.byEvaluation.set(evaluationId, lens);
+  }
+
+  async readLens(request: ClassificationLensRequest): Promise<Result<ClassificationLens>> {
+    this.requests.push(request);
+    const lens = this.byEvaluation.get(request.evaluationId);
+    if (!lens) {
+      return err(domainError("NOT_FOUND", `no lens bound to evaluation '${request.evaluationId}'`));
+    }
+    return ok(lens);
+  }
+}
+
 const topics = [topic("req-support", "Support"), topic("req-hosting", "Hosting")];
 
-const emptyRules = () => {
+const emptyRules = (): HardRuleSet => {
   const set = makeHardRuleSet({ rules: [] });
   if (isErr(set)) throw new Error("bad rule set");
   return set.data;
 };
 
+// A reader bound to one evaluation ("e1"), the shape most cases need.
+const readerFor = (lens: Partial<ClassificationLens> = {}): FakeLensReader => {
+  const reader = new FakeLensReader();
+  reader.bind("e1", {
+    topics,
+    ruleSet: emptyRules(),
+    candidates: [],
+    ...lens,
+  });
+  return reader;
+};
+
 describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 / ADR-0018)", () => {
   it("satisfies IProcurementClassifier", () => {
-    const store = new RecordingChunkStore();
     const classifier: IProcurementClassifier = new ColdStartClassifier({
-      chunkStore: store,
+      chunkStore: new RecordingChunkStore(),
       adjudicator: new RecordingAdjudicator("req-support"),
-      topics,
-      ruleSet: emptyRules(),
-      candidates: [],
+      lensReader: readerFor(),
     });
     expect(typeof classifier.classifyResponseGroup).toBe("function");
   });
@@ -127,14 +178,9 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
       chunk({ chunkId: "doc-1:1", chunkIndex: 1, text: "and a helpdesk" }),
     ]);
     const adjudicator = new RecordingAdjudicator("req-support");
+    const lensReader = readerFor();
 
-    const classifier = new ColdStartClassifier({
-      chunkStore: store,
-      adjudicator,
-      topics,
-      ruleSet: emptyRules(),
-      candidates: [],
-    });
+    const classifier = new ColdStartClassifier({ chunkStore: store, adjudicator, lensReader });
 
     const result = await classifier.classifyResponseGroup({
       evaluationId: "e1",
@@ -152,6 +198,9 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
       sourceChunkId: "doc-1:0",
     });
 
+    // The lens was resolved for this evaluation, carrying the documents in play.
+    expect(lensReader.requests).toEqual([{ evaluationId: "e1", documentIds: ["doc-1"] }]);
+
     // Passages came from the store's verbatim chunk text, in order.
     expect(adjudicator.requests).toHaveLength(1);
     expect(adjudicator.requests[0].passages).toEqual(["we provide 24/7 support", "and a helpdesk"]);
@@ -164,6 +213,109 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
     // The exact-fetch half was used; the deferred nearest-neighbour step was not.
     expect(store.structureCalls).toEqual([{ documentId: "doc-1" }]);
     expect(store.findSimilarCalls).toBe(0);
+  });
+
+  it("classifies two evaluations against their own lenses from one instance", async () => {
+    // The exit test: the classifier is constructed once, with no lens of its own,
+    // and serves two evaluations — the shape the fork's process-wide memoised
+    // getContainer() forces (delivery-plan item 1).
+    const store = new RecordingChunkStore();
+    store.seed("doc-a", [chunk({ documentId: "doc-a", chunkId: "doc-a:0", chunkIndex: 0 })]);
+    store.seed("doc-b", [chunk({ documentId: "doc-b", chunkId: "doc-b:0", chunkIndex: 0 })]);
+
+    const councilTopics = [topic("req-support", "Support"), topic("req-hosting", "Hosting")];
+    const hospitalTopics = [topic("req-clinical", "Clinical"), topic("req-training", "Training")];
+
+    const lensReader = new FakeLensReader();
+    lensReader.bind("council-tender", {
+      topics: councilTopics,
+      ruleSet: emptyRules(),
+      candidates: [],
+    });
+    lensReader.bind("hospital-tender", {
+      topics: hospitalTopics,
+      ruleSet: emptyRules(),
+      candidates: [],
+    });
+
+    const adjudicator = new FirstCandidateAdjudicator();
+    const classifier = new ColdStartClassifier({ chunkStore: store, adjudicator, lensReader });
+
+    const council = await classifier.classifyResponseGroup({
+      evaluationId: "council-tender",
+      responseGroupId: "group-a",
+      documentIds: ["doc-a"],
+    });
+    const hospital = await classifier.classifyResponseGroup({
+      evaluationId: "hospital-tender",
+      responseGroupId: "group-b",
+      documentIds: ["doc-b"],
+    });
+
+    expect(isOk(council)).toBe(true);
+    expect(isOk(hospital)).toBe(true);
+    if (!isOk(council) || !isOk(hospital)) return;
+
+    // Each group came back with its own evaluation's topics.
+    expect(council.data[0]!.requirementId).toBe("req-support");
+    expect(hospital.data[0]!.requirementId).toBe("req-clinical");
+
+    // And each adjudication was offered only its own lens's candidates.
+    expect(adjudicator.requests[0]!.candidates.map((c) => c.topicId)).toEqual([
+      "req-support",
+      "req-hosting",
+    ]);
+    expect(adjudicator.requests[1]!.candidates.map((c) => c.topicId)).toEqual([
+      "req-clinical",
+      "req-training",
+    ]);
+  });
+
+  it("applies each evaluation's own hard rules", async () => {
+    // The rule half of the same isolation: the same document identifier is
+    // claimed by one evaluation's rules and not the other's.
+    const store = new RecordingChunkStore();
+    store.seed("SEC-014", [chunk({ documentId: "SEC-014", chunkId: "SEC-014:0", chunkIndex: 0 })]);
+
+    const strictRules = makeHardRuleSet({
+      rules: [{ id: "r1", pattern: "SEC-*", topicId: "req-hosting" }],
+    });
+    if (isErr(strictRules)) throw new Error("bad rule set");
+
+    const candidates: readonly HardRuleCandidate[] = [
+      { documentId: "SEC-014", subjects: ["SEC-014"] },
+    ];
+
+    const lensReader = new FakeLensReader();
+    lensReader.bind("ruled", { topics, ruleSet: strictRules.data, candidates });
+    lensReader.bind("unruled", { topics, ruleSet: emptyRules(), candidates });
+
+    const adjudicator = new RecordingAdjudicator("req-support");
+    const classifier = new ColdStartClassifier({ chunkStore: store, adjudicator, lensReader });
+
+    const ruled = await classifier.classifyResponseGroup({
+      evaluationId: "ruled",
+      responseGroupId: "g1",
+      documentIds: ["SEC-014"],
+    });
+    const unruled = await classifier.classifyResponseGroup({
+      evaluationId: "unruled",
+      responseGroupId: "g2",
+      documentIds: ["SEC-014"],
+    });
+
+    expect(isOk(ruled)).toBe(true);
+    expect(isOk(unruled)).toBe(true);
+    if (!isOk(ruled) || !isOk(unruled)) return;
+
+    // Claimed by the rule: deterministic, no source chunk, model never asked.
+    expect(ruled.data[0]).toMatchObject({ requirementId: "req-hosting", sourceChunkId: null });
+    // No rule in the other lens: it fell through to adjudication.
+    expect(unruled.data[0]).toMatchObject({
+      requirementId: "req-support",
+      sourceChunkId: "SEC-014:0",
+    });
+    expect(adjudicator.requests).toHaveLength(1);
   });
 
   it("resolves a hard-rule-claimed document deterministically — never touching store or model", async () => {
@@ -180,9 +332,10 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
     const classifier = new ColdStartClassifier({
       chunkStore: store,
       adjudicator,
-      topics,
-      ruleSet: ruleSet.data,
-      candidates: [{ documentId: "SEC-014", subjects: ["SEC-014"] }],
+      lensReader: readerFor({
+        ruleSet: ruleSet.data,
+        candidates: [{ documentId: "SEC-014", subjects: ["SEC-014"] }],
+      }),
     });
 
     const result = await classifier.classifyResponseGroup({
@@ -212,9 +365,7 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
     const classifier = new ColdStartClassifier({
       chunkStore: store,
       adjudicator,
-      topics,
-      ruleSet: emptyRules(),
-      candidates: [],
+      lensReader: readerFor(),
     });
 
     const result = await classifier.classifyResponseGroup({
@@ -237,9 +388,7 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
     const classifier = new ColdStartClassifier({
       chunkStore: store,
       adjudicator: new RecordingAdjudicator("only"),
-      topics: [topic("only", "Only")],
-      ruleSet: emptyRules(),
-      candidates: [],
+      lensReader: readerFor({ topics: [topic("only", "Only")] }),
     });
 
     const result = await classifier.classifyResponseGroup({
@@ -250,6 +399,25 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
     expect(isErr(result)).toBe(true);
     if (!isErr(result)) return;
     expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("propagates a lens-reader failure unchanged", async () => {
+    const classifier = new ColdStartClassifier({
+      chunkStore: new RecordingChunkStore(),
+      adjudicator: new RecordingAdjudicator("req-support"),
+      // Nothing bound for "e1": no lens reaches this evaluation.
+      lensReader: new FakeLensReader(),
+    });
+
+    const result = await classifier.classifyResponseGroup({
+      evaluationId: "e1",
+      responseGroupId: "g1",
+      documentIds: ["doc-1"],
+    });
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("NOT_FOUND");
   });
 
   it("propagates a store failure unchanged", async () => {
@@ -266,9 +434,7 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
     const classifier = new ColdStartClassifier({
       chunkStore: store,
       adjudicator: new RecordingAdjudicator("req-support"),
-      topics,
-      ruleSet: emptyRules(),
-      candidates: [],
+      lensReader: readerFor(),
     });
 
     const result = await classifier.classifyResponseGroup({
