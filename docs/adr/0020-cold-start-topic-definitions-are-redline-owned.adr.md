@@ -1,6 +1,5 @@
 # ADR-0020 — Cold-start topic definitions are redline-owned; Numbatch's library is the system of record for the trained overlay
 
-- **Status**: Proposed
 - **Date**: 2026-08-05
 - **Amends**: [ADR-0009](./0009-numbatch-library-is-system-of-record.adr.md) on the
   scope of *"topics"* — its rulings on samples, corrections and the

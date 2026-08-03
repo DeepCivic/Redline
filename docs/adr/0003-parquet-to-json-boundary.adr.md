@@ -1,7 +1,5 @@
 # ADR-0003 — The womblex extraction boundary is JSON (sidecar reads Parquet, serves JSON)
 
-- **Status**: Accepted — **narrowed** by
-  [ADR-0017](./0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
 - **Date**: 2026-07-25
 - **Amended by**:
   - [ADR-0017](./0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)

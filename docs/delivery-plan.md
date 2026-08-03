@@ -113,10 +113,11 @@ say so or the derivation should be a separate collaborator it composes.
 > `topic.definition` into every `AdjudicationCandidate`), and §2 excludes the
 > Numbatch stack entirely — so on the lean path there is no system of record to
 > dereference. That decides this item's schema, and it is drafted but **not yet
-> approved**: [ADR-0020](./adr/0020-cold-start-topic-definitions-are-redline-owned.adr.md)
-> (**Proposed**) makes cold-start definitions redline-owned and narrows ADR-0009
-> to the trained overlay's topics, samples and corrections. **Do not build this
-> item until ADR-0020 is Accepted**; the build flips it.
+> merged**: [ADR-0020](./adr/0020-cold-start-topic-definitions-are-redline-owned.adr.md)
+> makes cold-start definitions redline-owned and narrows ADR-0009 to the trained
+> overlay's topics, samples and corrections. **Do not build this item until that
+> ADR's PR is merged** — merging it is the approval, and there is nothing in the
+> file to flip.
 
 _Version bump: MINOR_ (schema change).
 
@@ -351,9 +352,9 @@ order:
 2. **Where cold-start topic definitions live** — ADR-0009 makes Numbatch's library
    the system of record for `topics` and allows redline references only, but the
    lean vertical runs with no Numbatch and the adjudicator needs definition text.
-   Blocks §2 item 1's schema. The ADR is **written and still Proposed**
+   Blocks §2 item 1's schema. The ADR is **written and unmerged**
    ([ADR-0020](./adr/0020-cold-start-topic-definitions-are-redline-owned.adr.md));
-   accepting or rejecting it is the single decision at the head of the critical
+   merging or rejecting it is the single decision at the head of the critical
    path, and item 1's `redline_topics` table is what it sanctions.
 
 3. **The D-register has gaps.** `design-principles.md`'s table starts at **D4**,
@@ -368,7 +369,7 @@ order:
 **The lean vertical runs to completion before the deferred work starts.**
 
 0. **The store-backed retrieval leg, the pricing leg and the UI mount are built**
-   (merged 2026-08-01 → 2026-08-03). ADR-0017 and ADR-0018 (Accepted 2026-07-31)
+   (merged 2026-08-01 → 2026-08-03). ADR-0017 and ADR-0018 (merged 2026-07-31)
    overturned ADR-0014 and set the store the retrieval leg is built on; the
    store-side chunk surface and the cold-start classifier over it now exist and
    are green under `./validate.sh`. They replaced the old in-TypeScript retrieval

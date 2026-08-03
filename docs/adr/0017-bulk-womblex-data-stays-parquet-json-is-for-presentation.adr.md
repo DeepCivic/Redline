@@ -1,7 +1,6 @@
 # ADR-0017 — Bulk womblex data is consumed as Parquet (materialised to MinIO/Postgres); JSON is the presentation seam only
 
-- **Status**: Accepted
-- **Date**: 2026-07-30 (ratified 2026-07-31)
+- **Date**: 2026-07-30
 - **Amends**:
   - [ADR-0003](./0003-parquet-to-json-boundary.adr.md) — narrows the JSON boundary
     to the *presentation* read model. The extraction *provenance* (elements, chunks,

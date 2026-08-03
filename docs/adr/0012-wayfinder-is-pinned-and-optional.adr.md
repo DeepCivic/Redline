@@ -1,6 +1,5 @@
 # ADR-0012 — Wayfinder is pinned by commit and optional at install time
 
-- **Status**: Accepted
 - **Date**: 2026-07-25
 - **Amends**: [ADR-0001](./0001-adapter-over-wayfinder.adr.md) (Strategy A's mechanics and Enforcement clause)
 

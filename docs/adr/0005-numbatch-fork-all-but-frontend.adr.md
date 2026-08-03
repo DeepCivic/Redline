@@ -1,7 +1,10 @@
 # ADR-0005 — Numbatch is a vendored fork; run all-but-frontend, bootstrap via API
 
-- **Status**: Accepted (Vendoring clause amended by
-  [ADR-0013](./0013-numbatch-fork-is-materialised-from-a-pin.adr.md), 2026-07-25)
+- **Amended by**: the Vendoring clause, twice — first by
+  [ADR-0013](./0013-numbatch-fork-is-materialised-from-a-pin.adr.md) (2026-07-25),
+  then by [ADR-0015](./0015-upstream-python-engines-are-submodules.adr.md)
+  (2026-07-27), which superseded 0013 in full. **0015 is the live one**: the
+  upstream Python engines are submodules, not materialised pins.
 - **Date**: 2026-07-26
 
 ## Context

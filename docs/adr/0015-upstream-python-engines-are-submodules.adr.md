@@ -1,6 +1,5 @@
 # ADR-0015 — The upstream Python engines are submodules, consumed for what they already do
 
-- **Status**: Accepted
 - **Date**: 2026-07-27
 - **Supersedes**: [ADR-0013](./0013-numbatch-fork-is-materialised-from-a-pin.adr.md) (in full)
 - **Amends**: [ADR-0005](./0005-numbatch-fork-all-but-frontend.adr.md) (the Vendoring clause, again)

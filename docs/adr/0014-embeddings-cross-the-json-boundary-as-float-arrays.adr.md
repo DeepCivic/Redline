@@ -1,9 +1,5 @@
 # ADR-0014 — Embeddings cross the JSON boundary as plain float arrays on a sibling resource
 
-- **Status**: **Superseded in its core decision** by
-  [ADR-0017](./0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
-  and [ADR-0018](./0018-retrieval-is-a-store-side-query-surface.adr.md) (2026-07-31).
-  **Its data invariants survive and are still current** — see the note below.
 - **Date**: 2026-07-25
 - **Superseded by**:
   [ADR-0017](./0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)

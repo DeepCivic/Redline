@@ -1,6 +1,5 @@
 # ADR-0019 — redline's review UI mounts into a forked Wayfinder, carried as a submodule
 
-- **Status**: Accepted
 - **Date**: 2026-08-01
 - **Amends**: [ADR-0006](./0006-inherit-wayfinder-auth-roles.adr.md) (the delivery
   vehicle for the control surface — a redline-served "Next.js shell" becomes a

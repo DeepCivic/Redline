@@ -1,9 +1,9 @@
 # ADR-0016 — Currency is derived from the verbatim cell value, not from womblex's `value_type`
 
-- **Status**: **Superseded** by womblex v0.3.0's `money` op, materialised into
+- **Superseded** by womblex v0.3.0's `money` op, materialised into
   `redline_money_spans` under
   [ADR-0017](./0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md).
-  Never accepted; its premises were falsified upstream 2026-07-29 (note below).
+  Its premises were falsified upstream 2026-07-29 (note below).
   **`derive_is_currency` survives as the documented fallback** — see *What
   survives*.
 - **Date**: 2026-07-27

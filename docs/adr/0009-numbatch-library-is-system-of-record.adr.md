@@ -1,6 +1,5 @@
 # ADR-0009 — Numbatch's topic library is the system of record for topics, samples and corrections
 
-- **Status**: Accepted
 - **Date**: 2026-07-24
 - **Amends**: [ADR-0004](./0004-user-defined-requirements-not-fixed-1-6.adr.md)
   on the lifetime of a `RequirementSet` (its user-defined-criteria ruling stands)

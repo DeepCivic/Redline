@@ -1,6 +1,5 @@
 # ADR-0010 — A topic's identity carries into the requirement it projects to
 
-- **Status**: Accepted
 - **Date**: 2026-07-25
 
 ## Context
