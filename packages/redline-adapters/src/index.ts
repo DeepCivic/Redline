@@ -72,6 +72,11 @@ export {
   DrizzleClassificationLensReader,
   type DrizzleClassificationLensReaderDependencies,
 } from "./persistence/drizzle-classification-lens-reader";
+// The write half, over the same four tables: the minimum that lets the corpus
+// driver seed the lens it is about to classify against. Whole-lens, transactional
+// and idempotent per lens, so a re-run replaces rather than colliding with the
+// one-lens-per-evaluation index. Not the authoring surface (deferred).
+export { DrizzleClassificationLensWriter } from "./persistence/drizzle-classification-lens-writer";
 export {
   makeExtractionHardRuleCandidateDeriver,
   type DeriveHardRuleCandidates,

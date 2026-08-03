@@ -134,9 +134,10 @@ flowchart TB
   `MoneySpanFinancialExtractor`, `BuildEvaluationTable`, `DocumentMap`, pivots.
 - **`packages/redline-domain`** — entities plus the ports:
   `IProcurementExtractionReader`, `IChunkStore`, `IProcurementClassifier`,
-  `IClassificationLensReader`, `IFinancialExtractor`, `IMoneySpanStore`,
-  `IAdjudicator`, `ILanguageModel`, `IEvaluationRepository`. The lens reader's
-  adapter is `DrizzleClassificationLensReader` over the four lens tables.
+  `IClassificationLensReader`, `IClassificationLensWriter`, `IFinancialExtractor`,
+  `IMoneySpanStore`, `IAdjudicator`, `ILanguageModel`, `IEvaluationRepository`.
+  The lens seam's adapters are `DrizzleClassificationLensReader` and
+  `DrizzleClassificationLensWriter`, both over the four lens tables.
 - **`packages/redline-adapters`** — each seam is "as if C" (ADR-0001):
   `womblex/` speaks HTTP+JSON to the sidecar, `numbatch/` HTTP to the Numbatch
   backend (classify + finance), `persistence/` Drizzle to `redline_` Postgres —
@@ -190,8 +191,14 @@ adapter behind it. Topics and rules come from the store in their stored order
 ADR-0011); `candidates` are derived per call by an identifier-token pre-pass over
 `IProcurementExtractionReader.readElements`, which is the adapter's second
 collaborator. Cold-start definition text is redline-owned (**ADR-0020**), so this
-works with no Numbatch deployed. **Nothing authors a lens yet** — every row is
-operator-seeded until a write path lands. The redline↔fork `ILanguageModel`
+works with no Numbatch deployed. `IClassificationLensWriter` /
+`DrizzleClassificationLensWriter` is the write half: the whole lens goes in one
+transaction (a half-written lens is one the reader rejects), array order becomes
+`position` / `declaration_order` so the caller numbers nothing, and a re-save
+replaces and rebinds so a seeding run is repeatable. It is a *seeding* surface,
+not an authoring one — no editing, no versioning; that stays deferred. Note
+`redline_topics.id` is a global primary key, so a topic belongs to exactly one
+lens. The redline↔fork `ILanguageModel`
 bridge and the `getContainer()` call are built too: `redline-language-model.ts`
 maps redline's `summarise` onto Wayfinder's `generateText` (never
 `generateObject`, which would need a schema to carry one paragraph), and
@@ -200,6 +207,22 @@ maps redline's `summarise` onto Wayfinder's `generateText` (never
 fork boots as plain Wayfinder with the mount unavailable, so redline's absence
 never fails Wayfinder's fail-fast env parse. Running both stacks locally is
 [`guides/two-stack-local-run.md`](./guides/two-stack-local-run.md).
+
+**How an evaluation gets created.** Everything served is read-side, so the write
+path is a script in the fork, not a route: `scripts/seed-redline-evaluation.ts`
+reads a corpus manifest and runs `IngestDocuments` → `saveLens` →
+`AssignDocumentsToGroups` → `BuildEvaluationTable`, printing the evaluation id
+that opens the review grid and feeds `E2E_REDLINE_EVALUATION_ID`. The manifest
+carries what the operator controls — vendors, response groups, and the lens —
+because the served grouping page is read-only until the stage machine lands; a
+document may be claimed by only one group, since `assignDocument` moves rather
+than copies. The lens is written *between* ingest and grouping: its binding row
+references the evaluation, so the evaluation must exist first, and the lens must
+exist before classification or the reader resolves `NOT_FOUND`. A tRPC mutation
+was deliberately not built — it would drag in the stage machine it should not own
+yet. The seeding parts are resolved beside `resolveRedlineModule` from the same
+adapter construction but stay **off** `RedlineModule`: nothing served writes an
+evaluation, so the served container carries no write capability.
 
 ### Why womblex is split into a pod + a sidecar
 
