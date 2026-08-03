@@ -445,9 +445,9 @@ redline/
 │                                  grouping} routes + components/evaluation/*
 │                                  "use client" surfaces, the evaluation:review
 │                                  auth gate and the served-fork Playwright specs.
-│                                  Live getContainer() wiring is blocked on the lens
-│                                  reaching IProcurementClassifier (delivery-plan
-│                                  §2 items 1-2), then lands as item 3.
+│                                  Live getContainer() wiring is blocked on a
+│                                  persisted lens for IClassificationLensReader
+│                                  (delivery-plan §2 item 1), then lands as item 2.
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
 │   └── womblex/redline.yaml       redline's pipeline config for the engine

@@ -266,7 +266,7 @@ order:
    exercise is (3). **Item 1 is gated on an ADR** — ADR-0009 puts topic
    definitions in Numbatch while the lean vertical excludes it (§2 item 1, §4
    item 2), and that decision sets its schema. The `ILanguageModel` bridge half
-   of item 2 depends on neither and can start now.
+   of item 2 needs neither the persisted lens nor the ADR, and can start now.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.

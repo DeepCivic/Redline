@@ -68,7 +68,7 @@ Standard conventions apply: `redline_` prefix, snake_case columns,
 `id`/`created_at`/`updated_at` on every table. A `Lens` still carries no
 `evaluationId` — the binding is its own row (ADR-0009, unchanged). `candidates`
 remain derived per call from the request's `documentIds`, never stored
-(ADR-0020 does not change what `IClassificationLensReader` returns).
+— this decision does not change what `IClassificationLensReader` returns.
 
 ## Consequences
 
