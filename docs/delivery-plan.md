@@ -106,18 +106,17 @@ reader alongside the database handle. The adapter is therefore not purely a
 Drizzle adapter despite the name — it has two collaborators, and the name should
 say so or the derivation should be a separate collaborator it composes.
 
-> **Blocked on an unapproved decision, not on code: where do cold-start topic
+> **Blocked on an open decision, not on code: where do cold-start topic
 > *definitions* live?** ADR-0009 keeps `topics` in Numbatch as the system of
 > record and permits redline only *references*. But `ColdStartClassifier`
 > adjudicates over each topic's **definition text** (`indexLens` maps
 > `topic.definition` into every `AdjudicationCandidate`), and §2 excludes the
 > Numbatch stack entirely — so on the lean path there is no system of record to
-> dereference. That decides this item's schema, and it is drafted but **not yet
-> merged**: [ADR-0020](./adr/0020-cold-start-topic-definitions-are-redline-owned.adr.md)
+> dereference. That decides this item's schema, and it is drafted but unmerged:
+> [ADR-0020](./adr/0020-cold-start-topic-definitions-are-redline-owned.adr.md)
 > makes cold-start definitions redline-owned and narrows ADR-0009 to the trained
 > overlay's topics, samples and corrections. **Do not build this item until that
-> ADR's PR is merged** — merging it is the approval, and there is nothing in the
-> file to flip.
+> ADR's PR is merged.**
 
 _Version bump: MINOR_ (schema change).
 

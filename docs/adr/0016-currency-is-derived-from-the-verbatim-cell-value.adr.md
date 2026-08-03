@@ -15,11 +15,9 @@
 > `money_columns.py`, `money_vocab.py`, `money_stage.py` (`7b767d5` and follow-ups).
 > The *conclusion* (require an explicit marker) is also now measurably too narrow:
 > womblex measures its column-evidenced path as carrying ~98.7% of amounts, which
-> a marker requirement cannot see. See
-> [`../delivery-plan.md`](../delivery-plan.md) §3 (upstream delta) and §4 V3. Nothing is unwound
-> here — this ADR was never accepted — but it should be superseded rather than
-> promoted, and the superseding ADR should state whether `derive_is_currency`
-> survives as a fallback for shards written without the money stage.
+> a marker requirement cannot see. Nothing downstream is unwound. The open
+> question this left: whether `derive_is_currency` survives as a fallback for
+> shards written without the money stage.
 >
 > **Resolved 2026-08-03 — what survives.** The supersession is womblex v0.3.0's
 > `money` op, whose column-evidenced path recovers ~98.7% of amounts as exact

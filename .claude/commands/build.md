@@ -26,14 +26,13 @@ not yet settled, or needs a new architectural decision:
 
 1. Draft the ADR in `docs/adr/` (`NNNN-<decision>.adr.md`).
 2. Present it for review and **stop**.
-3. Build only once the user approves.
+3. Build only once the user has settled it.
 
-Do not build past an unapproved precondition decision.
+Do not build past a precondition decision that is still open.
 
 **ADRs carry no status field.** Review happens on the PR that contains the ADR;
-merged is decided, unmerged is not. A `Status:` line inside the file is a second
-place for that fact to live and drift out of date, which it has. Do not add one,
-and do not "flip" anything. What an ADR *does* record is its relationships to
+merged is decided, unmerged is not. Do not add one, and do not "flip" anything.
+What an ADR *does* record is its relationships to
 other ADRs — what it amends, narrows or overturns, and what of an earlier
 decision survives — because that is the decision's content, not its workflow.
 

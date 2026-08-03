@@ -21,10 +21,8 @@ Each ADR is a file named `NNN-short-title.adr.md` and follows:
 ```
 
 - **ADRs carry no status field.** Review happens on the pull request that
-  contains the ADR: merged is decided, unmerged is not. A `Status:` line inside
-  the file is a second place for that fact to live, and it drifted — three were
-  wrong at once, including one this index called `Accepted` that had never been
-  accepted. Git and the PR own the lifecycle; the file owns the decision.
+  contains the ADR: merged is decided, unmerged is not. Git and the PR own the
+  lifecycle; the file owns the decision.
 - ADRs are immutable once merged. To change a decision, write a new ADR that
   supersedes the old one, and add a **Superseded by** line to the old one
   pointing at it.
@@ -42,10 +40,9 @@ Each ADR is a file named `NNN-short-title.adr.md` and follows:
 ## Lifecycle
 
 Most ADRs are **preconditions**: drafted at planning (adding the item to
-`docs/delivery-plan.md`), reviewed (`/doc-review`), and built only once the
-review approves — `/build` must not build past an unapproved precondition
-decision. Approval is the PR merging, not an edit to the file. Some are
-**discovered** during a
+`docs/delivery-plan.md`), reviewed (`/doc-review`), and built only once that
+review has settled the decision — `/build` must not build past a precondition
+decision that is still open. Some are **discovered** during a
 build, when contact with the code forces a choice that could not honestly have
 been made in advance (ADR-0002 and ADR-0003 were both locked mid-build); those
 are recorded in the item's own commit. ADR-0007 to ADR-0009 are **track-level**
