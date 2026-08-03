@@ -135,7 +135,8 @@ flowchart TB
 - **`packages/redline-domain`** — entities plus the ports:
   `IProcurementExtractionReader`, `IChunkStore`, `IProcurementClassifier`,
   `IClassificationLensReader`, `IFinancialExtractor`, `IMoneySpanStore`,
-  `IAdjudicator`, `ILanguageModel`, `IEvaluationRepository`.
+  `IAdjudicator`, `ILanguageModel`, `IEvaluationRepository`. The lens reader's
+  adapter is `DrizzleClassificationLensReader` over the four lens tables.
 - **`packages/redline-adapters`** — each seam is "as if C" (ADR-0001):
   `womblex/` speaks HTTP+JSON to the sidecar, `numbatch/` HTTP to the Numbatch
   backend (classify + finance), `persistence/` Drizzle to `redline_` Postgres —
@@ -181,10 +182,24 @@ are evaluation-scoped through the lens↔evaluation binding; `candidates` are
 derived per call from the request's `documentIds` — identifier tokens, never
 prose. The trained overlay takes the same treatment when it re-enters.
 
-**The live `getContainer()` wiring is still blocked:** nothing persists a lens,
-so the reader has no adapter behind it — `delivery-plan.md` §2 item 1. The
-redline↔fork `ILanguageModel` bridge and the `getContainer()` call itself are
-then item 2.
+**The lens is persisted.** `DrizzleClassificationLensReader` reads it from four
+`redline_` tables — `redline_lenses`, `redline_topics` (id, name, definition),
+`redline_hard_rules` and `redline_lens_bindings` — so the reader has a real
+adapter behind it. Topics and rules come from the store in their stored order
+(topic `position`, rule `declaration_order`, the latter load-bearing under
+ADR-0011); `candidates` are derived per call by an identifier-token pre-pass over
+`IProcurementExtractionReader.readElements`, which is the adapter's second
+collaborator. Cold-start definition text is redline-owned (**ADR-0020**), so this
+works with no Numbatch deployed. **Nothing authors a lens yet** — every row is
+operator-seeded until a write path lands. The redline↔fork `ILanguageModel`
+bridge and the `getContainer()` call are built too: `redline-language-model.ts`
+maps redline's `summarise` onto Wayfinder's `generateText` (never
+`generateObject`, which would need a schema to carry one paragraph), and
+`resolveRedlineModule` binds all six ports to their production adapters from
+`REDLINE_*` config. With `REDLINE_DATABASE_URL` unset it returns null and the
+fork boots as plain Wayfinder with the mount unavailable, so redline's absence
+never fails Wayfinder's fail-fast env parse. Running both stacks locally is
+[`guides/two-stack-local-run.md`](./guides/two-stack-local-run.md).
 
 ### Why womblex is split into a pod + a sidecar
 
@@ -445,9 +460,8 @@ redline/
 │                                  grouping} routes + components/evaluation/*
 │                                  "use client" surfaces, the evaluation:review
 │                                  auth gate and the served-fork Playwright specs.
-│                                  Live getContainer() wiring is blocked on a
-│                                  persisted lens for IClassificationLensReader
-│                                  (delivery-plan §2 item 1), then lands as item 2.
+│                                  Live getContainer() wiring is built:
+│                                  resolveRedlineModule + redline-language-model.
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
 │   └── womblex/redline.yaml       redline's pipeline config for the engine

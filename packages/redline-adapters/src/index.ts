@@ -63,6 +63,19 @@ export {
 // ChunkRow carries no vector (ADR-0017), and findSimilar refuses with
 // NOT_IMPLEMENTED until the pgvector/ANN index lands (ADR-0018 addendum).
 export { DrizzleChunkStore } from "./persistence/drizzle-chunk-store";
+// The persisted lens (delivery-plan §2 item 1, ADR-0009/ADR-0020): the reader
+// behind IClassificationLensReader, over redline_lenses / redline_topics /
+// redline_hard_rules / redline_lens_bindings. Topics and rules are read from the
+// store; `candidates` are derived per call by the identifier-token pre-pass,
+// which is this adapter's second collaborator.
+export {
+  DrizzleClassificationLensReader,
+  type DrizzleClassificationLensReaderDependencies,
+} from "./persistence/drizzle-classification-lens-reader";
+export {
+  makeExtractionHardRuleCandidateDeriver,
+  type DeriveHardRuleCandidates,
+} from "./lens/hard-rule-candidate-deriver";
 // The adjudication seam (ADR-0008 cold-start leg): an IAdjudicator over an
 // OpenAI-style chat/completions LLM endpoint. It settles what hard rules and
 // structural fetch left unclear — the model picks one candidate topic and gives

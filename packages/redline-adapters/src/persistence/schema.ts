@@ -19,6 +19,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 const timestamps = {
@@ -151,3 +152,81 @@ export const redlineChunks = pgTable(
 
 export type ChunkRow = typeof redlineChunks.$inferSelect;
 export type NewChunkRow = typeof redlineChunks.$inferInsert;
+
+// The comprehension lens, persisted (ADR-0009 for the shape, ADR-0020 for the
+// ownership of definition text). Four tables, because a lens is a durable asset
+// that outlives any one evaluation: the lens itself, its topics, its hard rules,
+// and the binding that applies it to an evaluation.
+
+// The durable asset. Carries no evaluation_id — binding it to an evaluation is
+// redline_lens_bindings' job, not a column here (ADR-0009).
+export const redlineLenses = pgTable("redline_lenses", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  ...timestamps,
+});
+
+// A lens's topics, each with the prose definition ColdStartClassifier hands the
+// adjudicator. The definition text is redline's own data on the cold-start path
+// (ADR-0020) — Numbatch's library is the system of record only for the trained
+// overlay's topics, samples and corrections.
+//
+// `position` exists because the domain's Topic list is ordered and the reader
+// must return it byte-identical; without an explicit column the row order is
+// whatever Postgres returns.
+export const redlineTopics = pgTable("redline_topics", {
+  id: text("id").primaryKey(),
+  lensId: text("lens_id")
+    .notNull()
+    .references(() => redlineLenses.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  definition: text("definition").notNull(),
+  position: integer("position").notNull(),
+  ...timestamps,
+});
+
+// Declaration order is load-bearing: it is the tie-break between two rules of
+// equal specificity (ADR-0011), so it is stored rather than left to row order.
+export const redlineHardRules = pgTable("redline_hard_rules", {
+  id: text("id").primaryKey(),
+  lensId: text("lens_id")
+    .notNull()
+    .references(() => redlineLenses.id, { onDelete: "cascade" }),
+  pattern: text("pattern").notNull(),
+  topicId: text("topic_id")
+    .notNull()
+    .references(() => redlineTopics.id, { onDelete: "cascade" }),
+  declarationOrder: integer("declaration_order").notNull(),
+  ...timestamps,
+});
+
+// The lens↔evaluation binding, its own row (ADR-0009). One lens per evaluation:
+// the classifier resolves exactly one lens per call, so a second binding would
+// make that resolution ambiguous.
+export const redlineLensBindings = pgTable(
+  "redline_lens_bindings",
+  {
+    id: text("id").primaryKey(),
+    lensId: text("lens_id")
+      .notNull()
+      .references(() => redlineLenses.id, { onDelete: "cascade" }),
+    evaluationId: text("evaluation_id")
+      .notNull()
+      .references(() => redlineEvaluations.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (table) => ({
+    oneLensPerEvaluation: uniqueIndex("redline_lens_bindings_evaluation_idx").on(
+      table.evaluationId,
+    ),
+  }),
+);
+
+export type LensRow = typeof redlineLenses.$inferSelect;
+export type NewLensRow = typeof redlineLenses.$inferInsert;
+export type TopicRow = typeof redlineTopics.$inferSelect;
+export type NewTopicRow = typeof redlineTopics.$inferInsert;
+export type HardRuleRow = typeof redlineHardRules.$inferSelect;
+export type NewHardRuleRow = typeof redlineHardRules.$inferInsert;
+export type LensBindingRow = typeof redlineLensBindings.$inferSelect;
+export type NewLensBindingRow = typeof redlineLensBindings.$inferInsert;

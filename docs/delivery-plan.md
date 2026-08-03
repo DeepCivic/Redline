@@ -1,29 +1,48 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-05 (the UI mount is
-> complete — the `evaluation` tRPC router, `container-redline.ts` seam, the
-> `/evaluations/:id/{review,pivots,grouping}` routes + components, the
-> `evaluation:review` auth gate and the served-fork Playwright specs are all
-> merged; the served surface + how it sits now live in architecture.md §3/§6,
-> removed from this plan. The cold-start classifier's store (`DrizzleChunkStore`
-> over `redline_chunks`) and adjudicator (`HttpAdjudicator`) adapters are now
-> built too (architecture.md §3). `IClassificationLensReader` is built as well:
-> the classifier now resolves its evaluation's lens per call, so one instance
-> serves a process-wide `getContainer()` (architecture.md §3). What is still
-> missing under the wiring is the lens itself — nothing persists one, so the
-> reader has no adapter behind it. Item 1 closes that; only then do the bridge,
-> the wiring and the run have anything to classify)
+> **Status:** the live tracking document · **Date:** 2026-08-03
+>
+> **Built and merged since the last revision.** Two items came off the vertical:
+>
+> - **The persisted lens** — `redline_lenses`, `redline_topics`,
+>   `redline_hard_rules` and `redline_lens_bindings`, read through
+>   `DrizzleClassificationLensReader`. Topics and rules come back in stored order
+>   (`position`, `declaration_order` — the latter load-bearing under ADR-0011);
+>   `candidates` derive per call from an identifier-token pre-pass over
+>   `readElements`, which is the adapter's second collaborator.
+> - **The live `getContainer()` wiring** (`services/wayfinder`) —
+>   `resolveRedlineModule` binds all six ports to production adapters, and
+>   `redline-language-model.ts` maps redline's `summarise` onto Wayfinder's
+>   `generateText`. The three prerequisites that item carried landed with it: the
+>   `@redline/redline-adapters` dependency, the `REDLINE_*` env keys (**all
+>   optional**, so the fork still boots as plain Wayfinder when the redline stack
+>   is absent), and [`guides/two-stack-local-run.md`](./guides/two-stack-local-run.md).
+>
+> Everything earlier — the UI mount, the store-backed classifier and adjudicator,
+> the pricing leg — lives in architecture.md §3/§6 and is out of this plan.
+>
+> **Nothing here has been run against live services.** The wiring typechecks and
+> is unit-tested; no Postgres, sidecar or adjudicator has ever been behind it.
+> Expect config-level breakage on first boot, and treat item 1's exit as the first
+> real proof rather than a formality.
 >
 > **Revised after a pre-user-testing review of the whole outstanding set.** That
 > review verified every "built" claim above against the trees (the submodules were
 > uninitialised; they were initialised to read the fork) and found the vertical
 > short of its own goal in three places, now tracked here rather than assumed:
-> item 1's table list was missing the topics table its own blocking ADR sanctions;
-> **nothing creates an evaluation or builds the review table** (item 3, new); and
-> the review grid's provenance deep-link points at a route that does not exist
-> (item 4, new). Item 2 gained the three prerequisites it needs to compile at all.
-> Housekeeping that is not on the vertical but is wanted before users is at the end
-> of §2.
+> the lens item's table list was missing the topics table ADR-0020 sanctions (now
+> built, with that table); **nothing creates an evaluation or builds the review
+> table** (item 1); and the review grid's provenance deep-link points at a route
+> that does not exist (item 2). The since-built wiring item gained the three
+> prerequisites it needed to compile at all, and they landed with it.
+> Housekeeping that is not on the vertical but is wanted before users is at the
+> end of §2.
+>
+> **A note on ADRs, since an earlier revision got this wrong.** An ADR records a
+> decision; it does not gate a build. This plan previously carried "do not build
+> until the ADR's PR is merged" language against the lens item. That was a
+> mistake in kind, not just in fact — where a decision is unsettled, say what is
+> unsettled and what the item assumes, and keep building.
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -67,127 +86,14 @@ Most of this slice already exists (use-cases, adapters, web core, the compose
 profiles — all green under `./validate.sh`), and the retrieval, pricing and
 UI-mount legs are **built and merged** — see [`architecture.md`](./architecture.md)
 §3/§4/§5/§6 for the store-backed classifier, the money `IFinancialExtractor` and
-the served fork, and §5 below for how they were sequenced. What remains is one
-vertical in five steps: persist a lens (item 1), wire the live container
-(item 2), give it a write path that creates and builds an evaluation (item 3),
-serve the document view its provenance links point at (item 4), and run a real
-corpus through the lot (item 5).
+the served fork, and §5 below for how they were sequenced. The persisted lens is
+built too, so `IClassificationLensReader` now has an adapter behind it. What
+remains is one vertical in four steps: give the wired container a write path
+that creates and builds an evaluation (item 1), serve the document view its
+provenance links point at (item 2), give testers a way in at all (item 3), and
+run a real corpus through the lot (item 4).
 
-### 1 — A persisted lens for the reader to read
-
-Nothing stores a lens. `schema.ts` has no lens, topic, requirement or hard-rule
-table — `redline_evaluations` is `{ id, name, stage }` — so `IClassificationLensReader`
-(built) has nothing behind it, and a real corpus has nothing to be classified
-against. This is the lean vertical's minimum: the classification-side subset of
-§3's *Lens persistence*, which shrinks accordingly (that item keeps the lens's
-Numbatch bindings and the durable-asset surface).
-
-Migration + `DrizzleClassificationLensReader` implementing that port. **Four**
-tables, not three: `redline_lenses` (lens identity), **`redline_topics`
-(`id`, `name`, `definition`)**, `redline_hard_rules`, and the lens↔evaluation
-binding. The first, third and fourth are sanctioned by ADR-0009, which puts *"the
-lens (its identity, its criteria references, its hard rules, its boundary
-decisions) and the bindings"* in `redline_` tables; the topics table is what
-**ADR-0020** exists to sanction, and its *Schema consequence* names it explicitly.
-Omitting it is what an earlier revision of this item did, and it does not build:
-`ClassificationLens.topics` is `readonly Topic[]`, and `indexLens`
-(`cold-start-classifier.ts:80-84`) maps each `topic.definition` into every
-`AdjudicationCandidate` — a lens with no topics gives the adjudicator nothing to
-choose among. Standard conventions: `redline_` prefix, snake_case columns,
-`id`/`created_at`/`updated_at` each. A `Lens` carries no `evaluationId`
-(ADR-0009) — the binding is its own row, not a field on the lens.
-
-`candidates` are derived per call, not stored — and **nothing derives them
-today**. Every existing caller passes `HardRuleCandidate.subjects` in; no
-identifier-token pre-pass exists in the workspace. `IProcurementExtractionReader`
-offers `readElements` / `readChunks` / `readTableCells` and no token method, so
-this item builds that derivation over `readElements` and injects the extraction
-reader alongside the database handle. The adapter is therefore not purely a
-Drizzle adapter despite the name — it has two collaborators, and the name should
-say so or the derivation should be a separate collaborator it composes.
-
-> **Blocked on an open decision, not on code: where do cold-start topic
-> *definitions* live?** ADR-0009 keeps `topics` in Numbatch as the system of
-> record and permits redline only *references*. But `ColdStartClassifier`
-> adjudicates over each topic's **definition text** (`indexLens` maps
-> `topic.definition` into every `AdjudicationCandidate`), and §2 excludes the
-> Numbatch stack entirely — so on the lean path there is no system of record to
-> dereference. That decides this item's schema, and it is drafted but unmerged:
-> [ADR-0020](./adr/0020-cold-start-topic-definitions-are-redline-owned.adr.md)
-> makes cold-start definitions redline-owned and narrows ADR-0009 to the trained
-> overlay's topics, samples and corrections. **Do not build this item until that
-> ADR's PR is merged.**
-
-_Version bump: MINOR_ (schema change).
-
-_Exit: an integration test against a real Postgres — a lens saved with its
-topics, its hard rules and its evaluation binding reads back byte-identical
-through `IClassificationLensReader` (definitions included, since those are what
-adjudication reads), and a document's `candidates` derive from an extraction
-fixture._
-
-### 2 — The fork bridge and the live `getContainer()`
-
-The seam the *served* UI waits on. Two pieces, both in the fork
-(`services/wayfinder`, branch `redline-integration` — ADR-0019 sanctions this
-tree; `vendor/wayfinder` and the Python submodules stay read-only):
-
-**The `ILanguageModel` bridge**, as `apps/web/src/lib/redline-language-model.ts`
-beside `container-redline.ts`. It lives in the fork, not `packages/redline-adapters`,
-because the fork's `apps/web` resolves `@rbrasier/*` and `@redline/*` alike, while
-redline-adapters can only reach `@rbrasier/domain` through ADR-0012's optional
-runtime load (the `wayfinder-contract.ts` dance) — a cost with nothing to buy here,
-since the fork's model instance only exists in the fork's container anyway.
-It maps redline's `summarise({ vendorName, productName, passages }) → Result<string>`
-onto the fork's **`generateText`** — verified at
-`services/wayfinder/packages/domain/src/ports/language-model.ts:96-98`, returning
-`Result<{ text: string; usage: TokenUsage }>`. **Not `generateObject<T>`**: that
-one demands a schema and returns `{ object: T }`, which would mean inventing a
-wrapper schema for a paragraph. `purpose` is required on every call and labels the
-usage record.
-
-**The `getContainer()` call** — bind the six ports (repository, extraction reader,
-cold-start classifier over `DrizzleChunkStore` + `HttpAdjudicator` + the lens
-reader, money `IFinancialExtractor`, the bridge, product name) and hang
-`buildRedlineModule`'s controller on `ctx.container.redline`, mirroring
-`buildExtractionModule` (`container.ts:204`, `:481`). Keep the wiring in the
-module, not inline: `container.ts` is already 795 lines.
-
-**Three prerequisites this item has to carry, none of which exist yet.** Each was
-verified absent; without them the wiring does not compile or does not boot:
-
-- **`@redline/redline-adapters` is not a dependency of the fork's `apps/web`.**
-  Its `package.json` lists `redline-application`, `redline-domain`,
-  `redline-shared` and `redline-web` — but not `redline-adapters`, which is where
-  every production adapter this item binds actually lives
-  (`DrizzleEvaluationRepository`, `DrizzleChunkStore`, `HttpAdjudicator`,
-  `DrizzleMoneySpanStore`, `WomblexExtractionReader`). The `../../packages/*`
-  workspace glob already covers it, so this is one dependency line.
-- **The fork's env schema has no `REDLINE_*` key at all.** `apps/web/src/lib/env.ts`
-  is a strict zod schema that fails fast on boot. The wiring needs redline's own
-  Postgres URL (`REDLINE_DATABASE_URL` — ADR-0002 keeps it separate from
-  Wayfinder's `DATABASE_URL`), the `HttpAdjudicator`'s `baseUrl` / `apiKey` /
-  `model`, the womblex-ingest base URL, and the evaluation's product name.
-- **No runtime story for running both stacks.** `infra/docker-compose.yml` has no
-  service for the fork's web app, and the fork needs its own Postgres/Redis/MinIO
-  beside redline's. Whether that is a compose profile here, a documented two-stack
-  runbook, or a `services/wayfinder` compose overlay is this item's call to make —
-  but user testing cannot start without one.
-
-(The grouping route's interactive composition surface — assign/advance over the
-`WorkflowManager` — is not part of this; it lands with the lens stage machine, §3.
-The served grouping page is a read-only landing that routes into review and
-pivots, which is honest but means testers cannot compose groups in the UI — see
-item 3.)
-
-_Version bump: MINOR_ (new adapter, new runtime wiring; no schema change).
-
-_Exit: a vitest suite asserting the bridge maps a summary request onto
-`generateText` with a `purpose` and surfaces a model failure as a `Result` error
-rather than a throw, and that `buildRedlineModule` composes green from the real
-adapters._
-
-### 3 — An evaluation can be created, grouped and built
+### 1 — An evaluation can be created, grouped and built
 
 **The vertical's missing middle, and the item most directly between here and user
 testing.** The store-load path fills `redline_chunks`; the review grid reads
@@ -200,7 +106,7 @@ nothing outside its own test**. `WorkflowController.buildTable()` exists
 procedure: the fork's `evaluationRouter` exposes `reviewGrid`, `pricingPivot` and
 `workbook`, all read-side. So after a corpus lands there is still no path — served
 or scripted — that creates the evaluation, records its vendors and response
-groups, runs the classifier and persists the rows the grid reads. Item 5's exit
+groups, runs the classifier and persists the rows the grid reads. Item 4's exit
 test is unreachable without this, and `E2E_REDLINE_EVALUATION_ID` has nothing to
 point at.
 
@@ -219,7 +125,7 @@ _Exit: running the driver against a seeded corpus produces an evaluation whose
 `listResponses` is non-empty and whose stage is `review`, and the id it prints
 opens the served review grid._
 
-### 4 — The document route the provenance link points at
+### 2 — The document route the provenance link points at
 
 Every review row renders a source deep-link, and every one of them 404s.
 `review-view.ts:63-67` builds
@@ -228,7 +134,7 @@ only `review`, `pivots` and `grouping` under `[id]`. The e2e spec does not catch
 it — `redline-review-grid.spec.ts:75` asserts the `href` *pattern* and never
 follows it.
 
-Item 5's exit test says *"with provenance back to source"*, and provenance a
+Item 4's exit test says *"with provenance back to source"*, and provenance a
 specialist cannot click is not provenance. Build the route in the fork beside the
 others: read the document's elements through `IProcurementExtractionReader` (the
 JSON presentation seam ADR-0003/0017 keeps for exactly this), anchor on the
@@ -240,7 +146,38 @@ _Exit: a Playwright spec that clicks a review row's source link and lands on the
 document view scrolled to the cited element — the assertion the current spec
 stops short of._
 
-### 5 — Real corpus, end to end
+### 3 — A way in: the `/evaluations` index and a navigation entry
+
+**Nothing in Wayfinder's chrome links to redline.** The routes are served and
+gated on `evaluation:review`, but a tester needs both the URL shape and a real
+evaluation id handed to them out of band. That is workable for a developer and
+not workable for the specialist item 4's exit test names.
+
+It is more than a nav item, because a link needs somewhere to point and **there
+is no `/evaluations` index route** — only `[id]/{review,pivots,grouping}`. Nor
+can one be listed yet: `IEvaluationRepository` exposes `findEvaluation(id)` and
+no list method, so the index has nothing to read. Four pieces, in order:
+
+- `listEvaluations()` on `IEvaluationRepository`, implemented in
+  `DrizzleEvaluationRepository` over `redline_evaluations`.
+- A `list` procedure on the fork's `evaluationRouter`, gated on
+  `evaluation:review` like its siblings.
+- The `/evaluations` index route + a `"use client"` surface listing each
+  evaluation with its stage, linking into review.
+- One sidebar item in `apps/web/src/components/sidebar.tsx`, included
+  conditionally on `evaluation:review` the way `/knowledge` is on `canCurate`.
+
+This crosses `redline-domain`/`redline-adapters` and the fork, which the
+build-step contract would normally split — kept as one item because the four
+pieces are a single vertical slice and none of them is provable alone.
+
+_Version bump: MINOR_ (new port method, new served route; no schema change).
+
+_Exit: a specialist who has never seen the URL signs in, finds the evaluations
+entry in the sidebar, and opens a review grid from it; a user without
+`evaluation:review` sees neither the entry nor the route._
+
+### 4 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
@@ -293,7 +230,7 @@ evaluation as the automatable half._
 Neither is on the critical path; both were found by the pre-user-testing review
 and both are cheap.
 
-- **Delete the superseded retrieval leg (~1,260 lines of dead code).** §5 below
+- **Delete the superseded retrieval leg (~1,321 lines of dead code).** §5 below
   already records `ClassifyByRetrieval` / `IEmbeddingReader` / `ITextEmbedder` and
   the womblex embeddings adapters as superseded by ADR-0017/0018 — but every one
   of them is still in the tree, still exported from
@@ -303,14 +240,14 @@ and both are cheap.
   _Version bump: PATCH._
   _Exit: the files are gone and `./validate.sh` is green._
 
-- **Raise the PGlite hook timeout in the persistence suites.** `./validate.sh`
-  currently FAILs on tests: six persistence tests across
-  `drizzle-{evaluation-repository,money-span-store,chunk-store}.test.ts` fail with
-  `Hook timed out in 10000ms`. It is not a regression — run serially
-  (`vitest run src/persistence --no-file-parallelism`) they are 35/35 green in
-  ~40s. Several PGlite instances spinning up concurrently under turbo simply
-  exceed a 10s hook budget, so the suite is intermittently red in CI for no code
-  reason.
+- **Watch the PGlite hook timeout in the persistence suites.** An earlier
+  revision recorded `./validate.sh` as FAILing with six `Hook timed out in
+  10000ms` errors across
+  `drizzle-{evaluation-repository,money-span-store,chunk-store}.test.ts`. **It did
+  not reproduce on 2026-08-03** — a full `./validate.sh` ran 13/13 green with the
+  adapters suite finishing in ~23s under turbo. So this is load-dependent
+  flakiness on a slower or busier machine, not a standing failure. Raise the hook
+  budget if it returns; do not treat it as a known-red gate in the meantime.
   _Version bump: PATCH._
   _Exit: `./validate.sh` green on a cold cache, twice in a row._
 
@@ -328,7 +265,7 @@ order:
 | Collision selection, ordering & capping | domain | Bounded, deterministic selection of genuinely ambiguous documents. |
 | `BoundaryDecision` entity | domain | Net-new modelling. Owns "primary/secondary semantics" (see §4 item 1). |
 | Decision persistence + corrections push | adapters | Shrunk: upstream owns corrections + audit — an adapter call over an existing API, not a build. |
-| Lens persistence | adapters | Shrunk by §2 item 1, which lands the classification-side tables. What remains: the lens's Numbatch bindings (references, not copies) and the durable-asset surface. |
+| Lens persistence | adapters | Shrunk: the classification-side tables (`redline_lenses` / `redline_topics` / `redline_hard_rules` / `redline_lens_bindings`) are built. What remains: the lens's Numbatch bindings (references, not copies), the authoring surface, and the durable-asset surface. |
 | Lens portability | application | Apply a saved lens to a different corpus; its boundary decisions still bite. |
 | Lens stage machine | redline-web | Define → map → resolve → save, its own machine. |
 | Collision resolution surface | redline-web | View model + controller for resolving a collision set. |
@@ -348,15 +285,21 @@ order:
    (the signal register needs initial values, unmeasured until a real corpus runs
    — §2).
 
-2. **Where cold-start topic definitions live** — ADR-0009 makes Numbatch's library
-   the system of record for `topics` and allows redline references only, but the
-   lean vertical runs with no Numbatch and the adjudicator needs definition text.
-   Blocks §2 item 1's schema. The ADR is **written and unmerged**
-   ([ADR-0020](./adr/0020-cold-start-topic-definitions-are-redline-owned.adr.md));
-   merging or rejecting it is the single decision at the head of the critical
-   path, and item 1's `redline_topics` table is what it sanctions.
+2. **Nothing authors a lens.** The tables, the reader and the wiring exist, but
+   no UI, use-case or driver creates a lens, its topics or its hard rules — every
+   row is operator-seeded. `readLens` returns `NOT_FOUND` for an unbound
+   evaluation, so classification cannot run at all until something writes one.
+   **Item 1's write path has to seed a lens alongside the evaluation**, or its own
+   exit test cannot pass; the lens-authoring surface proper stays in §3.
 
-3. **The D-register has gaps.** `design-principles.md`'s table starts at **D4**,
+3. **D5 is contradicted by what shipped.** `design-principles.md` still lists
+   *"Retrieval is womblex's; redline builds no vector store of its own"* as an
+   adopted principle, but ADR-0017/0018 put the chunks **and their embeddings**
+   in `redline_chunks`, in redline's own Postgres. The principle needs retiring
+   or rewording to match ADR-0018; leaving it as written makes the register
+   unreliable.
+
+4. **The D-register has gaps.** `design-principles.md`'s table starts at **D4**,
    yet D1 (`.claude/CLAUDE.md`) and D2 (five files under `packages/`, meaning port
    interchangeability) are cited as settled decisions. D1–D3 should be written into
    the register or the citations retired.
@@ -392,22 +335,26 @@ order:
    `DrizzleChunkStore` `IChunkStore` reader over `redline_chunks` (the TS reader
    the sidecar's write path had left unpaired) and the `HttpAdjudicator`
    `IAdjudicator` over an OpenAI-style chat/completions seam — both green under
-   `./validate.sh` (architecture.md §3).
-1. **The five items of §2, in order.** Items 1–3 are strictly dependent: the built
-   `IClassificationLensReader` has nothing behind it until a lens is persisted
-   (1); the `getContainer()` wiring (2) cannot construct a classifier until it
-   is; and nothing can create an evaluation or build its table until the wiring
-   exists (3). The corpus run (5) is what all of it is for, and is the point of
-   the exercise. **Item 1 is gated on an ADR** — ADR-0009 puts topic definitions
-   in Numbatch while the lean vertical excludes it (§2 item 1, §4 item 2), and
-   that decision sets its schema; ADR-0020 is drafted and awaiting acceptance.
+   `./validate.sh` (architecture.md §3). The persisted lens and the live wiring
+   followed (2026-08-03): `DrizzleClassificationLensReader` over the four lens
+   tables, then `resolveRedlineModule` + the `ILanguageModel` bridge in the fork.
+   `validate.sh` is 13/13 and the fork's typecheck went 3 errors → 0 — one of
+   those was pre-existing, `container-redline.test.ts` still composing
+   `buildColdStartClassifier` with `topics`/`ruleSet`/`candidates` after the lens
+   moved behind `IClassificationLensReader`.
+1. **The four items of §2, in order.** The `getContainer()` wiring is built, so
+   item 1's write path has a live container to drive. The corpus run (4) is what
+   all of it is for, and is the point of the exercise.
 
-   Two things can start immediately, in parallel with the ADR decision: the
-   `ILanguageModel` bridge half of item 2 (it needs neither the persisted lens nor
-   the ADR), and item 4's document route (it depends only on the extraction reader,
-   which is built). Item 4 is not a prerequisite of item 5, but item 5's exit test
-   asserts provenance a specialist can follow, so it must land before that test can
-   honestly pass.
+   Items 2 and 3 can start immediately and in parallel — the document route
+   depends only on the extraction reader, and the index/nav entry only on a list
+   method neither of the others touches. Neither is a prerequisite of item 4, but
+   item 4's exit test asserts provenance a specialist can follow *and* names a
+   specialist opening the grid, so both must land before that test can honestly
+   pass.
+
+   **Nothing in §2 is gated on a decision.** ADR-0020 settled where cold-start
+   topic definitions live and the lens schema is built against it.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.
