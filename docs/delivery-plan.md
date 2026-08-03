@@ -123,7 +123,7 @@ only `review`, `pivots` and `grouping` under `[id]`. The e2e spec does not catch
 it — `redline-review-grid.spec.ts:75` asserts the `href` *pattern* and never
 follows it.
 
-Item 3's exit test says *"with provenance back to source"*, and provenance a
+Item 2's exit test says *"with provenance back to source"*, and provenance a
 specialist cannot click is not provenance. Build the route in the fork beside the
 others: read the document's elements through `IProcurementExtractionReader` (the
 JSON presentation seam ADR-0003/0017 keeps for exactly this), anchor on the

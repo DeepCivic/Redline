@@ -77,9 +77,10 @@ The item's exit test in the plan is the acceptance gate. Satisfy it explicitly
 and paste the passing output:
 - Pure package items → a passing vitest suite exercising the exit criterion.
 - Service items (womblex/Numbatch) → a compose-up + real-request proof.
-- UI items → a Playwright e2e test under `apps/redline-web/e2e/`. These run in
-  CI once the review UI is served inside the forked Wayfinder (`delivery-plan.md`
-  §2 item 2).
+- UI items → a Playwright e2e test in the fork, under
+  `services/wayfinder/apps/web/e2e/redline-*.spec.ts`, beside Wayfinder's own
+  suite and running against the served routes. There is no `apps/redline-web/e2e/`
+  — the pure cores and view models are proven by the vitest suite there instead.
 
 ### Step 4 — On completion
 
