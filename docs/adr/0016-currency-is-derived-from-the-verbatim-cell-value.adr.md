@@ -1,6 +1,11 @@
 # ADR-0016 — Currency is derived from the verbatim cell value, not from womblex's `value_type`
 
-- **Status**: Proposed — **premises falsified upstream 2026-07-29; supersession recommended**
+- **Status**: **Superseded** by womblex v0.3.0's `money` op, materialised into
+  `redline_money_spans` under
+  [ADR-0017](./0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md).
+  Never accepted; its premises were falsified upstream 2026-07-29 (note below).
+  **`derive_is_currency` survives as the documented fallback** — see *What
+  survives*.
 - **Date**: 2026-07-27
 
 > **2026-07-29.** All three premises below are false against `services/womblex`
@@ -15,10 +20,23 @@
 > here — this ADR was never accepted — but it should be superseded rather than
 > promoted, and the superseding ADR should state whether `derive_is_currency`
 > survives as a fallback for shards written without the money stage.
-- **Corrects**: [`architecture.md`](../architecture.md) §7.4, which records the
-  opposite ("currency inferred from `value_type`"). That correction was written
-  before `services/womblex` was initialised and is falsified by the engine's
-  source; see Context.
+>
+> **Resolved 2026-08-03 — what survives.** The supersession is womblex v0.3.0's
+> `money` op, whose column-evidenced path recovers ~98.7% of amounts as exact
+> `Decimal` values with a resolved currency, materialised into
+> `redline_money_spans` (ADR-0017) and read by `MoneySpanFinancialExtractor`. That
+> is the live pricing leg. Answering the question this note left open:
+> **`derive_is_currency` survives as the fallback** for shards produced without a
+> money sidecar, which is why `shard_reader.py` still implements and cites it
+> (`:104`, `:122`, `:208`, `:243`) — those citations are current, not stale. The
+> ADR's *reasoning* about `value_type` is history; its *rule* is live fallback code.
+> See [`architecture.md`](../architecture.md) §7.4, which owns this now.
+- **Corrects**: [`architecture.md`](../architecture.md) §7.4 as it read on
+  2026-07-27 ("currency inferred from `value_type`"), which was written before
+  `services/womblex` was initialised and is falsified by the engine's source; see
+  Context. **That correction has since been applied** — §7.4 now records the
+  verbatim-value derivation *and* its supersession by the money op, so it no longer
+  says the opposite of this ADR.
 
 ## Context
 

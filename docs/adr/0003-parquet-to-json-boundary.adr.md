@@ -1,10 +1,22 @@
 # ADR-0003 — The womblex extraction boundary is JSON (sidecar reads Parquet, serves JSON)
 
-- **Status**: Accepted — amended by [ADR-0014](./0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md)
+- **Status**: Accepted — **narrowed** by
+  [ADR-0017](./0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
 - **Date**: 2026-07-25
-- **Amended by**: [ADR-0014](./0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md)
-  — the read seam is two document-scoped resources, not one: `/extractions`
-  (below) and its `/embeddings` sibling. Everything else here stands unchanged.
+- **Amended by**:
+  - [ADR-0017](./0017-bulk-womblex-data-stays-parquet-json-is-for-presentation.adr.md)
+    — **the live amendment.** The JSON boundary narrows to the *presentation* read
+    model: extraction provenance (elements, chunks, table cells) a specialist reads
+    on screen still crosses as JSON exactly as decided here, but **bulk data no
+    longer does** — it is materialised into redline's own store. This ADR's core
+    invariant is *kept and strengthened*: the sidecar owns the Parquet stack and the
+    TypeScript workspace links no Parquet reader, because bulk data never reaches
+    TypeScript at all.
+  - [ADR-0014](./0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md)
+    — **historical.** It widened the read seam to two resources (`/extractions` plus
+    an `/embeddings` sibling); ADR-0017/0018 then superseded its core decision, so
+    the `/embeddings` sibling survives only as the query-embed and small-read seam,
+    not as the bulk vector path. Read ADR-0017 for the current boundary.
 
 ## Context
 
