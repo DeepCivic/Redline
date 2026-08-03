@@ -37,6 +37,9 @@ export * from "./ports/chunk-store";
 // serves every evaluation in a process (the fork's getContainer() is a
 // process-wide singleton).
 export * from "./ports/classification-lens-reader";
+// The write half of that seam — the minimum that lets a corpus driver seed the
+// lens it is about to classify against. Not the authoring surface (deferred).
+export * from "./ports/classification-lens-writer";
 export * from "./ports/embedding-reader";
 export * from "./ports/evaluation-repository";
 export * from "./ports/financial-extractor";

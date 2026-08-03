@@ -2,7 +2,29 @@
 
 > **Status:** the live tracking document · **Date:** 2026-08-03
 >
-> **Built and merged since the last revision.** Two items came off the vertical:
+> **The corpus write path is built.** `IngestDocuments` → lens seed →
+> `AssignDocumentsToGroups` → `BuildEvaluationTable` now runs end to end from a
+> corpus manifest: `IClassificationLensWriter` + `DrizzleClassificationLensWriter`
+> (the four lens tables had a reader and no writer, so `readLens` returned
+> `NOT_FOUND` for every evaluation and classification could not run at all), and
+> in the fork `redline-corpus-manifest.ts`, `redline-seed-evaluation.ts` and
+> `scripts/seed-redline-evaluation.ts`. It is proven against in-memory adapters,
+> **not** against live services — the live run is the corpus item's business.
+>
+> **Two things found while building it, both needing a decision.**
+>
+> - **The fork's `redline-integration` branch does not carry the live
+>   `getContainer()` wiring.** The superproject pins `d177bf07`, which sits on
+>   `origin/claude/delivery-plan-user-testing-bses4f` and is *not* an ancestor of
+>   `redline-integration`. The Redline-side PR merged; the fork-side branch never
+>   did. The seeding work is branched from the pin, so it carries the wiring —
+>   but both need merging into `redline-integration` before `validate.sh` #15 can
+>   be green, since that check asserts the checkout is on that branch.
+> - **A topic id is global.** `redline_topics.id` is a plain primary key, so a
+>   topic belongs to exactly one lens and a second lens reusing an id fails. Fine
+>   for now; it will need revisiting when lens portability (§3) lands.
+>
+> **Built and merged before that.** Two items came off the vertical:
 >
 > - **The persisted lens** — `redline_lenses`, `redline_topics`,
 >   `redline_hard_rules` and `redline_lens_bindings`, read through
@@ -21,22 +43,20 @@
 > Everything earlier — the UI mount, the store-backed classifier and adjudicator,
 > the pricing leg — lives in architecture.md §3/§6 and is out of this plan.
 >
-> **Nothing here has been run against live services.** The wiring typechecks and
-> is unit-tested; no Postgres, sidecar or adjudicator has ever been behind it.
-> Expect config-level breakage on first boot, and treat item 1's exit as the first
-> real proof rather than a formality.
+> **Nothing here has been run against live services.** The wiring and the write
+> path typecheck and are unit-tested; no Postgres, sidecar or adjudicator has
+> ever been behind either. Expect config-level breakage on first boot, and treat
+> the corpus run (item 3) as the first real proof rather than a formality.
 >
 > **Revised after a pre-user-testing review of the whole outstanding set.** That
 > review verified every "built" claim above against the trees (the submodules were
 > uninitialised; they were initialised to read the fork) and found the vertical
-> short of its own goal in three places, now tracked here rather than assumed:
-> the lens item's table list was missing the topics table ADR-0020 sanctions (now
-> built, with that table); **nothing creates an evaluation or builds the review
-> table** (item 1); and the review grid's provenance deep-link points at a route
-> that does not exist (item 2). The since-built wiring item gained the three
-> prerequisites it needed to compile at all, and they landed with it.
-> Housekeeping that is not on the vertical but is wanted before users is at the
-> end of §2.
+> short of its own goal in three places: the lens item's table list was missing
+> the topics table ADR-0020 sanctions (now built, with that table); nothing
+> created an evaluation or built the review table (now built, above); and the
+> review grid's provenance deep-link points at a route that does not exist (item
+> 1, still outstanding). Housekeeping that is not on the vertical but is wanted
+> before users is at the end of §2.
 >
 > **A note on ADRs, since an earlier revision got this wrong.** An ADR records a
 > decision; it does not gate a build. This plan previously carried "do not build
@@ -87,45 +107,13 @@ profiles — all green under `./validate.sh`), and the retrieval, pricing and
 UI-mount legs are **built and merged** — see [`architecture.md`](./architecture.md)
 §3/§4/§5/§6 for the store-backed classifier, the money `IFinancialExtractor` and
 the served fork, and §5 below for how they were sequenced. The persisted lens is
-built too, so `IClassificationLensReader` now has an adapter behind it. What
-remains is one vertical in four steps: give the wired container a write path
-that creates and builds an evaluation (item 1), serve the document view its
-provenance links point at (item 2), give testers a way in at all (item 3), and
-run a real corpus through the lot (item 4).
+built too, so `IClassificationLensReader` now has an adapter behind it, and the
+write path that creates, seeds, groups and builds an evaluation is built on top
+of it. What remains is one vertical in three steps: serve the document view the
+provenance links point at (item 1), give testers a way in at all (item 2), and
+run a real corpus through the lot (item 3).
 
-### 1 — An evaluation can be created, grouped and built
-
-**The vertical's missing middle, and the item most directly between here and user
-testing.** The store-load path fills `redline_chunks`; the review grid reads
-persisted `ProcurementResponse[]`. Nothing joins them.
-
-`IngestDocuments` — the use-case that calls `makeEvaluation` and writes the
-evaluation row — is exported from `@redline/redline-application` and **called by
-nothing outside its own test**. `WorkflowController.buildTable()` exists
-(`apps/redline-web/src/lib/container.ts:103`) and is reachable from no served
-procedure: the fork's `evaluationRouter` exposes `reviewGrid`, `pricingPivot` and
-`workbook`, all read-side. So after a corpus lands there is still no path — served
-or scripted — that creates the evaluation, records its vendors and response
-groups, runs the classifier and persists the rows the grid reads. Item 4's exit
-test is unreachable without this, and `E2E_REDLINE_EVALUATION_ID` has nothing to
-point at.
-
-Scope is the write path, not a UI: a driver that runs
-`IngestDocuments` → `AssignDocumentsToGroups` → `BuildEvaluationTable` against the
-live container. A script or CLI in the fork is enough and is the smaller step; a
-tRPC mutation is the larger one and drags in the stage machine (§3) it should not
-own yet. Vendors and response groups have to come from somewhere the operator
-controls — a manifest read from the corpus directory is the cheapest honest
-answer, since the served grouping page is read-only until §3's stage machine
-lands.
-
-_Version bump: MINOR_ (new runtime surface; no schema change).
-
-_Exit: running the driver against a seeded corpus produces an evaluation whose
-`listResponses` is non-empty and whose stage is `review`, and the id it prints
-opens the served review grid._
-
-### 2 — The document route the provenance link points at
+### 1 — The document route the provenance link points at
 
 Every review row renders a source deep-link, and every one of them 404s.
 `review-view.ts:63-67` builds
@@ -134,7 +122,7 @@ only `review`, `pivots` and `grouping` under `[id]`. The e2e spec does not catch
 it — `redline-review-grid.spec.ts:75` asserts the `href` *pattern* and never
 follows it.
 
-Item 4's exit test says *"with provenance back to source"*, and provenance a
+Item 3's exit test says *"with provenance back to source"*, and provenance a
 specialist cannot click is not provenance. Build the route in the fork beside the
 others: read the document's elements through `IProcurementExtractionReader` (the
 JSON presentation seam ADR-0003/0017 keeps for exactly this), anchor on the
@@ -146,12 +134,12 @@ _Exit: a Playwright spec that clicks a review row's source link and lands on the
 document view scrolled to the cited element — the assertion the current spec
 stops short of._
 
-### 3 — A way in: the `/evaluations` index and a navigation entry
+### 2 — A way in: the `/evaluations` index and a navigation entry
 
 **Nothing in Wayfinder's chrome links to redline.** The routes are served and
 gated on `evaluation:review`, but a tester needs both the URL shape and a real
 evaluation id handed to them out of band. That is workable for a developer and
-not workable for the specialist item 4's exit test names.
+not workable for the specialist item 3's exit test names.
 
 It is more than a nav item, because a link needs somewhere to point and **there
 is no `/evaluations` index route** — only `[id]/{review,pivots,grouping}`. Nor
@@ -177,7 +165,7 @@ _Exit: a specialist who has never seen the URL signs in, finds the evaluations
 entry in the sidebar, and opens a review grid from it; a user without
 `evaluation:review` sees neither the entry nor the route._
 
-### 4 — Real corpus, end to end
+### 3 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
@@ -285,12 +273,11 @@ order:
    (the signal register needs initial values, unmeasured until a real corpus runs
    — §2).
 
-2. **Nothing authors a lens.** The tables, the reader and the wiring exist, but
-   no UI, use-case or driver creates a lens, its topics or its hard rules — every
-   row is operator-seeded. `readLens` returns `NOT_FOUND` for an unbound
-   evaluation, so classification cannot run at all until something writes one.
-   **Item 1's write path has to seed a lens alongside the evaluation**, or its own
-   exit test cannot pass; the lens-authoring surface proper stays in §3.
+2. **A lens is seeded, not authored.** `IClassificationLensWriter` and the
+   corpus driver now write a lens, its topics and its hard rules alongside the
+   evaluation, so classification can run — but the lens still comes from the
+   manifest the operator hand-writes. No UI or use-case authors or edits one, and
+   there is no versioning or durable-asset lifecycle; that surface stays in §3.
 
 3. **D5 is contradicted by what shipped.** `design-principles.md` still lists
    *"Retrieval is womblex's; redline builds no vector store of its own"* as an
@@ -342,14 +329,18 @@ order:
    those was pre-existing, `container-redline.test.ts` still composing
    `buildColdStartClassifier` with `topics`/`ruleSet`/`candidates` after the lens
    moved behind `IClassificationLensReader`.
-1. **The four items of §2, in order.** The `getContainer()` wiring is built, so
-   item 1's write path has a live container to drive. The corpus run (4) is what
-   all of it is for, and is the point of the exercise.
+1. **The write path is built** (2026-08-03), on top of that wiring: the lens
+   writer in `redline-adapters` and, in the fork, the manifest reader, the
+   seeding composition and `scripts/seed-redline-evaluation.ts`. Proven against
+   in-memory adapters only — the live run is item 3.
 
-   Items 2 and 3 can start immediately and in parallel — the document route
+2. **The three items of §2.** The corpus run (3) is what all of it is for, and
+   is the point of the exercise.
+
+   Items 1 and 2 can start immediately and in parallel — the document route
    depends only on the extraction reader, and the index/nav entry only on a list
-   method neither of the others touches. Neither is a prerequisite of item 4, but
-   item 4's exit test asserts provenance a specialist can follow *and* names a
+   method neither of the others touches. Neither is a prerequisite of item 3, but
+   item 3's exit test asserts provenance a specialist can follow *and* names a
    specialist opening the grid, so both must land before that test can honestly
    pass.
 
