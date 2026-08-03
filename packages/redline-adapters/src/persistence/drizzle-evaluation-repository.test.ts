@@ -47,6 +47,32 @@ describe("DrizzleEvaluationRepository — round-trip", () => {
     expect(found.data.stage).toBe("classifying");
   });
 
+  it("lists every evaluation, newest first", async () => {
+    await repository.saveEvaluation(evaluation);
+    await repository.saveEvaluation({ id: "eval-2", name: "Panel refresh", stage: "review" });
+    // defaultNow() gives both rows the same timestamp inside one fast test, so
+    // pin created_at explicitly — the ordering is the behaviour under test.
+    await pg.exec(`
+      update redline_evaluations set created_at = '2026-01-01T00:00:00Z' where id = 'eval-1';
+      update redline_evaluations set created_at = '2026-02-01T00:00:00Z' where id = 'eval-2';
+    `);
+
+    const listed = await repository.listEvaluations();
+    expect(isOk(listed)).toBe(true);
+    if (!isOk(listed)) return;
+    expect(listed.data).toEqual([
+      { id: "eval-2", name: "Panel refresh", stage: "review" },
+      evaluation,
+    ]);
+  });
+
+  it("lists an empty set when no evaluation was ever saved", async () => {
+    const listed = await repository.listEvaluations();
+    expect(isOk(listed)).toBe(true);
+    if (!isOk(listed)) return;
+    expect(listed.data).toEqual([]);
+  });
+
   it("returns NOT_FOUND for a missing evaluation", async () => {
     const found = await repository.findEvaluation("nope");
     expect(isOk(found)).toBe(false);

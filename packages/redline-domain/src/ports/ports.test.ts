@@ -46,6 +46,10 @@ class InMemoryEvaluationRepository implements IEvaluationRepository {
     return ok(found);
   }
 
+  async listEvaluations(): Promise<Result<readonly Evaluation[]>> {
+    return ok([...this.evaluations.values()].reverse());
+  }
+
   async saveVendor(evaluationId: string, vendor: Vendor): Promise<Result<Vendor>> {
     const existing = this.vendors.get(evaluationId) ?? [];
     this.vendors.set(evaluationId, [...existing, vendor]);
@@ -170,6 +174,30 @@ describe("port conformance (in-memory fakes)", () => {
     if (!isOk(responses)) return;
     expect(responses.data).toHaveLength(1);
     expect(responses.data[0]?.vendorName).toBe("Acme");
+  });
+
+  it("lists every saved evaluation, newest first", async () => {
+    const repository = new InMemoryEvaluationRepository();
+    const older = makeEvaluation({ id: "e1", name: "Panel" });
+    const newer = makeEvaluation({ id: "e2", name: "Cloud RFT" });
+    expect(isOk(older) && isOk(newer)).toBe(true);
+    if (!isOk(older) || !isOk(newer)) return;
+
+    await repository.saveEvaluation(older.data);
+    await repository.saveEvaluation(newer.data);
+
+    const listed = await repository.listEvaluations();
+    expect(isOk(listed)).toBe(true);
+    if (!isOk(listed)) return;
+    expect(listed.data.map((evaluation) => evaluation.id)).toEqual(["e2", "e1"]);
+  });
+
+  it("lists nothing for a store that holds no evaluations", async () => {
+    const repository = new InMemoryEvaluationRepository();
+    const listed = await repository.listEvaluations();
+    expect(isOk(listed)).toBe(true);
+    if (!isOk(listed)) return;
+    expect(listed.data).toEqual([]);
   });
 
   it("reports NOT_FOUND for a missing evaluation", async () => {

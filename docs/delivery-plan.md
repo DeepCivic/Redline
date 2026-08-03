@@ -46,7 +46,7 @@
 > **Nothing here has been run against live services.** The wiring and the write
 > path typecheck and are unit-tested; no Postgres, sidecar or adjudicator has
 > ever been behind either. Expect config-level breakage on first boot, and treat
-> the corpus run (item 3) as the first real proof rather than a formality.
+> the corpus run (item 2) as the first real proof rather than a formality.
 >
 > **Revised after a pre-user-testing review of the whole outstanding set.** That
 > review verified every "built" claim above against the trees (the submodules were
@@ -109,9 +109,10 @@ UI-mount legs are **built and merged** — see [`architecture.md`](./architectur
 the served fork, and §5 below for how they were sequenced. The persisted lens is
 built too, so `IClassificationLensReader` now has an adapter behind it, and the
 write path that creates, seeds, groups and builds an evaluation is built on top
-of it. What remains is one vertical in three steps: serve the document view the
-provenance links point at (item 1), give testers a way in at all (item 2), and
-run a real corpus through the lot (item 3).
+of it. The way in is built too — `listEvaluations()`, the router's `list`, the
+`/evaluations` index and the sidebar entry that points at it. What remains is one
+vertical in two steps: serve the document view the provenance links point at
+(item 1), and run a real corpus through the lot (item 2).
 
 ### 1 — The document route the provenance link points at
 
@@ -134,38 +135,7 @@ _Exit: a Playwright spec that clicks a review row's source link and lands on the
 document view scrolled to the cited element — the assertion the current spec
 stops short of._
 
-### 2 — A way in: the `/evaluations` index and a navigation entry
-
-**Nothing in Wayfinder's chrome links to redline.** The routes are served and
-gated on `evaluation:review`, but a tester needs both the URL shape and a real
-evaluation id handed to them out of band. That is workable for a developer and
-not workable for the specialist item 3's exit test names.
-
-It is more than a nav item, because a link needs somewhere to point and **there
-is no `/evaluations` index route** — only `[id]/{review,pivots,grouping}`. Nor
-can one be listed yet: `IEvaluationRepository` exposes `findEvaluation(id)` and
-no list method, so the index has nothing to read. Four pieces, in order:
-
-- `listEvaluations()` on `IEvaluationRepository`, implemented in
-  `DrizzleEvaluationRepository` over `redline_evaluations`.
-- A `list` procedure on the fork's `evaluationRouter`, gated on
-  `evaluation:review` like its siblings.
-- The `/evaluations` index route + a `"use client"` surface listing each
-  evaluation with its stage, linking into review.
-- One sidebar item in `apps/web/src/components/sidebar.tsx`, included
-  conditionally on `evaluation:review` the way `/knowledge` is on `canCurate`.
-
-This crosses `redline-domain`/`redline-adapters` and the fork, which the
-build-step contract would normally split — kept as one item because the four
-pieces are a single vertical slice and none of them is provable alone.
-
-_Version bump: MINOR_ (new port method, new served route; no schema change).
-
-_Exit: a specialist who has never seen the URL signs in, finds the evaluations
-entry in the sidebar, and opens a review grid from it; a user without
-`evaluation:review` sees neither the entry nor the route._
-
-### 3 — Real corpus, end to end
+### 2 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
@@ -332,17 +302,22 @@ order:
 1. **The write path is built** (2026-08-03), on top of that wiring: the lens
    writer in `redline-adapters` and, in the fork, the manifest reader, the
    seeding composition and `scripts/seed-redline-evaluation.ts`. Proven against
-   in-memory adapters only — the live run is item 3.
+   in-memory adapters only — the live run is item 2.
 
-2. **The three items of §2.** The corpus run (3) is what all of it is for, and
-   is the point of the exercise.
+2. **The way in is built** (2026-08-03): `listEvaluations()` on
+   `IEvaluationRepository` and `DrizzleEvaluationRepository`, the router's `list`
+   procedure, the `/evaluations` index and the sidebar entry — the first thing in
+   Wayfinder's chrome that links to redline at all. The index gates in the page as
+   well as in the procedure, so a user without `evaluation:review` gets neither the
+   entry nor the route.
 
-   Items 1 and 2 can start immediately and in parallel — the document route
-   depends only on the extraction reader, and the index/nav entry only on a list
-   method neither of the others touches. Neither is a prerequisite of item 3, but
-   item 3's exit test asserts provenance a specialist can follow *and* names a
-   specialist opening the grid, so both must land before that test can honestly
-   pass.
+3. **The two items of §2.** The corpus run (2) is what all of it is for, and is
+   the point of the exercise.
+
+   Item 1 can start immediately — the document route depends only on the
+   extraction reader. It is not a prerequisite of item 2, but item 2's exit test
+   asserts provenance a specialist can follow, so it must land before that test
+   can honestly pass.
 
    **Nothing in §2 is gated on a decision.** ADR-0020 settled where cold-start
    topic definitions live and the lens schema is built against it.

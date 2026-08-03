@@ -80,6 +80,9 @@ class InMemoryRepository implements IEvaluationRepository {
   async listResponses(evaluationId: string) {
     return ok(this.responses.get(evaluationId) ?? []);
   }
+  async listEvaluations() {
+    return ok([...this.evaluations.values()].reverse());
+  }
 }
 
 const classifier: IProcurementClassifier = {
@@ -233,6 +236,42 @@ describe("WorkflowController — classifying", () => {
     const evaluation = await repository.findEvaluation("eval-1");
     if (!isOk(evaluation)) throw new Error("gone");
     expect(evaluation.data.stage).toBe("review");
+  });
+});
+
+describe("WorkflowController — the way in", () => {
+  it("lists the evaluations a specialist can open, newest first", async () => {
+    const { controller, repository } = controllerAt("review");
+    const second = makeEvaluation({ id: "eval-2", name: "Panel refresh", stage: "grouping" });
+    if (isErr(second)) throw new Error("bad seed");
+    repository.seed(second.data);
+
+    const listed = await controller.listEvaluations();
+    expect(isOk(listed)).toBe(true);
+    if (!isOk(listed)) return;
+    expect(listed.data).toEqual([
+      { id: "eval-2", name: "Panel refresh", stage: "grouping" },
+      { id: "eval-1", name: "Tender 2026", stage: "review" },
+    ]);
+  });
+
+  it("surfaces the repository's failure rather than throwing across the port", async () => {
+    const failing = new InMemoryRepository();
+    failing.listEvaluations = async () =>
+      err(domainError("INFRA_FAILURE", "failed to list evaluations"));
+    const controller = new WorkflowController({
+      repository: failing,
+      classifier,
+      financialExtractor,
+      extractionReader,
+      languageModel,
+      productName: "Platform",
+    });
+
+    const listed = await controller.listEvaluations();
+    expect(isErr(listed)).toBe(true);
+    if (!isErr(listed)) return;
+    expect(listed.error.code).toBe("INFRA_FAILURE");
   });
 });
 

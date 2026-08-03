@@ -160,12 +160,16 @@ globs) exactly as it resolves `@rbrasier/*`. **The mount lives only here**, neve
 in redline's tree, and the fork's `main` stays a clean upstream mirror
 (`validate.sh` #15).
 
-As built: the `evaluation` tRPC router (read-side `reviewGrid` / `pricingPivot` /
-`workbook`); `container-redline.ts` (`buildRedlineModule` → `WorkflowController`
-behind `ctx.container.redline.workflowController`); and the
-`/evaluations/:id/{review,pivots,grouping}` routes plus `"use client"` surfaces
-that render the view models (grouping is a read-side landing) — all mirroring the
-fork's own extraction feature. The controller's ports cross `container-redline`'s
+As built: the `evaluation` tRPC router (read-side `list` / `reviewGrid` /
+`pricingPivot` / `workbook`); `container-redline.ts` (`buildRedlineModule` →
+`WorkflowController` behind `ctx.container.redline.workflowController`); the
+`/evaluations` index and the `/evaluations/:id/{review,pivots,grouping}` routes
+plus `"use client"` surfaces that render the view models (grouping is a read-side
+landing) — all mirroring the fork's own extraction feature. The index is the only
+route that gates in the page as well as in the procedure: it calls `notFound()`
+without `evaluation:review`, because the sidebar entry pointing at it is hidden by
+the same rule and a discoverable surface that renders an empty list to someone who
+may not see it would contradict that. The controller's ports cross `container-redline`'s
 boundary as **injected** dependencies. The repository, extraction-reader, money
 `IFinancialExtractor`, `DrizzleChunkStore` and `HttpAdjudicator` adapters all
 exist; the `evaluation:review` auth gate (`reviewProcedure`) and the served-fork
@@ -478,11 +482,12 @@ redline/
 │                                  As built: server/routers/evaluation.ts (tRPC,
 │                                  read-side, forwards sort/filter),
 │                                  lib/container-redline.ts (buildRedlineModule →
-│                                  WorkflowController), and the
-│                                  app/(user)/evaluations/[id]/{review,pivots,
-│                                  grouping} routes + components/evaluation/*
-│                                  "use client" surfaces, the evaluation:review
-│                                  auth gate and the served-fork Playwright specs.
+│                                  WorkflowController), the
+│                                  app/(user)/evaluations index + [id]/{review,
+│                                  pivots,grouping} routes + components/evaluation/*
+│                                  "use client" surfaces, the sidebar Evaluations
+│                                  entry, the evaluation:review auth gate and the
+│                                  served-fork Playwright specs.
 │                                  Live getContainer() wiring is built:
 │                                  resolveRedlineModule + redline-language-model.
 ├── infra/

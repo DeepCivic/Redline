@@ -18,7 +18,7 @@ import {
   type Result,
   type Vendor,
 } from "@redline/redline-domain";
-import { eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import {
   redlineEvaluations,
   redlineResponseGroups,
@@ -48,6 +48,7 @@ interface RedlineDb {
   select: () => {
     from: (table: unknown) => {
       where: (predicate: unknown) => Promise<unknown[]>;
+      orderBy: (...columns: unknown[]) => Promise<unknown[]>;
     };
   };
 }
@@ -94,6 +95,23 @@ export class DrizzleEvaluationRepository implements IEvaluationRepository {
       return ok(rowToEvaluation(row));
     } catch (cause) {
       return failed("failed to read evaluation", cause);
+    }
+  }
+
+  // Ordered newest first, with the id as the tiebreak so two evaluations created
+  // in the same transaction still come back in a stable order.
+  async listEvaluations(): Promise<Result<readonly Evaluation[]>> {
+    try {
+      const rows = (await this.db
+        .select()
+        .from(redlineEvaluations)
+        .orderBy(
+          desc(redlineEvaluations.createdAt),
+          asc(redlineEvaluations.id),
+        )) as (typeof redlineEvaluations.$inferSelect)[];
+      return ok(rows.map(rowToEvaluation));
+    } catch (cause) {
+      return failed("failed to list evaluations", cause);
     }
   }
 
