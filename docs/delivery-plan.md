@@ -79,20 +79,17 @@ snake_case columns, `id`/`created_at`/`updated_at` each. A `Lens` carries no
 `candidates` are derived, not stored: identifier tokens from the extraction
 reader.
 
-> **Blocked on a decision, not on code: where do cold-start topic *definitions*
-> live?** ADR-0009 keeps `topics` in Numbatch as the system of record and permits
-> redline only *references*. But `ColdStartClassifier` adjudicates over each
-> topic's **definition text** (`cold-start-classifier.ts:52-56`), and §2 excludes
-> the Numbatch stack entirely — so on the lean path there is no system of record
-> to dereference. ADR-0009 half-anticipates this (*"under ADR-0008 the first pass
-> needs no Numbatch at all, so a lens stays definable… with the fork down"*) while
-> its *Alternatives considered* rejects mirroring the library into `redline_`
-> tables. That is unresolved, and it decides this item's schema. **Settle it in an
-> ADR before building** — the likely shape is that cold-start definitions are
-> redline-owned and Numbatch's library is the system of record only for the
-> *trained* overlay's topics and samples, which would amend ADR-0009 narrowly
-> rather than overturn it. Do not quietly add a `redline_lens_topics` table
-> instead.
+> **Blocked on an unapproved decision, not on code: where do cold-start topic
+> *definitions* live?** ADR-0009 keeps `topics` in Numbatch as the system of
+> record and permits redline only *references*. But `ColdStartClassifier`
+> adjudicates over each topic's **definition text** (`indexLens` maps
+> `topic.definition` into every `AdjudicationCandidate`), and §2 excludes the
+> Numbatch stack entirely — so on the lean path there is no system of record to
+> dereference. That decides this item's schema, and it is drafted but **not yet
+> approved**: [ADR-0020](./adr/0020-cold-start-topic-definitions-are-redline-owned.adr.md)
+> (**Proposed**) makes cold-start definitions redline-owned and narrows ADR-0009
+> to the trained overlay's topics, samples and corrections. **Do not build this
+> item until ADR-0020 is Accepted**; the build flips it.
 
 _Version bump: MINOR_ (schema change).
 
