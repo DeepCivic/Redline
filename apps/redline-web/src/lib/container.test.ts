@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { isOk, isErr, ok, err, domainError, makeEvaluation, makeHardRuleSet } from "@redline/redline-domain";
 import type {
   Adjudication,
@@ -394,6 +394,74 @@ describe("WorkflowController — review", () => {
     // Every sheet still carries its header row.
     expect(built.data.sheets[0]).toHaveLength(1);
     expect(built.data.sheets[0][0][0]).toEqual({ value: "Vendor", type: String, fontWeight: "bold" });
+  });
+});
+
+// The other end of the review grid's source deep-link (delivery-plan item 1).
+// openDocument reads one document's elements through IProcurementExtractionReader
+// — the JSON presentation seam of ADR-0003/0017 — so the served route has
+// something to anchor the `element` query parameter on. Read side only.
+describe("WorkflowController — document provenance", () => {
+  const controllerReading = (reader: IProcurementExtractionReader) => {
+    const repository = new InMemoryRepository();
+    const evaluation = makeEvaluation({ id: "eval-1", name: "Tender 2026", stage: "review" });
+    if (isErr(evaluation)) throw new Error("bad seed");
+    repository.seed(evaluation.data);
+    return new WorkflowController({
+      repository,
+      classifier,
+      financialExtractor,
+      extractionReader: reader,
+      languageModel,
+      productName: "Platform",
+    });
+  };
+
+  it("reads the cited document's elements through the extraction reader", async () => {
+    const readElements = vi.fn(async () =>
+      ok([
+        { documentId: "doc-1", elementOrder: 7, page: 3, text: "the cited passage" },
+        { documentId: "doc-1", elementOrder: 2, page: 1, text: "an earlier paragraph" },
+      ]),
+    );
+    const controller = controllerReading({
+      readElements,
+      readChunks: async () => ok([]),
+      readTableCells: async () => ok([]),
+    });
+
+    const opened = await controller.openDocument({ evaluationId: "eval-1", documentId: "doc-1" });
+    expect(isOk(opened)).toBe(true);
+    if (!isOk(opened)) return;
+
+    expect(readElements).toHaveBeenCalledWith("eval-1", "doc-1");
+    expect(opened.data.map((element) => element.elementOrder)).toEqual([7, 2]);
+  });
+
+  it("surfaces the reader's failure rather than throwing across the port", async () => {
+    const controller = controllerReading({
+      readElements: async () => err(domainError("INFRA_FAILURE", "womblex-ingest is unreachable")),
+      readChunks: async () => ok([]),
+      readTableCells: async () => ok([]),
+    });
+
+    const opened = await controller.openDocument({ evaluationId: "eval-1", documentId: "doc-1" });
+    expect(isErr(opened)).toBe(true);
+    if (!isErr(opened)) return;
+    expect(opened.error.code).toBe("INFRA_FAILURE");
+  });
+
+  it("returns an empty element list for a document the extraction carries nothing for", async () => {
+    const controller = controllerReading({
+      readElements: async () => ok([]),
+      readChunks: async () => ok([]),
+      readTableCells: async () => ok([]),
+    });
+
+    const opened = await controller.openDocument({ evaluationId: "eval-1", documentId: "doc-9" });
+    expect(isOk(opened)).toBe(true);
+    if (!isOk(opened)) return;
+    expect(opened.data).toEqual([]);
   });
 });
 

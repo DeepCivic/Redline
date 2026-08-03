@@ -161,15 +161,20 @@ in redline's tree, and the fork's `main` stays a clean upstream mirror
 (`validate.sh` #15).
 
 As built: the `evaluation` tRPC router (read-side `list` / `reviewGrid` /
-`pricingPivot` / `workbook`); `container-redline.ts` (`buildRedlineModule` →
-`WorkflowController` behind `ctx.container.redline.workflowController`); the
-`/evaluations` index and the `/evaluations/:id/{review,pivots,grouping}` routes
-plus `"use client"` surfaces that render the view models (grouping is a read-side
-landing) — all mirroring the fork's own extraction feature. The index is the only
-route that gates in the page as well as in the procedure: it calls `notFound()`
-without `evaluation:review`, because the sidebar entry pointing at it is hidden by
-the same rule and a discoverable surface that renders an empty list to someone who
-may not see it would contradict that. The controller's ports cross `container-redline`'s
+`pricingPivot` / `workbook` / `document`); `container-redline.ts`
+(`buildRedlineModule` → `WorkflowController` behind
+`ctx.container.redline.workflowController`); the `/evaluations` index and the
+`/evaluations/:id/{review,pivots,grouping}` routes plus
+`/evaluations/:id/documents/:documentId` — the document view every review row's
+source deep-link points at — with `"use client"` surfaces that render the view
+models (grouping is a read-side landing) — all mirroring the fork's own extraction
+feature. The index and the document route gate in the page as well as in the
+procedure: they call `notFound()` without `evaluation:review`. For the index that
+is because the sidebar entry pointing at it is hidden by the same rule, and a
+discoverable surface that renders an empty list to someone who may not see it
+would contradict that; for the document route it is because the URL carries a
+document id, so a shell that renders and only then fails to load would confirm
+which ids exist. The controller's ports cross `container-redline`'s
 boundary as **injected** dependencies. The repository, extraction-reader, money
 `IFinancialExtractor`, `DrizzleChunkStore` and `HttpAdjudicator` adapters all
 exist; the `evaluation:review` auth gate (`reviewProcedure`) and the served-fork
@@ -388,6 +393,16 @@ Clear/Ambiguous split).
 workbook with real Number cells for currency and working deep-links to source
 locations.
 
+**(10) Provenance, followed.** Every deep-link the grid and the workbook write
+resolves. `WorkflowController.openDocument` reads the cited document's elements
+back through `IProcurementExtractionReader` — the same JSON presentation seam the
+rest of the read path uses (ADR-0003/0017), so no Parquet reader is linked — and
+`renderDocumentView` orders them by `elem_order` and resolves the `element` query
+parameter to the anchor the served route scrolls to. A cited element the
+extraction no longer carries is reported as such rather than silently rendering
+the top of the document, which would read as "this is the cited passage" when it
+is not.
+
 ### The join keys (womblex's real schema — see `services/womblex/docs/extraction.md`)
 
 - **Document identity:** `source_hash` (SHA-256 of source bytes). redline's
@@ -484,7 +499,9 @@ redline/
 │                                  lib/container-redline.ts (buildRedlineModule →
 │                                  WorkflowController), the
 │                                  app/(user)/evaluations index + [id]/{review,
-│                                  pivots,grouping} routes + components/evaluation/*
+│                                  pivots,grouping} routes, [id]/documents/
+│                                  [documentId] (the provenance deep-link target)
+│                                  + components/evaluation/*
 │                                  "use client" surfaces, the sidebar Evaluations
 │                                  entry, the evaluation:review auth gate and the
 │                                  served-fork Playwright specs.

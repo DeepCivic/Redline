@@ -5,6 +5,7 @@ import {
   ok,
   type ClassificationRequest,
   type Evaluation,
+  type ExtractionElement,
   type IAdjudicator,
   type IChunkStore,
   type IClassificationLensReader,
@@ -131,6 +132,19 @@ export class WorkflowController {
     const responses = await this.container.repository.listResponses(input.evaluationId);
     if (isErr(responses)) return responses;
     return ok(new PricingPivot(responses.data));
+  }
+
+  // Opens one document's extracted elements — the other end of every source
+  // deep-link the review grid renders. Reads through IProcurementExtractionReader
+  // (the JSON presentation seam of ADR-0003/0017), so the heavy Parquet/womblex
+  // stack stays in the sidecar. Read side only, and deliberately unshaped: the
+  // ordering and the anchor the `element` query parameter cites belong to
+  // renderDocumentView, which the route applies.
+  openDocument(input: {
+    evaluationId: string;
+    documentId: string;
+  }): Promise<Result<readonly ExtractionElement[]>> {
+    return this.container.extractionReader.readElements(input.evaluationId, input.documentId);
   }
 
   // Builds the Excel export workbook for an evaluation at the review

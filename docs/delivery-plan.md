@@ -46,7 +46,7 @@
 > **Nothing here has been run against live services.** The wiring and the write
 > path typecheck and are unit-tested; no Postgres, sidecar or adjudicator has
 > ever been behind either. Expect config-level breakage on first boot, and treat
-> the corpus run (item 2) as the first real proof rather than a formality.
+> the corpus run (item 1) as the first real proof rather than a formality.
 >
 > **Revised after a pre-user-testing review of the whole outstanding set.** That
 > review verified every "built" claim above against the trees (the submodules were
@@ -54,9 +54,10 @@
 > short of its own goal in three places: the lens item's table list was missing
 > the topics table ADR-0020 sanctions (now built, with that table); nothing
 > created an evaluation or built the review table (now built, above); and the
-> review grid's provenance deep-link points at a route that does not exist (item
-> 1, still outstanding). Housekeeping that is not on the vertical but is wanted
-> before users is at the end of §2.
+> review grid's provenance deep-link pointed at a route that did not exist — the
+> `/evaluations/:id/documents/:documentId` view is now built too, so the corpus
+> run is the only step left on the vertical. Housekeeping that is not on the
+> vertical but is wanted before users is at the end of §2.
 >
 > **A note on ADRs, since an earlier revision got this wrong.** An ADR records a
 > decision; it does not gate a build. This plan previously carried "do not build
@@ -110,32 +111,11 @@ the served fork, and §5 below for how they were sequenced. The persisted lens i
 built too, so `IClassificationLensReader` now has an adapter behind it, and the
 write path that creates, seeds, groups and builds an evaluation is built on top
 of it. The way in is built too — `listEvaluations()`, the router's `list`, the
-`/evaluations` index and the sidebar entry that points at it. What remains is one
-vertical in two steps: serve the document view the provenance links point at
-(item 1), and run a real corpus through the lot (item 2).
+`/evaluations` index and the sidebar entry that points at it. The document route
+the provenance deep-links point at is built as well, so what remains is one step:
+run a real corpus through the lot (item 1).
 
-### 1 — The document route the provenance link points at
-
-Every review row renders a source deep-link, and every one of them 404s.
-`review-view.ts:63-67` builds
-`/evaluations/:id/documents/:documentId?element=…&page=…&chunk=…`; the fork serves
-only `review`, `pivots` and `grouping` under `[id]`. The e2e spec does not catch
-it — `redline-review-grid.spec.ts:75` asserts the `href` *pattern* and never
-follows it.
-
-Item 2's exit test says *"with provenance back to source"*, and provenance a
-specialist cannot click is not provenance. Build the route in the fork beside the
-others: read the document's elements through `IProcurementExtractionReader` (the
-JSON presentation seam ADR-0003/0017 keeps for exactly this), anchor on the
-`element` query parameter, gate it on `evaluation:review` like its siblings.
-
-_Version bump: MINOR_ (new served route; no schema change).
-
-_Exit: a Playwright spec that clicks a review row's source link and lands on the
-document view scrolled to the cited element — the assertion the current spec
-stops short of._
-
-### 2 — Real corpus, end to end
+### 1 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
@@ -179,7 +159,7 @@ no shipped code).
 
 _Exit: a specialist opens the review grid for a real tender and sees each
 document delineated by topic and brand, with provenance back to source — with the
-four `E2E_REDLINE_EVALUATION_ID`-gated specs
+five `E2E_REDLINE_EVALUATION_ID`-gated specs
 (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`) green against that
 evaluation as the automatable half._
 
@@ -302,7 +282,7 @@ order:
 1. **The write path is built** (2026-08-03), on top of that wiring: the lens
    writer in `redline-adapters` and, in the fork, the manifest reader, the
    seeding composition and `scripts/seed-redline-evaluation.ts`. Proven against
-   in-memory adapters only — the live run is item 2.
+   in-memory adapters only — the live run is item 1.
 
 2. **The way in is built** (2026-08-03): `listEvaluations()` on
    `IEvaluationRepository` and `DrizzleEvaluationRepository`, the router's `list`
@@ -311,13 +291,16 @@ order:
    well as in the procedure, so a user without `evaluation:review` gets neither the
    entry nor the route.
 
-3. **The two items of §2.** The corpus run (2) is what all of it is for, and is
-   the point of the exercise.
+3. **The document route is built** (2026-08-03): `WorkflowController.openDocument`
+   reads the cited document's elements through `IProcurementExtractionReader`,
+   `renderDocumentView` orders them and resolves the `element` query parameter to
+   an anchor, and the fork serves `/evaluations/:id/documents/:documentId` beside
+   its siblings, gated in the page as well as in the procedure. Every provenance
+   deep-link the review grid and the Excel export write now resolves, which is
+   what §2's exit test needs to pass honestly.
 
-   Item 1 can start immediately — the document route depends only on the
-   extraction reader. It is not a prerequisite of item 2, but item 2's exit test
-   asserts provenance a specialist can follow, so it must land before that test
-   can honestly pass.
+4. **The one item of §2.** The corpus run is what all of it is for, and is the
+   point of the exercise.
 
    **Nothing in §2 is gated on a decision.** ADR-0020 settled where cold-start
    topic definitions live and the lens schema is built against it.
