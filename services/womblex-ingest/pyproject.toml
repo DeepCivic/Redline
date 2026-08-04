@@ -8,6 +8,13 @@ dependencies = [
     "uvicorn[standard]>=0.30,<0.35",
     "boto3>=1.34,<2.0",
     "pydantic>=2.7,<3.0",
+    # The Parquet decode behind WOMBLEX_MODE=real. It belongs in the base deps,
+    # not only in `[womblex]`: the Dockerfile's `sidecar` target installs the base
+    # package alone, so leaving pyarrow in the extra shipped a default image that
+    # could serve only the stub. The read side of the binding is meant to run
+    # wherever pyarrow resolves, engine or no engine — that is why the engine
+    # itself stays in `[womblex]` while its decoder does not.
+    "pyarrow>=16,<25",
 ]
 
 [project.optional-dependencies]
@@ -24,14 +31,6 @@ dependencies = [
 # against a different engine build is the one drift nothing else would catch.
 # validate.sh check #13 enforces the two stay equal, comparing this pin against
 # the submodule's exact git tag.
-#
-# NOTE (0.3.0 bump): the submodule gitlink tracks the *merged* `Release 0.3.0`
-# commit on womblex's `main`, not a `v0.3.0` git tag — upstream had not pushed
-# the tag when this landed (an accepted override; the release code is present).
-# So check #13 warn+skips rather than passing until the tag exists and the
-# gitlink is re-pointed at it. This pin (`0.3.0`) already matches the engine
-# code; the outstanding step is purely restoring the guard. See
-# docs/delivery-plan.md §4 (carried item #2).
 #
 # The engine stays in a SEPARATE extra (and a separate image) for resource +
 # lifecycle reasons — heavy OCR/tokeniser/model runtime, independently scaled via

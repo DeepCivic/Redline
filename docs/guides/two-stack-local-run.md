@@ -14,16 +14,33 @@ meet over configuration, not over a shared network namespace.
 
 ## 1. redline's services
 
-From the repository root:
+From the repository root. UAT runs this on Podman; `docker compose` is
+interchangeable everywhere below.
 
 ```bash
-docker compose -f infra/docker-compose.yml --profile ingest up -d
+podman compose -f infra/docker-compose.yml --profile ingest up -d
 ```
 
 That brings up `redline-postgres`, `minio` and the `womblex-ingest` sidecar.
+
+**Export `WOMBLEX_MODE=real` first.** The compose default is `stub` — a
+dependency-free test double that serves deterministic fabricated shards. It is
+there for CI, and a UAT run left on it will look like it succeeded while showing
+invented documents. Confirm which lane you are on before trusting anything:
+
+```bash
+curl -s localhost:8000/health   # {"womblexMode":"real", ...}
+```
 Apply redline's migrations against the database once it is accepting
 connections — `applyMigrations` is driver-agnostic and the production path runs
-it through the `postgres` client.
+it through the `postgres` client:
+
+```bash
+DATABASE_URL=postgresql://redline:redline-dev@localhost:5433/redline \
+  pnpm --filter @redline/redline-adapters db:migrate
+```
+
+The migration is idempotent, so re-running it is a no-op.
 
 Confirm the sidecar answers before moving on: it is the extraction seam the
 identifier-token pre-pass and the review grid both read through.
@@ -63,26 +80,132 @@ boots as plain Wayfinder with the `/evaluations` routes unavailable, rather than
 failing its fail-fast env parse. `resolveRedlineModule` returns `null` and
 nothing else in the container notices.
 
+The adjudicator is **not** optional in the same way: cold-start classification is
+hard rules plus LLM adjudication, so `REDLINE_ADJUDICATOR_*` must point at a
+reachable OpenAI-compatible endpoint or nothing classifies.
+
+`pnpm install` here runs `onnxruntime-node`'s postinstall, which downloads a
+native binary. On a restricted network it fails the whole install; the fork's own
+infrastructure does not need it, so `pnpm install --config.ignore-scripts=true`
+gets you a working web app when that download is blocked.
+
 ---
 
-## What you can and cannot reach yet
+## 4. A corpus, and the evaluation over it
 
-Once both stacks are up, `/evaluations/:id/{review,pivots,grouping}` are served
-and gated on the `evaluation:review` permission, which is seeded to a specialist
-role — so an ordinary non-admin test account can reach them.
+Run the engine over the corpus first. The shards it lands are what everything
+downstream reads:
 
-Two things are **not** in place, and both are tracked in `delivery-plan.md`:
+```bash
+KEEP_UP=1 \
+WOMBLEX_EVAL_ID=cloud-rft-2026 \
+WOMBLEX_CORPUS=services/womblex-ingest/tests/corpus-local \
+  scripts/womblex-engine-smoke.sh
+```
 
-- **Nothing authors a lens, and nothing creates an evaluation.** The tables and
-  the write-side use-cases exist, but no served procedure or script drives them,
-  so there is no id to put in the URL yet. That is the delivery plan's next item.
-- **There is no navigation entry to `/evaluations`.** Even with a valid id, the
-  only way in is typing the URL. Worth fixing before anyone unfamiliar is asked
-  to test.
+Both environment variables are load-bearing, and neither is the script's default:
+
+- **`WOMBLEX_EVAL_ID` must equal the manifest's `evaluationId`.** The sidecar
+  reads shards from `proc/{evaluationId}/` and `real_extractor.extract` ignores
+  the document names it is handed — it returns whatever is under that prefix. A
+  run under any other id is invisible to the evaluation.
+- **`KEEP_UP=1`, or the run destroys its own output.** The script's cleanup is
+  `compose down -v`, which removes the MinIO volume along with the containers.
+
+The default (`smoke-<timestamp>`, torn down at exit) is right for proving the
+engine works and wrong for every real corpus.
+
+Then seed an evaluation from a manifest. Pass an **absolute** path: `pnpm
+--filter` runs the script with the package directory as its working directory,
+so a relative path resolves against `apps/web` rather than where you typed it.
+
+```bash
+cd services/wayfinder
+pnpm --filter @wayfinder/web seed:redline "$(pwd)/../../manifest.json"
+```
+
+It prints the evaluation id, the `/evaluations/:id/review` URL, and the
+`E2E_REDLINE_EVALUATION_ID=` line the Playwright specs gate on.
+
+Steps 2 and 3 are prerequisites, not just neighbours: the script resolves the
+governed language model through `getContainer()`, which fail-fast parses
+Wayfinder's whole env and opens its database. A fork stack that is not up fails
+here as an env parse error that says nothing about seeding.
+
+### The manifest, and the one thing that will catch you
+
+**`documentIds` are womblex `source_hash` values, not filenames.** `source_hash`
+is womblex's document identity (`shard_reader.py`) — a sha256 that does not
+exist until the engine has extracted the document. So the manifest can only be
+written *after* step 4's engine run, and the ids come from the run's
+`manifest.parquet` (the published `source_hash` → `doc_id`/filename table), not
+from anything you can read off the corpus directory.
+
+```json
+{
+  "evaluationId": "cloud-rft-2026",
+  "evaluationName": "Cloud Hosting RFT 2026",
+  "lens": {
+    "lensId": "cloud-rft-2026-lens",
+    "name": "Cloud hosting evaluation",
+    "topics": [
+      { "id": "hosting", "name": "Hosting", "definition": "Compute, storage and network provisioning." },
+      { "id": "support", "name": "Support", "definition": "Service levels, response times and escalation." }
+    ],
+    "rules": [
+      { "id": "rule-sla", "pattern": "service level", "topicId": "support" }
+    ]
+  },
+  "vendors": [
+    { "id": "acme", "displayName": "Acme Cloud" },
+    { "id": "globex", "displayName": "Globex Hosting" }
+  ],
+  "groups": [
+    { "id": "acme-response", "label": "Acme", "vendorIds": ["acme"], "documentIds": ["<acme-source-hash>"] },
+    { "id": "globex-response", "label": "Globex", "vendorIds": ["globex"], "documentIds": ["<globex-source-hash>"] }
+  ]
+}
+```
+
+A document belongs to exactly one group: the manifest parser rejects a document
+claimed by two, naming both. Rules are matched by specificity then declaration
+order (ADR-0011), so their order in the file is load-bearing.
+
+## What you can and cannot reach
+
+Once both stacks are up, the `/evaluations` index is linked from the sidebar and
+`/evaluations/:id/{review,pivots,grouping}` and
+`/evaluations/:id/documents/:documentId` are served — all gated on the
+`evaluation:review` permission, which is seeded to a specialist role, so an
+ordinary non-admin test account can reach them.
+
+Not yet in place, and tracked in `delivery-plan.md`: **nothing served creates or
+edits an evaluation.** The seeding script above is the only write path, and the
+lens still comes from the hand-written manifest. The grouping page is read-only.
 
 ## Isaacus
 
-`ISAACUS_API_KEY` gates womblex's `chunk` **and** `embed` stages, so without it
-extraction shards land but no chunks and no embeddings do — and there is then
-nothing in the store to classify over. It is a hard dependency, not a degraded
-mode (`architecture.md` §2).
+The two stages are gated differently, and the difference decides whether you
+need an account.
+
+- **`chunk` is gated by policy, not capability.** `chunk_shards` returns early
+  when `isaacus_available()` is false — a network-free check for **both** the
+  `isaacus` package being importable **and** a non-empty `ISAACUS_API_KEY`. With
+  no `chunking_model` set (redline's profile sets none), `create_chunker`
+  resolves the Kanon-2 tokeniser from womblex's vendored copy at
+  `_models/kanon-2-tokenizer/` and makes no API call. So any non-empty string
+  satisfies the key half: `ISAACUS_API_KEY=uat-local` produces chunks offline.
+
+  The package half is why redline's compose builds the engine image with
+  `EXTRAS: cloud,isaacus`. The engine's own Dockerfile defaults to `EXTRAS=cloud`,
+  which omits the SDK — and an engine without it skips chunking silently, landing
+  extraction shards and nothing else regardless of the key.
+- **`embed` genuinely needs a real key** (`kanon-2-embedder` is an API call).
+
+Chunks are what the cold-start classifier reads — `IChunkStore`'s row has no
+embedding field, and ADR-0018's addendum defers similarity search — so the
+embeddings are inert for this path. The store-load path writes `embedding=None`
+without complaint.
+
+**A UAT run therefore needs no Isaacus account.** A pilot that wants
+nearest-neighbour placement does.
