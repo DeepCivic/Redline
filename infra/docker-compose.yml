@@ -261,7 +261,7 @@ services:
     volumes:
       - numbatch-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${NUMBATCH_DB_USER:-numbatch}"]
+      test: ["CMD-SHELL", "pg_isready -U ${NUMBATCH_DB_USER:-numbatch} -d ${NUMBATCH_DB_NAME:-numbatch}"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -360,7 +360,7 @@ services:
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${REDLINE_DB_USER:-redline}"]
+      test: ["CMD-SHELL", "pg_isready -U ${REDLINE_DB_USER:-redline} -d ${REDLINE_DB_NAME:-redline}"]
       interval: 5s
       timeout: 5s
       retries: 12
