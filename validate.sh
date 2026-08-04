@@ -395,6 +395,30 @@ else
   fi
 fi
 
+# ── 16. the fork's redline mount typechecks ──────────────────────────────────
+# The mount (apps/web) imports @redline/*, which the fork's pnpm-workspace.yaml
+# resolves through ../../apps/* and ../../packages/* — paths that exist only when
+# the fork sits at services/wayfinder inside this repo. The fork's OWN CI checks
+# it out standalone, so every @redline/* import is unresolvable there and its
+# typecheck cannot pass however correct the code is. This repo is the only place
+# the whole tree is assembled, so it is the only place the mount can be checked —
+# and checks #1-#3 are scoped --filter=@redline/*, so nothing checked it at all.
+# SKIPs (never fails) when the submodule or its node_modules are absent, matching
+# #13 and #15: a clean clone stays green without a fork install.
+section "16. the fork's redline mount typechecks (services/wayfinder/apps/web)"
+FORK_WEB=services/wayfinder/apps/web
+if [ ! -d "$FORK_WEB" ]; then
+  skip "fork mount typecheck — services/wayfinder not initialised (git submodule update --init)"
+elif [ ! -d services/wayfinder/node_modules ]; then
+  skip "fork mount typecheck — fork dependencies not installed (cd services/wayfinder && pnpm install)"
+elif ! command -v pnpm >/dev/null 2>&1; then
+  skip "fork mount typecheck — no local pnpm"
+elif ( cd services/wayfinder && pnpm --filter @wayfinder/web typecheck >/dev/null 2>&1 ); then
+  pass "fork mount typecheck"
+else
+  fail "the fork's apps/web does not typecheck against this tree's @redline/* packages. Reproduce with: cd services/wayfinder && pnpm --filter @wayfinder/web typecheck"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo; echo "──────────────────────────────────────────"
 echo "Passed:  $PASS"; echo "Failed:  $FAIL"; echo "Skipped: ${#SKIPPED_CHECKS[@]}"
