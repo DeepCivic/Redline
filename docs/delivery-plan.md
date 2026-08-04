@@ -1,6 +1,6 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-03
+> **Status:** the live tracking document · **Date:** 2026-08-04
 >
 > **The corpus write path is built.** `IngestDocuments` → lens seed →
 > `AssignDocumentsToGroups` → `BuildEvaluationTable` now runs end to end from a
@@ -11,15 +11,20 @@
 > `scripts/seed-redline-evaluation.ts`. It is proven against in-memory adapters,
 > **not** against live services — the live run is the corpus item's business.
 >
-> **Two things found while building it, both needing a decision.**
+> **Two things found while building it. One is now resolved.**
 >
-> - **The fork's `redline-integration` branch does not carry the live
->   `getContainer()` wiring.** The superproject pins `d177bf07`, which sits on
->   `origin/claude/delivery-plan-user-testing-bses4f` and is *not* an ancestor of
->   `redline-integration`. The Redline-side PR merged; the fork-side branch never
->   did. The seeding work is branched from the pin, so it carries the wiring —
->   but both need merging into `redline-integration` before `validate.sh` #15 can
->   be green, since that check asserts the checkout is on that branch.
+> - **~~The fork's `redline-integration` branch does not carry the mount.~~
+>   Resolved 2026-08-04.** All nine commits — the live `getContainer()` wiring
+>   through to the document route — had gone to the fork's `main` and never
+>   reached `redline-integration`, which `.gitmodules` names and `validate.sh`
+>   #15 asserts. That made #15 the sole failure in every CI run on `main` from
+>   PR #29 to #32. `redline-integration` was a strict ancestor of the work, so
+>   advancing it was a fast-forward — nothing rewritten, nothing forced — and the
+>   gitlink now sits on the branch tip. **`validate.sh` is 15/15, 0 skipped.**
+>   The fork's `main` still carries those commits, so it is no longer a clean
+>   upstream mirror; #15's second invariant only evaluates with an `upstream`
+>   remote present, so it warns rather than fails. Resetting `main` is a separate,
+>   destructive step and is deliberately still outstanding.
 > - **A topic id is global.** `redline_topics.id` is a plain primary key, so a
 >   topic belongs to exactly one lens and a second lens reusing an id fails. Fine
 >   for now; it will need revisiting when lens portability (§3) lands.
@@ -47,6 +52,22 @@
 > path typecheck and are unit-tested; no Postgres, sidecar or adjudicator has
 > ever been behind either. Expect config-level breakage on first boot, and treat
 > the corpus run (item 1) as the first real proof rather than a formality.
+>
+> **A pre-boot sweep of the deployment path (2026-08-04) removed nine defects
+> that first boot would otherwise have found the slow way.** Four would have
+> stopped it outright: the engine image built without the `isaacus` extra, so
+> `isaacus_available()` was false and the chunk stage silently wrote nothing
+> regardless of the key; the sidecar image had no `pyarrow`, so `WOMBLEX_MODE=real`
+> could not decode a shard; the `womblex-cli` and `money` compose profiles were
+> invalid projects (`depends_on` a service outside their own profile), and
+> `womblex-cli` is what enqueues the corpus. The rest: `applyMigrations` is
+> exported API but `tsc` never copied its `.sql` files into `dist/`; two
+> `pg_isready` healthchecks probed a database named after the user while
+> `POSTGRES_DB` is separately configurable; `infra/.env.example` did not exist
+> though the compose header tells operators to copy it; the evaluation router
+> demanded a UUID the schema, domain type and manifest all contradict; and
+> `womblex-engine-smoke.sh` could not be pointed at a chosen evaluation id, so a
+> real corpus landed under a prefix nothing reads back.
 >
 > **Revised after a pre-user-testing review of the whole outstanding set.** That
 > review verified every "built" claim above against the trees (the submodules were
@@ -182,7 +203,7 @@ and both are cheap.
   revision recorded `./validate.sh` as FAILing with six `Hook timed out in
   10000ms` errors across
   `drizzle-{evaluation-repository,money-span-store,chunk-store}.test.ts`. **It did
-  not reproduce on 2026-08-03** — a full `./validate.sh` ran 13/13 green with the
+  not reproduce on 2026-08-03** — a full `./validate.sh` ran green with the
   adapters suite finishing in ~23s under turbo. So this is load-dependent
   flakiness on a slower or busier machine, not a standing failure. Raise the hook
   budget if it returns; do not treat it as a known-red gate in the meantime.
@@ -275,7 +296,9 @@ order:
    `./validate.sh` (architecture.md §3). The persisted lens and the live wiring
    followed (2026-08-03): `DrizzleClassificationLensReader` over the four lens
    tables, then `resolveRedlineModule` + the `ILanguageModel` bridge in the fork.
-   `validate.sh` is 13/13 and the fork's typecheck went 3 errors → 0 — one of
+   `validate.sh` was 13 passed / 2 skipped then (15/15 as of 2026-08-04, once the
+   submodules were initialised and the fork branch fixed) and the fork's
+   typecheck went 3 errors → 0 — one of
    those was pre-existing, `container-redline.test.ts` still composing
    `buildColdStartClassifier` with `topics`/`ruleSet`/`candidates` after the lens
    moved behind `IClassificationLensReader`.
