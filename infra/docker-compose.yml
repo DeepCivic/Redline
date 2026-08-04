@@ -181,6 +181,12 @@ services:
   womblex-init:
     build:
       context: ../services/womblex
+      # `isaacus` is NOT optional for redline. isaacus_available() gates the chunk
+      # stage on the SDK being importable as well as a key being set, so the
+      # image's default EXTRAS=cloud would skip chunking entirely and land
+      # extraction shards with no chunks for the classifier to read.
+      args:
+        EXTRAS: cloud,isaacus
     profiles: ["womblex"]
     depends_on:
       womblex-queue:
@@ -193,6 +199,12 @@ services:
   womblex-cli:
     build:
       context: ../services/womblex
+      # `isaacus` is NOT optional for redline. isaacus_available() gates the chunk
+      # stage on the SDK being importable as well as a key being set, so the
+      # image's default EXTRAS=cloud would skip chunking entirely and land
+      # extraction shards with no chunks for the classifier to read.
+      args:
+        EXTRAS: cloud,isaacus
     profiles: ["womblex-cli"]
     depends_on:
       minio:
@@ -207,6 +219,12 @@ services:
   womblex:
     build:
       context: ../services/womblex
+      # `isaacus` is NOT optional for redline. isaacus_available() gates the chunk
+      # stage on the SDK being importable as well as a key being set, so the
+      # image's default EXTRAS=cloud would skip chunking entirely and land
+      # extraction shards with no chunks for the classifier to read.
+      args:
+        EXTRAS: cloud,isaacus
     profiles: ["womblex"]
     depends_on:
       womblex-init:

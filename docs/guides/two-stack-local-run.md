@@ -22,6 +22,15 @@ podman compose -f infra/docker-compose.yml --profile ingest up -d
 ```
 
 That brings up `redline-postgres`, `minio` and the `womblex-ingest` sidecar.
+
+**Export `WOMBLEX_MODE=real` first.** The compose default is `stub` — a
+dependency-free test double that serves deterministic fabricated shards. It is
+there for CI, and a UAT run left on it will look like it succeeded while showing
+invented documents. Confirm which lane you are on before trusting anything:
+
+```bash
+curl -s localhost:8000/health   # {"womblexMode":"real", ...}
+```
 Apply redline's migrations against the database once it is accepting
 connections — `applyMigrations` is driver-agnostic and the production path runs
 it through the `postgres` client:
@@ -175,12 +184,17 @@ The two stages are gated differently, and the difference decides whether you
 need an account.
 
 - **`chunk` is gated by policy, not capability.** `chunk_shards` returns early
-  when `isaacus_available()` is false — a network-free check for the `isaacus`
-  package plus a **non-empty** `ISAACUS_API_KEY`. With no `chunking_model` set
-  (redline's profile sets none), `create_chunker` resolves the Kanon-2 tokeniser
-  from womblex's vendored copy at `_models/kanon-2-tokenizer/` and makes no API
-  call. So any non-empty string satisfies it: `ISAACUS_API_KEY=uat-local` is
-  enough to produce chunks offline.
+  when `isaacus_available()` is false — a network-free check for **both** the
+  `isaacus` package being importable **and** a non-empty `ISAACUS_API_KEY`. With
+  no `chunking_model` set (redline's profile sets none), `create_chunker`
+  resolves the Kanon-2 tokeniser from womblex's vendored copy at
+  `_models/kanon-2-tokenizer/` and makes no API call. So any non-empty string
+  satisfies the key half: `ISAACUS_API_KEY=uat-local` produces chunks offline.
+
+  The package half is why redline's compose builds the engine image with
+  `EXTRAS: cloud,isaacus`. The engine's own Dockerfile defaults to `EXTRAS=cloud`,
+  which omits the SDK — and an engine without it skips chunking silently, landing
+  extraction shards and nothing else regardless of the key.
 - **`embed` genuinely needs a real key** (`kanon-2-embedder` is an API call).
 
 Chunks are what the cold-start classifier reads — `IChunkStore`'s row has no
