@@ -25,11 +25,19 @@
 #   KEEP_UP=1 scripts/womblex-engine-smoke.sh
 #   WOMBLEX_CORPUS=/path/to/docs scripts/womblex-engine-smoke.sh
 #   COMPOSE="docker compose" scripts/womblex-engine-smoke.sh
+#
+# Driving a real corpus run rather than a smoke test — the shards must land
+# under the prefix the evaluation will be read back at, and must survive the run:
+#   KEEP_UP=1 WOMBLEX_EVAL_ID=<manifest's evaluationId> \
+#     WOMBLEX_CORPUS=/path/to/corpus scripts/womblex-engine-smoke.sh
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/infra/docker-compose.yml"
-EVAL_ID="smoke-$(date +%s)"
+# Caller-supplied when this drives a real corpus: the sidecar reads shards from
+# proc/{evaluationId}/, so a run whose id does not match the evaluation's is
+# invisible to it. Defaults to a throwaway id for the smoke case.
+EVAL_ID="${WOMBLEX_EVAL_ID:-smoke-$(date +%s)}"
 BUCKET="${REDLINE_BUCKET:-redline}"
 CORPUS="${WOMBLEX_CORPUS:-$REPO_ROOT/services/womblex-ingest/tests/corpus}"
 

@@ -88,15 +88,31 @@ Run the engine over the corpus first. The shards it lands are what everything
 downstream reads:
 
 ```bash
+KEEP_UP=1 \
+WOMBLEX_EVAL_ID=cloud-rft-2026 \
 WOMBLEX_CORPUS=services/womblex-ingest/tests/corpus-local \
   scripts/womblex-engine-smoke.sh
 ```
 
-Then seed an evaluation from a manifest:
+Both environment variables are load-bearing, and neither is the script's default:
+
+- **`WOMBLEX_EVAL_ID` must equal the manifest's `evaluationId`.** The sidecar
+  reads shards from `proc/{evaluationId}/` and `real_extractor.extract` ignores
+  the document names it is handed — it returns whatever is under that prefix. A
+  run under any other id is invisible to the evaluation.
+- **`KEEP_UP=1`, or the run destroys its own output.** The script's cleanup is
+  `compose down -v`, which removes the MinIO volume along with the containers.
+
+The default (`smoke-<timestamp>`, torn down at exit) is right for proving the
+engine works and wrong for every real corpus.
+
+Then seed an evaluation from a manifest. Pass an **absolute** path: `pnpm
+--filter` runs the script with the package directory as its working directory,
+so a relative path resolves against `apps/web` rather than where you typed it.
 
 ```bash
 cd services/wayfinder
-pnpm --filter @wayfinder/web seed:redline path/to/manifest.json
+pnpm --filter @wayfinder/web seed:redline "$(pwd)/../../manifest.json"
 ```
 
 It prints the evaluation id, the `/evaluations/:id/review` URL, and the
@@ -131,16 +147,15 @@ from anything you can read off the corpus directory.
     { "id": "globex", "displayName": "Globex Hosting" }
   ],
   "groups": [
-    { "id": "acme-response", "label": "Acme", "vendorIds": ["acme"], "documentIds": ["<source_hash>"] },
-    { "id": "globex-response", "label": "Globex", "vendorIds": ["globex"], "documentIds": ["<source_hash>"] }
+    { "id": "acme-response", "label": "Acme", "vendorIds": ["acme"], "documentIds": ["<acme-source-hash>"] },
+    { "id": "globex-response", "label": "Globex", "vendorIds": ["globex"], "documentIds": ["<globex-source-hash>"] }
   ]
 }
 ```
 
-A document belongs to exactly one group — `assignDocument` moves rather than
-copies, so claiming one document for two groups is rejected. Rules are matched
-by specificity then declaration order (ADR-0011), so their order in the file is
-load-bearing.
+A document belongs to exactly one group: the manifest parser rejects a document
+claimed by two, naming both. Rules are matched by specificity then declaration
+order (ADR-0011), so their order in the file is load-bearing.
 
 ## What you can and cannot reach
 
