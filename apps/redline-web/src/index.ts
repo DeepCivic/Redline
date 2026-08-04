@@ -53,6 +53,14 @@ export {
 } from "./lib/review-view";
 
 export {
+  renderDocumentView,
+  documentElementDomId,
+  type RenderDocumentViewInput,
+  type DocumentView,
+  type DocumentElementView,
+} from "./lib/document-view";
+
+export {
   PricingPivot,
   PIVOT_AXES,
   type PivotAxis,

@@ -118,7 +118,7 @@ reality demands it. These are decisions, not omissions:
 | Planning artefact | PRD + ADR + phase doc per feature | `architecture.md` (design) + `delivery-plan.md` (outstanding **items**, locally numbered); ADRs as needed | One-repo delivery, sequenced directly in the plan |
 | Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed item is **removed** from `delivery-plan.md`; its reasoning lives in git history and any durable change lands in `architecture.md` / an ADR. **No per-item docs** — `docs/threads/` was deleted deliberately | Keeps the plan to outstanding work only |
 | Validation | `validate.sh` assuming local Node + services | `validate.sh` runs via **Podman** when no local Node; services added per build step | Host here has no local Node |
-| E2E | Playwright suite exists day one (`/e2e`) | The UI cores + view models are framework-free and unit-tested under `apps/redline-web/`; the Playwright acceptance specs live in the forked Wayfinder (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`) and run against the served `/evaluations` index and `/evaluations/:id/{review,pivots,grouping}` routes | UI logic lives in a pure, testable core; the specs now target the served mount inside the fork — the `/e2e` deviation is closed |
+| E2E | Playwright suite exists day one (`/e2e`) | The UI cores + view models are framework-free and unit-tested under `apps/redline-web/`; the Playwright acceptance specs live in the forked Wayfinder (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`) and run against the served `/evaluations` index, the `/evaluations/:id/{review,pivots,grouping}` routes and `/evaluations/:id/documents/:documentId` | UI logic lives in a pure, testable core; the specs now target the served mount inside the fork — the `/e2e` deviation is closed |
 | Release model | alpha branches, `VERSION` sync | Pre-1.0; no alpha branches yet. Version bumps stated per build step | Not yet releasing |
 | Scope | `@rbrasier/*` | `@redline/*`, consuming `@rbrasier/*` read-only | This is an adapter, not the framework |
 
@@ -126,7 +126,8 @@ When a deviation stops making sense, add the corresponding Wayfinder
 convention and update this table. The Playwright specs now live in the forked
 Wayfinder (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`, branch
 `redline-integration`) beside Wayfinder's own suite, running against the served
-`/evaluations` index and `/evaluations/:id/{grouping,review,pivots}` routes
+`/evaluations` index, the `/evaluations/:id/{grouping,review,pivots}` routes and
+`/evaluations/:id/documents/:documentId`
 (ADR-0006/ADR-0019). Every spec that needs a *populated* evaluation gates on
 `E2E_REDLINE_EVALUATION_ID` — a real redline evaluation, which lands with the
 live corpus run — and skips otherwise, matching the fork's other seed-gated phase
