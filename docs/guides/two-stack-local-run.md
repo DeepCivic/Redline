@@ -127,6 +127,11 @@ pnpm --filter @wayfinder/web seed:redline "$(pwd)/../../manifest.json"
 It prints the evaluation id, the `/evaluations/:id/review` URL, and the
 `E2E_REDLINE_EVALUATION_ID=` line the Playwright specs gate on.
 
+Steps 2 and 3 are prerequisites, not just neighbours: the script resolves the
+governed language model through `getContainer()`, which fail-fast parses
+Wayfinder's whole env and opens its database. A fork stack that is not up fails
+here as an env parse error that says nothing about seeding.
+
 ### The manifest, and the one thing that will catch you
 
 **`documentIds` are womblex `source_hash` values, not filenames.** `source_hash`

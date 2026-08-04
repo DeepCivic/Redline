@@ -65,7 +65,9 @@ x-womblex-env: &womblex-env
 services:
   minio:
     image: docker.io/minio/minio:latest
-    profiles: ["ingest", "numbatch", "womblex"]
+    # Every profile whose services depend_on minio must list it, or compose
+    # rejects the project outright ("depends on undefined service").
+    profiles: ["ingest", "numbatch", "womblex", "womblex-cli", "money"]
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
@@ -166,7 +168,7 @@ services:
   # up standalone (see the credentials note in this file's header).
   womblex-queue:
     image: docker.io/library/postgres:16
-    profiles: ["womblex"]
+    profiles: ["womblex", "womblex-cli"]
     environment:
       POSTGRES_USER: womblex
       POSTGRES_PASSWORD: womblex
