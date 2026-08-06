@@ -214,15 +214,26 @@ class RealWomblexTextEmbedder:
     """
 
     def __init__(self, stage: Optional[QueryEmbedStage] = None) -> None:
-        # Resolved lazily so the base package installs — and the stub lane runs —
-        # without womblex or an Isaacus key.
-        self._stage = stage if stage is not None else load_womblex_query_embed_stage()
+        # NOT resolved here. `build_text_embedder("real")` runs during app
+        # start-up, and the read seam ships as a womblex-FREE image by design
+        # (architecture.md §1), so binding the engine in __init__ made query
+        # embedding fatal to boot — the sidecar died on ModuleNotFoundError
+        # before serving a single extraction read. Query similarity search is
+        # deferred anyway (ADR-0018 addendum), so the capability this needs must
+        # not gate the one it does not.
+        self._stage = stage
+
+    def _resolve_stage(self) -> QueryEmbedStage:
+        if self._stage is None:
+            self._stage = load_womblex_query_embed_stage()
+        return self._stage
 
     def embed(self, text: str) -> QueryEmbedding:
-        vectors = self._stage.embed_texts(
+        stage = self._resolve_stage()
+        vectors = stage.embed_texts(
             [text],
-            self._stage.client,
-            model=self._stage.model,
+            stage.client,
+            model=stage.model,
             task=QUERY_TASK,
         )
         if not vectors:
@@ -234,7 +245,7 @@ class RealWomblexTextEmbedder:
         # query·chunk dot product is well-formed; a producer that already
         # normalised pays only an idempotent second pass.
         return make_query_embedding(
-            model=self._stage.model,
+            model=stage.model,
             values=[float(value) for value in vectors[0]],
         )
 
