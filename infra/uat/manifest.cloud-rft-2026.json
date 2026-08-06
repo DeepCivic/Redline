@@ -1,0 +1,74 @@
+{
+  "evaluationId": "cloud-rft-2026",
+  "evaluationName": "Technology PoC REOI 2026",
+  "lens": {
+    "lensId": "cloud-rft-2026-lens",
+    "name": "Technology PoC evaluation",
+    "topics": [
+      {
+        "id": "solution",
+        "name": "Solution",
+        "definition": "The proposed technical solution, its architecture, components and how it meets the stated capability need."
+      },
+      {
+        "id": "delivery",
+        "name": "Delivery",
+        "definition": "Implementation approach, timeframes, milestones, resourcing and the plan for running the proof of concept."
+      },
+      {
+        "id": "support",
+        "name": "Support",
+        "definition": "Service levels, response and resolution times, escalation paths and ongoing maintenance."
+      },
+      {
+        "id": "commercial",
+        "name": "Commercial",
+        "definition": "Pricing, licensing, payment terms and any commercial assumptions or exclusions."
+      },
+      {
+        "id": "compliance",
+        "name": "Compliance",
+        "definition": "Security, privacy, accreditation, data residency and conformance with the stated conditions of participation."
+      }
+    ],
+    "rules": [
+      { "id": "rule-sla", "pattern": "service level", "topicId": "support" },
+      { "id": "rule-response-time", "pattern": "response time", "topicId": "support" },
+      { "id": "rule-escalation", "pattern": "escalation", "topicId": "support" },
+      { "id": "rule-price", "pattern": "price", "topicId": "commercial" },
+      { "id": "rule-licence", "pattern": "licence", "topicId": "commercial" },
+      { "id": "rule-gst", "pattern": "GST", "topicId": "commercial" },
+      { "id": "rule-security", "pattern": "security", "topicId": "compliance" },
+      { "id": "rule-privacy", "pattern": "privacy", "topicId": "compliance" },
+      { "id": "rule-data-residency", "pattern": "data residency", "topicId": "compliance" },
+      { "id": "rule-milestone", "pattern": "milestone", "topicId": "delivery" },
+      { "id": "rule-implementation", "pattern": "implementation", "topicId": "delivery" },
+      { "id": "rule-architecture", "pattern": "architecture", "topicId": "solution" }
+    ]
+  },
+  "vendors": [
+    { "id": "synth-one", "displayName": "Synth One" },
+    { "id": "synth-two", "displayName": "Synth Two" },
+    { "id": "synth-three", "displayName": "Synth Three" }
+  ],
+  "groups": [
+    {
+      "id": "synth-one-response",
+      "label": "Synth One",
+      "vendorIds": ["synth-one"],
+      "documentIds": ["99d1905239ab91cb6c1bd8eaf36fbea73224bf66f74a4e39f9a867c44bf40070"]
+    },
+    {
+      "id": "synth-two-response",
+      "label": "Synth Two",
+      "vendorIds": ["synth-two"],
+      "documentIds": ["cf1a28b3d75cdded296cdf25ea542ed4ad7ef7e1a55705e8ae3ecef624426f36"]
+    },
+    {
+      "id": "synth-three-response",
+      "label": "Synth Three",
+      "vendorIds": ["synth-three"],
+      "documentIds": ["6d553c65e4cf4f93c868d65cdb2c4dccf7a629eb2126b01f3f5f7e3c035c5105"]
+    }
+  ]
+}
