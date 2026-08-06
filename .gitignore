@@ -5,6 +5,11 @@ coverage/
 *.log
 .env
 .env.local
+# Suffixed env files hold real API keys (infra/uat/.env.uat). The bare `.env`
+# pattern above does not match them, and infra/uat/ is committed as a directory.
+.env.*
+!.env.example
+!.env.*.example
 .DS_Store
 
 # Podman validation scratch (created by scripts/podman-run.sh if SCRATCH_BASE is set here)

@@ -1,0 +1,143 @@
+# UAT overlay — the forked Wayfinder stack, pointed at redline's running services.
+#
+# WHY this is a separate project and not a copy of redline's services: the
+# womblex engine publishes shards into the `redline` project's MinIO, and the
+# sidecar reads them back from the same bucket. A second MinIO here would leave
+# every seeded evaluation reading an empty prefix while looking healthy. So this
+# file defines the FORK's services only and joins redline's network to reach
+# redline-postgres, minio and womblex-ingest by service name.
+#
+# WHY the web app is containerised when docs/guides/two-stack-local-run.md runs
+# it on the host: this host has no local Node. That guide's step 3 is the shipped
+# design; this is local UAT scaffolding for a host that cannot follow it.
+#
+# Bring redline up first — the external network below is created by that project:
+#   podman compose -f infra/docker-compose.yml --profile ingest up -d
+#   podman compose -f infra/uat/docker-compose.yml --env-file infra/uat/.env.uat up -d --build
+
+name: redline-uat
+
+networks:
+  default:
+  # Created by `infra/docker-compose.yml` (project `redline`). External so this
+  # project attaches rather than owning it: tearing UAT down must not remove the
+  # network redline's own services are still on.
+  redline:
+    external: true
+    name: redline_default
+
+services:
+  # Mirrors services/wayfinder/docker-compose.yml. Host ports are shifted off the
+  # fork's defaults (5433, 9000/9001) because those are exactly redline's own
+  # published ports — the two stacks cannot both bind them. Container-internal
+  # ports are unchanged, so nothing in the app's configuration moves.
+  wayfinder-postgres:
+    image: docker.io/pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: wayfinder
+    ports:
+      - "5443:5432"
+    volumes:
+      - wayfinder-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      # Generous: initdb's first run on this host's btrfs storage overruns a
+      # 60s budget, and compose fails the whole `up` when the gate expires.
+      retries: 60
+
+  wayfinder-minio:
+    image: docker.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9020:9000"
+      - "9021:9001"
+    volumes:
+      - wayfinder-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  wayfinder-web:
+    build:
+      context: ../..
+      dockerfile: infra/uat/Containerfile.web
+    depends_on:
+      wayfinder-postgres:
+        condition: service_healthy
+      wayfinder-minio:
+        condition: service_healthy
+    networks:
+      - default
+      - redline
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@wayfinder-postgres:5432/wayfinder
+      WEB_PORT: "3000"
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set in infra/uat/.env.uat}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?set in infra/uat/.env.uat}
+      SCHEDULER_TICK_SECRET: ${SCHEDULER_TICK_SECRET:?set in infra/uat/.env.uat}
+      MINIO_ENDPOINT: wayfinder-minio
+      MINIO_PORT: "9000"
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL:-admin@example.com}
+      # Wayfinder's own AI provider. All optional in the fork's env schema, so a
+      # blank passes through and the app boots without them.
+      AI_DEFAULT_PROVIDER: ${AI_DEFAULT_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      AWS_BEDROCK_REGION: ${AWS_BEDROCK_REGION:-us-east-1}
+      AWS_BEDROCK_ACCESS_KEY_ID: ${AWS_BEDROCK_ACCESS_KEY_ID:-}
+      AWS_BEDROCK_SECRET_ACCESS_KEY: ${AWS_BEDROCK_SECRET_ACCESS_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      # Reached over this project's network, so the service name — not the host
+      # port. z.string().url(), so it must never resolve to an empty value.
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://langfuse:3000}
+      # Reached over the `redline` network. Never Wayfinder's DATABASE_URL
+      # (ADR-0002) — redline owns its schema in its own instance.
+      REDLINE_DATABASE_URL: postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}
+      REDLINE_WOMBLEX_INGEST_URL: http://womblex-ingest:8000
+      # Endpoint and model are NOT operator concerns — they default to the pair
+      # this UAT actually runs on (Groq, verified end to end), so only the key
+      # belongs in the env file. `:-` substitutes on empty as well as unset, so a
+      # blanked or deleted line falls back here rather than breaking anything.
+      # These two must move together: a Groq key against OpenAI's endpoint 401s,
+      # and gpt-4o-mini against Groq's 404s.
+      REDLINE_ADJUDICATOR_BASE_URL: ${REDLINE_ADJUDICATOR_BASE_URL:-https://api.groq.com/openai/v1}
+      REDLINE_ADJUDICATOR_API_KEY: ${REDLINE_ADJUDICATOR_API_KEY:-}
+      REDLINE_ADJUDICATOR_MODEL: ${REDLINE_ADJUDICATOR_MODEL:-openai/gpt-oss-120b}
+      REDLINE_PRODUCT_NAME: ${REDLINE_PRODUCT_NAME:-the product}
+    ports:
+      - "3000:3000"
+
+  # Optional. Wayfinder reads it for LLM observability; nothing in the redline
+  # mount depends on it, so a failure here does not block UAT.
+  langfuse:
+    image: docker.io/langfuse/langfuse:2
+    depends_on:
+      wayfinder-postgres:
+        condition: service_healthy
+    ports:
+      - "3030:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@wayfinder-postgres:5432/wayfinder
+      NEXTAUTH_URL: http://localhost:3030
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-replace-me}
+      SALT: ${LANGFUSE_SALT:-replace-me}
+      TELEMETRY_ENABLED: "false"
+
+volumes:
+  wayfinder-postgres-data:
+  wayfinder-minio-data:
