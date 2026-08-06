@@ -191,7 +191,7 @@ should shape it rather than be assumed. In dependency order:
 | Item | Package(s) | Notes |
 |---|---|---|
 | Collision selection, ordering & capping | domain | Bounded, deterministic selection of genuinely ambiguous documents. |
-| `BoundaryDecision` entity | domain | Net-new modelling. Owns "primary/secondary semantics" (see §6). |
+| `BoundaryDecision` entity | domain | Net-new modelling. Owns primary/secondary semantics. |
 | Decision persistence + corrections push | adapters | Shrunk: upstream owns corrections + audit — an adapter call over an existing API, not a build. |
 | Lens persistence | adapters | Shrunk: the classification-side tables are built. What remains: the lens's Numbatch bindings (references, not copies), the authoring surface, and the durable-asset surface. |
 | Lens portability | application | Apply a saved lens to a different corpus; its boundary decisions still bite. |

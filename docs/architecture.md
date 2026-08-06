@@ -607,6 +607,21 @@ carried as provenance, not as part of the join key (see §7).
    document human-review gate. `true` would register the server but make it **not
    selectable in flows**, which would make the assembler unbuildable.
 
+7. **An evaluation prefix holds many runs; a reader must select one.** The engine
+   publishes under `proc/{evaluationId}/runs/run-<timestamp>/documents/`, and a
+   re-run adds a directory rather than replacing one — the engine's
+   `processing.retention` policy governs its own output root, not this prefix. So
+   `proc/{evaluationId}/` accumulates N copies of every shard class, and any
+   reader that discovers shards by suffix across the whole prefix returns each row
+   N times. The run id is the selector: the stage runner already takes
+   `--run-id`, and every read seam needs the same.
+
+   **This invariant is currently violated.** `RealWomblexExtractor.extract` lists
+   the whole prefix and concatenates by suffix, so served extractions carry
+   duplicated elements and a `elementOrder` that no longer identifies one element.
+   Tracked in the delivery plan; recorded here because the invariant is the
+   durable half and the fix must not be re-derived.
+
 ---
 
 ## 6. Repository layout
@@ -827,6 +842,34 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    Numbatch has no currency capability of its own either. redline's classification
    and financial extraction therefore stay exactly where §1 and §4 put them, and
    the Numbatch financial extension stays genuinely additive.
+
+7. **Three Isaacus-gated stages, not two — and only one is satisfied offline.**
+   Earlier text framed the boundary as chunk-and-embed. `enrich` declares the same
+   need (`kanon-2-enricher`), and it is now enabled in redline's profile. Of the
+   three, only `chunk` is satisfied by a placeholder key, because its tokeniser is
+   vendored in-tree and it makes no call; `embed` and `enrich` both spend against
+   a real credential. A deployment without an Isaacus account gets extraction and
+   chunks and nothing else.
+
+8. **The column-evidenced money path contributed nothing on a native-text
+   corpus — measured, not assumed.** The pricing design leans on womblex's finding
+   that ~98.7% of its corpus's amounts are bare numbers whose money-ness comes
+   from a column header. On the first real procurement corpus (2026-08-06,
+   1 REOI + 3 responses) that path recovered **zero**: 42 columns audited, 38
+   `insufficient`, 4 `vetoed`, none promoted, because no header carried money
+   vocabulary at all. All 65 money spans came from prose with an explicit symbol.
+
+   The reading is about corpus shape rather than the classifier: these documents
+   contain no priced tender schedule. It does mean the header/veto vocabulary in
+   `infra/womblex/redline.yaml` is **unvalidated by measurement**, and that a
+   corpus with real pricing tables is what would validate it.
+
+9. **The OCR-table gates are unexercised on redline's own path.** All four
+   documents of the first real corpus extracted `structured` via `native_text`,
+   and all 7 tables were native, so the paddleocr-only, deskew-refusal and
+   precision-refusal gates never executed. They guard the table-cell
+   reconstruction that recovers pricing from scanned tenders — a real consequence
+   — and remain unproven here until a scanned corpus runs.
 
 ---
 
