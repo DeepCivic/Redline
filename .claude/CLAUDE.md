@@ -23,19 +23,25 @@ run `./validate.sh` and fix all failures before declaring done.
 
 | If the user is asking to…                                        | Run            |
 | ---------------------------------------------------------------- | -------------- |
-| Plan a new build step or component (add/refine an item in the plan) | Answer directly, then `/doc-review` |
-| Review a planned build step before building it                   | `/doc-review`  |
+| Plan a new build step or component (add/refine an item in the plan) | Answer directly — **stop there** |
 | Implement an outstanding item from the delivery plan, write code | `/build`       |
 | Change or extend something already built                         | `/enhance`     |
 | Fix something broken or not working                              | `/bugfix`      |
+| Review a planned build step, only when explicitly asked          | `/doc-review`  |
 | Anything else                                                    | Answer directly |
 
 Planning new work is not its own skill: add or refine the item directly in
 `docs/delivery-plan.md` (§2/§3) against the build-step contract in §1 — one build
 step including its test, one commit, one package where possible, an explicit
-`_Exit: …_` test — then route to `/doc-review`. Split the item if its exit test
-joins two independently-testable behaviours, spans two languages, or introduces a
-new entity *and* port *and* adapter at once.
+`_Exit: …_` test. Split the item if its exit test joins two independently-testable
+behaviours, spans two languages, or introduces a new entity *and* port *and*
+adapter at once.
+
+**There is no review step between planning and building.** Do not offer or run
+`/doc-review` after writing an item. Accepting the plan change *is* the approval —
+the next move is `/build`, and it waits for the user to name the item, not for a
+second opinion on the wording. `/doc-review` exists for when a plan is explicitly
+handed over for review; it is never the automatic next step.
 
 ---
 
