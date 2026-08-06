@@ -26,8 +26,9 @@ export * from "./entities/ambiguity-signal";
 export * from "./entities/ambiguity-derivation";
 
 // Ports
-// Adjudication — the lens's LLM seam; picks among contending topics
-// for what retrieval left unclear and returns a one-sentence rationale.
+// Adjudication — the lens's LLM seam. One call per document returns every topic
+// the document addresses, each with the chunks that placed it, plus the call's
+// token cost and, for a document that addresses nothing, an exception.
 export * from "./ports/adjudicator";
 // Retrieval store — the ADR-0018 store-side query surface (item 1a/1b). Exact
 // fetch by provenance ships now; vector similarity (findSimilar) is declared

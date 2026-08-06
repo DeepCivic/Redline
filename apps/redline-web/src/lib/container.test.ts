@@ -537,8 +537,15 @@ describe("container — cold-start classifier wiring (item 1b)", () => {
     async adjudicate(request: AdjudicationRequest): Promise<Result<Adjudication>> {
       const verdict: Adjudication = {
         documentId: request.documentId,
-        chosenTopicId: request.candidates[0].topicId,
-        rationale: "chosen on the passages",
+        topics: [
+          {
+            topicId: request.candidates[0].topicId,
+            evidenceChunkIds: [request.passages[0].chunkId],
+            rationale: "chosen on the passages",
+          },
+        ],
+        exception: null,
+        cost: null,
       };
       return ok(verdict);
     },
@@ -617,8 +624,15 @@ describe("container — cold-start classifier wiring (item 1b)", () => {
         modelCalls += 1;
         return ok({
           documentId: request.documentId,
-          chosenTopicId: request.candidates[0].topicId,
-          rationale: "",
+          topics: [
+            {
+              topicId: request.candidates[0].topicId,
+              evidenceChunkIds: request.passages.map((passage) => passage.chunkId),
+              rationale: "",
+            },
+          ],
+          exception: null,
+          cost: null,
         });
       },
     };

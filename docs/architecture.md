@@ -433,9 +433,9 @@ advances the stage: `documents_uploaded → grouping`.
 NB: the nearest-neighbour **placing** step is deferred — it is
 the only leg needing vector similarity search (`findSimilar`), not built this
 release. So the cold-start path runs hard rules + adjudication over
-exact/structural fetch, **without** a similarity ranking; the store's stable order
-stands in for provenance (the first fetched chunk is the `sourceChunkId`). Output
-is `RequirementClassification { documentId, requirementId, confidence,
+exact/structural fetch, **without** a similarity ranking; the `sourceChunkId` is
+the chunk the model cited as placing the topic. Output is
+`RequirementClassification { documentId, requirementId, confidence,
 sourceChunkId }` — identical shape whichever path produced it. Composed as
 `ColdStartClassifier` (redline-application), wired behind the port in
 `lib/container.ts` (`buildColdStartClassifier`).

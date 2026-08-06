@@ -36,7 +36,8 @@ import {
 //   2. LLM adjudication over *exact/structural* fetch. For every unclaimed
 //      document, its passages are read verbatim from the store by structure
 //      (`fetchByStructure({ documentId })`) — the transfer mechanic, not a
-//      similarity ranking — and the adjudicator chooses among the lens topics.
+//      similarity ranking — and the adjudicator names the lens topics the
+//      document addresses, each with the chunks that placed it.
 //
 // The lens context (topics, rule set, per-document candidates) is resolved
 // **per call** through `IClassificationLensReader`, not held as constructor
@@ -127,10 +128,15 @@ export class ColdStartClassifier implements IProcurementClassifier {
     return ok(rows);
   }
 
-  // Fetch a document's chunks verbatim by structure and let the model pick a
-  // topic. A document the store has no chunks for is skipped — an absent
-  // extraction is a legitimate outcome, not a failed run (ADR-0018), so the rest
-  // of the group still classifies. Returns null for a skipped document.
+  // Fetch a document's chunks verbatim by structure and let the model name the
+  // topics it addresses. Two documents produce no row and are skipped rather
+  // than failed: one the store has no chunks for (an absent extraction is a
+  // legitimate outcome, not a failed run — ADR-0018), and one the model says
+  // addresses nothing in the lens. Returns null for both.
+  //
+  // The verdict is set-valued but only its first topic becomes a row here: the
+  // (document, topic) grain is delivery-plan item 2's change to this class, and
+  // carrying both exceptions to a surface a specialist reads belongs with it.
   private async adjudicate(
     evaluationId: string,
     documentId: string,
@@ -156,7 +162,10 @@ export class ColdStartClassifier implements IProcurementClassifier {
     const [firstChunk, ...restChunks] = fetched.data;
     if (firstChunk === undefined) return ok(null);
 
-    const passages = [firstChunk, ...restChunks].map((chunk) => chunk.text);
+    const passages = [firstChunk, ...restChunks].map((chunk) => ({
+      chunkId: chunk.chunkId,
+      text: chunk.text,
+    }));
     const verdict = await this.dependencies.adjudicator.adjudicate({
       documentId,
       passages,
@@ -164,16 +173,34 @@ export class ColdStartClassifier implements IProcurementClassifier {
     });
     if (isErr(verdict)) return err(verdict.error);
 
-    // The model must choose a topic it was offered — never invent one. The port
+    // An empty set is a verdict, not a fault: the document addresses nothing the
+    // lens asks about, so there is no row to emit.
+    const [addressed] = verdict.data.topics;
+    if (addressed === undefined) return ok(null);
+
+    // The model must name a topic it was offered — never invent one. The port
     // promises this; the classifier enforces it at the boundary.
     const chosen = adjudicationCandidates.find(
-      (candidate) => candidate.topicId === verdict.data.chosenTopicId,
+      (candidate) => candidate.topicId === addressed.topicId,
     );
     if (!chosen) {
       return err(
         domainError(
           "CLASSIFICATION_FAILED",
-          `adjudicator chose topic '${verdict.data.chosenTopicId}', which was not offered for document '${documentId}'`,
+          `adjudicator returned topic '${addressed.topicId}', which was not offered for document '${documentId}'`,
+        ),
+      );
+    }
+
+    // Provenance is the chunk the model cited as placing the topic, not the
+    // document's first chunk. The port guarantees at least one; a verdict
+    // without evidence is a broken implementation, not a row to emit.
+    const [evidenceChunkId] = addressed.evidenceChunkIds;
+    if (evidenceChunkId === undefined) {
+      return err(
+        domainError(
+          "CLASSIFICATION_FAILED",
+          `adjudicator returned topic '${addressed.topicId}' with no evidence for document '${documentId}'`,
         ),
       );
     }
@@ -182,10 +209,7 @@ export class ColdStartClassifier implements IProcurementClassifier {
       documentId,
       requirementId: chosen.topicId,
       confidence: CERTAIN,
-      // Provenance: the strongest signal is the first fetched chunk. Without a
-      // similarity ranking (deferred), the store's stable order stands in for
-      // "which chunk carried it" — the first chunk of the document.
-      sourceChunkId: firstChunk.chunkId,
+      sourceChunkId: evidenceChunkId,
     });
   }
 }

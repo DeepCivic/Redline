@@ -90,19 +90,31 @@ class RecordingChunkStore implements IChunkStore {
   }
 }
 
+// A verdict naming one topic, cited to the first passage the model was given —
+// the shape the fakes below return. Building it here keeps each fake to the one
+// thing it varies.
+const verdictFor = (request: AdjudicationRequest, topicId: string): Adjudication => ({
+  documentId: request.documentId,
+  topics: [
+    {
+      topicId,
+      evidenceChunkIds: [request.passages[0]!.chunkId],
+      rationale: "the passage speaks to this topic",
+    },
+  ],
+  exception: null,
+  cost: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
+});
+
 // An adjudicator that records the passages it was handed and returns a fixed
-// verdict. The test asserts the passages are the store's verbatim chunk text.
+// verdict. The test asserts the passages are the store's verbatim chunk text,
+// each addressed by the chunk it came from.
 class RecordingAdjudicator implements IAdjudicator {
   public requests: AdjudicationRequest[] = [];
   constructor(private readonly chosenTopicId: string) {}
   async adjudicate(request: AdjudicationRequest) {
     this.requests.push(request);
-    const verdict: Adjudication = {
-      documentId: request.documentId,
-      chosenTopicId: this.chosenTopicId,
-      rationale: "the passage speaks to this topic",
-    };
-    return ok(verdict);
+    return ok(verdictFor(request, this.chosenTopicId));
   }
 }
 
@@ -112,10 +124,21 @@ class FirstCandidateAdjudicator implements IAdjudicator {
   public requests: AdjudicationRequest[] = [];
   async adjudicate(request: AdjudicationRequest) {
     this.requests.push(request);
+    return ok(verdictFor(request, request.candidates[0]!.topicId));
+  }
+}
+
+// An adjudicator whose verdict is that the document addresses nothing in the
+// lens — a legitimate outcome, reported as an exception.
+class AddressesNothingAdjudicator implements IAdjudicator {
+  public requests: AdjudicationRequest[] = [];
+  async adjudicate(request: AdjudicationRequest) {
+    this.requests.push(request);
     const verdict: Adjudication = {
       documentId: request.documentId,
-      chosenTopicId: request.candidates[0]!.topicId,
-      rationale: "the first candidate fits",
+      topics: [],
+      exception: { documentId: request.documentId, detail: "a covering letter, nothing more" },
+      cost: null,
     };
     return ok(verdict);
   }
@@ -201,9 +224,13 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
     // The lens was resolved for this evaluation, carrying the documents in play.
     expect(lensReader.requests).toEqual([{ evaluationId: "e1", documentIds: ["doc-1"] }]);
 
-    // Passages came from the store's verbatim chunk text, in order.
+    // Passages came from the store's verbatim chunk text, in order, each
+    // addressed by its chunk id so the verdict can cite the chunk that placed it.
     expect(adjudicator.requests).toHaveLength(1);
-    expect(adjudicator.requests[0].passages).toEqual(["we provide 24/7 support", "and a helpdesk"]);
+    expect(adjudicator.requests[0].passages).toEqual([
+      { chunkId: "doc-1:0", text: "we provide 24/7 support" },
+      { chunkId: "doc-1:1", text: "and a helpdesk" },
+    ]);
     // The candidates offered were the lens topics.
     expect(adjudicator.requests[0].candidates.map((c) => c.topicId)).toEqual([
       "req-support",
@@ -379,6 +406,32 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
     expect(result.data).toEqual([]);
     // No passages, so the model is never asked to adjudicate nothing.
     expect(adjudicator.requests).toEqual([]);
+  });
+
+  it("emits no row for a document the adjudicator says addresses no topic", async () => {
+    const store = new RecordingChunkStore();
+    store.seed("doc-1", [chunk({ chunkId: "doc-1:0", chunkIndex: 0 })]);
+    const adjudicator = new AddressesNothingAdjudicator();
+
+    const classifier = new ColdStartClassifier({
+      chunkStore: store,
+      adjudicator,
+      lensReader: readerFor(),
+    });
+
+    const result = await classifier.classifyResponseGroup({
+      evaluationId: "e1",
+      responseGroupId: "g1",
+      documentIds: ["doc-1"],
+    });
+
+    // The document was read and adjudicated — it simply matched nothing, which
+    // is a verdict, not a failure. Carrying that exception on to a surface a
+    // specialist looks at is delivery-plan item 2's job, not this port's.
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data).toEqual([]);
+    expect(adjudicator.requests).toHaveLength(1);
   });
 
   it("refuses to adjudicate when fewer than two topics are in contention", async () => {
