@@ -87,7 +87,7 @@ embedding:
 # LIVE as of the v0.3.0 submodule bump: the pinned engine defines `MoneyConfig`
 # (services/womblex/src/womblex/config.py:521, mounted at `WomblexConfig.money`),
 # so these keys are read rather than ignored. The redline side is built too — the
-# money stage runs over object storage (services/womblex-ingest money_stage.py)
+# money stage runs over object storage (`womblex run-stage --stage money`)
 # and MoneySpanFinancialExtractor sums its spans into grid AUD.
 #
 # Not part of `womblex run`/`worker`: this is a separate per-stage command

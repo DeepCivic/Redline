@@ -12,7 +12,7 @@
 >
 > It is written against the *actual* behaviour of
 > the upstream engines (womblex is vendored as a submodule at `services/womblex`,
-> pinned to `v0.3.0`; Numbatch is a submodule at `services/numbatch`), not against
+> pinned to `f283969`; Numbatch is a submodule at `services/numbatch`), not against
 > aspiration. Where an earlier assumption proved false, the correction is stated
 > plainly under **Corrections to earlier assumptions**.
 
@@ -113,7 +113,7 @@ flowchart TB
 
     sidecar -->|reads Parquet| minio[("MinIO — redline-owned bucket<br/>proc/evaluationId/*.parquet")]
     sidecar -->|loads chunk rows + embeddings| pg
-    engine["services/womblex — SUBMODULE @ v0.3.0<br/>the real engine: extract → chunk → embed"]
+    engine["services/womblex — SUBMODULE @ f283969<br/>the real engine: extract, then run-stage for chunk → embed"]
     engine -->|writes shards| minio
     engine -->|embed stage only| isaacus(["Isaacus API<br/>ISAACUS_API_KEY"])
 
@@ -160,9 +160,9 @@ flowchart TB
 - **`services/womblex`** is built from its **own** Dockerfile and run through its
   **own** cloud runner (Postgres job queue, scalable worker, native S3 staging).
   Only its `embed` stage reaches Isaacus.
-- **`services/womblex-ingest` also runs the `money` op on demand**
-  (`money_stage.py` / the `money` compose profile): it stages an evaluation's
-  shards down, runs womblex's `money_shards()`, and publishes `*.money_spans` /
+- **The `money` op runs on demand like any other stage** (`run-stage --stage
+  money`, the `stage` compose profile): it stages an evaluation's shards down,
+  runs womblex's `money_shards()`, and publishes `*.money_spans` /
   `*.money_columns` back — offline, no Isaacus. See §4 step (2').
 
 **The fork (`services/wayfinder`).** Its `apps/web` serves the
@@ -349,11 +349,17 @@ flowchart TB
 | `womblex chunk` | `*.chunks.parquet` | Isaacus-gated (a policy refusal — §7.1) |
 | `womblex embed` | `*.embeddings.parquet` | only with `ISAACUS_API_KEY` |
 
-NB (v0.3.0): `womblex run` persists only extract shards; `chunk` and `embed` are
-separate per-stage commands (`womblex chunk --shards`, `womblex embed --shards`)
-over the run's shard dir. All shards land under `proc/{evaluationId}/`
-(`batch-NNNN.<role>.parquet`). `source_hash` (SHA-256 of the source bytes) is the
-document identity throughout.
+NB: `womblex run`/`worker` persists **extraction shards only** — it computes
+chunking when `chunking.enabled` and then discards it, because
+`operations/persist.py` hands `write_results` just the extraction. Every
+downstream pass is therefore a separate one over the run's shard prefix, and
+`womblex run-stage` (`f283969`) is that pass: it lists one sidecar class, stages a
+unit down, calls the unchanged `*_shards()` and publishes the declared outputs
+back — all of them or none. It covers normalise, spellfix, chunk, money, enrich,
+embed, link, pii, graph-refresh and quality; ordering between them is the
+caller's. Run it through the `stage` compose profile. All shards land under
+`proc/{evaluationId}/` (`batch-NNNN.<role>.parquet`). `source_hash` (SHA-256 of
+the source bytes) is the document identity throughout.
 
 **(2') Money annotation — the sidecar, on demand (v0.3.0).** Not part of `womblex
 run`/`worker` (offline, API-free, no ordering dependency), so it runs after a run
@@ -617,7 +623,7 @@ redline/
 │   ├── redline-adapters/          port implementations (the only code at the seams)
 │   └── redline-shared/            shared kernel
 ├── services/
-│   ├── womblex/                   ◄ SUBMODULE: the real womblex engine @ v0.3.0
+│   ├── womblex/                   ◄ SUBMODULE: the real womblex engine @ f283969
 │   ├── womblex-ingest/            FastAPI read sidecar (reads MinIO Parquet → JSON)
 │   │   ├── src/womblex_ingest/    stub + real extractor, records (wire shape),
 │   │   │                          shard_reader (schema map), storage, embedding,
@@ -662,8 +668,10 @@ redline/
 
 ### Vendoring / pinning discipline
 
-- **womblex** — git **submodule** at `services/womblex`, pinned to tag `v0.3.0`
-  (`b5730b0`). This is the on-disk source of truth for the Parquet schema the
+- **womblex** — git **submodule** at `services/womblex`, pinned to `f283969` — an
+  **untagged `main` commit**, deliberately ahead of the last release (`v0.3.0`,
+  `b5730b0`), for `womblex run-stage`. See ADR-0021 for why an untagged pin was
+  accepted. This is the on-disk source of truth for the Parquet schema the
   sidecar maps, **and the source the engine image is built from** — the `womblex`
   compose profile builds the submodule's own `Dockerfile`. Initialise it with
   `git submodule update --init`; CI checks it out (`submodules: true`). The
@@ -733,9 +741,9 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    never reaches a shard — so a keyed run does the work twice. That is wasted CPU
    and wall clock, not Isaacus spend: redline sets no `chunking_model`, so chunking
    is local `semchunk` over the vendored tokeniser. `chunking.enabled: false` for
-   the `run` pass avoids it and is safe for the `chunk --shards` command, which
+   the `run` pass avoids it and is safe for `run-stage --stage chunk`, which
    ignores the flag; `womblex chunk --config` refuses outright when it is false
-   (`cli/pipeline.py:417-419`).
+   (`cli/pipeline.py:417-419`), so do not flip it if anyone uses that form.
 
 2. **Retrieval requires Isaacus.** `*.embeddings.parquet` is produced only by
    `kanon-2-embedder` (Isaacus). redline's retrieval classification

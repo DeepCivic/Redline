@@ -280,21 +280,29 @@ fi
 # different engine. SKIPs (never fails) on a clone without the submodule
 # initialised, so a Wayfinder-style "green on a clean clone" still holds; CI
 # checks out submodules, so CI is where this actually bites.
-section "13. womblex submodule tag matches the sidecar's pin"
+section "13. womblex submodule version matches the sidecar's pin"
 WOMBLEX_EXTRA_PIN="$(grep -oE '"womblex==[0-9]+\.[0-9]+\.[0-9]+"' services/womblex-ingest/pyproject.toml 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
 if [ -z "$WOMBLEX_EXTRA_PIN" ]; then
   skip "womblex pin — no womblex== pin found in the sidecar's pyproject.toml"
 elif [ ! -f services/womblex/pyproject.toml ]; then
   skip "womblex pin — services/womblex not initialised (git submodule update --init)"
 else
-  WOMBLEX_SUBMODULE_TAG="$(git -C services/womblex describe --tags --exact-match 2>/dev/null | sed 's/^v//')"
-  if [ -z "$WOMBLEX_SUBMODULE_TAG" ]; then
-    warn "womblex submodule is not on an exact tag — cannot compare against the ${WOMBLEX_EXTRA_PIN} pin"
-    skip "womblex pin — submodule not on a tagged commit"
-  elif [ "$WOMBLEX_SUBMODULE_TAG" = "$WOMBLEX_EXTRA_PIN" ]; then
-    pass "womblex pin (submodule v${WOMBLEX_SUBMODULE_TAG} == sidecar pin ${WOMBLEX_EXTRA_PIN})"
+  # An exact tag is preferred, but the pin is deliberately an untagged `main`
+  # commit (ADR-0021 — taken for `womblex run-stage`). Falling back to the
+  # version the submodule DECLARES keeps this check live on an untagged pin;
+  # skipping there would silently retire the one drift nothing else catches.
+  WOMBLEX_SUBMODULE_VERSION="$(git -C services/womblex describe --tags --exact-match 2>/dev/null | sed 's/^v//')"
+  WOMBLEX_VERSION_SOURCE="tag"
+  if [ -z "$WOMBLEX_SUBMODULE_VERSION" ]; then
+    WOMBLEX_SUBMODULE_VERSION="$(grep -oE '^version *= *"[0-9]+\.[0-9]+\.[0-9]+"' services/womblex/pyproject.toml 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    WOMBLEX_VERSION_SOURCE="declared (untagged commit $(git -C services/womblex rev-parse --short HEAD 2>/dev/null))"
+  fi
+  if [ -z "$WOMBLEX_SUBMODULE_VERSION" ]; then
+    skip "womblex pin — services/womblex declares no version and is on no tag"
+  elif [ "$WOMBLEX_SUBMODULE_VERSION" = "$WOMBLEX_EXTRA_PIN" ]; then
+    pass "womblex pin (submodule ${WOMBLEX_SUBMODULE_VERSION} [${WOMBLEX_VERSION_SOURCE}] == sidecar pin ${WOMBLEX_EXTRA_PIN})"
   else
-    fail "womblex pin drift: services/womblex is v${WOMBLEX_SUBMODULE_TAG} but the sidecar pins womblex==${WOMBLEX_EXTRA_PIN}. Move both together (see services/womblex-ingest/pyproject.toml)"
+    fail "womblex pin drift: services/womblex is ${WOMBLEX_SUBMODULE_VERSION} [${WOMBLEX_VERSION_SOURCE}] but the sidecar pins womblex==${WOMBLEX_EXTRA_PIN}. Move both together (see services/womblex-ingest/pyproject.toml)"
   fi
 fi
 
