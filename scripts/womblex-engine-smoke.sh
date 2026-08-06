@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
 # womblex-engine-smoke.sh — proves the real womblex engine lands shards in redline's MinIO.
 #
-# Replaces the retired scripts/thread-37a-womblex-pod.sh. The ASSERTION is
-# unchanged (real *.elements / *.chunks — and, with an Isaacus key, *.embeddings
-# — land under proc/{evaluationId}/); what changed is that redline no longer
-# supplies the pod. The engine is built from the ../services/womblex submodule
-# with its OWN Dockerfile and driven through its OWN cloud runner:
+# Replaces the retired scripts/thread-37a-womblex-pod.sh. The engine is built
+# from the ../services/womblex submodule with its OWN Dockerfile and driven
+# through its OWN cloud runner:
 #
 #   1. bring up minio + the engine's Postgres job queue + its schema init,
 #   2. stage the corpus into object storage (the runner's only input seam),
 #   3. `womblex enqueue` the corpus, then drain it with `womblex worker`,
-#   4. assert the shards landed under proc/{eval}/.
+#   4. run the downstream stages chunk -> embed -> enrich -> money,
+#   5. assert all eight shard classes landed under proc/{eval}/.
 #
-# ISAACUS_API_KEY is REQUIRED, and not only for embed. Both the chunk and embed
-# contracts declare an Isaacus need, and run-stage refuses a stage it cannot
-# satisfy rather than publishing nothing — so without a key this script fails at
-# the chunk stage instead of quietly proving less than it claims. Chunking still
-# makes no API call (the Kanon-2 tokeniser is vendored in-tree); the key is a
-# policy gate there, a real credential for embed.
+# ISAACUS_API_KEY is REQUIRED, and not only for embed. The chunk, embed and
+# enrich contracts all declare an Isaacus need, and run-stage refuses a stage it
+# cannot satisfy rather than publishing nothing — so without a key this script
+# fails at the chunk stage instead of quietly proving less than it claims.
+#
+# Only chunk is satisfied by a placeholder: it makes no API call (the Kanon-2
+# tokeniser is vendored in-tree), so the key is a policy gate there. embed
+# (kanon-2-embedder) and enrich (kanon-2-enricher) both spend against a real
+# credential, so `uat-local` gets you as far as the embed stage and no further.
 #
 # Requires: the submodule checked out (`git submodule update --init`) and podman
 # (or docker) with compose. Uses the redline-owned stack only (ADR-0002).
@@ -124,7 +126,12 @@ if [ -z "$RUN_ID" ]; then
 fi
 echo ">> running the downstream stages over $RUN_ID"
 
-for stage in chunk embed; do
+# Ordering is load-bearing, not cosmetic. `enrich` takes chunks as a NON-STRICT
+# input: without them it still succeeds, but every entity lands with
+# chunk_index = -1 and the graph cannot be joined to chunk text. `money` reads
+# the element shards only, so it is independent of both — it is last because
+# nothing downstream of it needs its output first.
+for stage in chunk embed enrich money; do
   echo "   -- run-stage --stage $stage"
   compose_stage run --rm stage \
     --stage "$stage" --run-id "$RUN_ID" \
@@ -150,6 +157,16 @@ check() {
 check ".elements.parquet"
 check ".chunks.parquet"
 check ".embeddings.parquet"
+# enrich writes exactly three sidecars here: `_enrich_outputs` adds
+# *.enrichment_doc.parquet only under `persist_document` or an AI
+# `chunking.chunking_model`, and redline sets neither.
+check ".enrichment_entities.parquet"
+check ".enrichment_meta.parquet"
+check ".graph_edges.parquet"
+# money_columns is the per-column verdict audit that makes redline.yaml's
+# PROVISIONAL header/veto terms falsifiable — assert it, not just the spans.
+check ".money_spans.parquet"
+check ".money_columns.parquet"
 
 if [ "$FAILED" -ne 0 ]; then echo; echo "WOMBLEX ENGINE SMOKE: FAILED"; exit 1; fi
 echo; echo "WOMBLEX ENGINE SMOKE: PASSED — the real engine landed shards in MinIO."

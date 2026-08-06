@@ -182,7 +182,7 @@ the file._
 
 ---
 
-## 3. Deferred — comprehension lens & release
+## 4. Housekeeping — off the vertical, wanted before users
 
 Deferred until the lean vertical is complete. Revisit the lens work **after** the
 corpus run has shown what the cold-start path actually gets right — that evidence
@@ -191,7 +191,7 @@ should shape it rather than be assumed. In dependency order:
 | Item | Package(s) | Notes |
 |---|---|---|
 | Collision selection, ordering & capping | domain | Bounded, deterministic selection of genuinely ambiguous documents. |
-| `BoundaryDecision` entity | domain | Net-new modelling. Owns "primary/secondary semantics" (see §4 item 1). |
+| `BoundaryDecision` entity | domain | Net-new modelling. Owns "primary/secondary semantics" (see §6). |
 | Decision persistence + corrections push | adapters | Shrunk: upstream owns corrections + audit — an adapter call over an existing API, not a build. |
 | Lens persistence | adapters | Shrunk: the classification-side tables are built. What remains: the lens's Numbatch bindings (references, not copies), the authoring surface, and the durable-asset surface. |
 | Lens portability | application | Apply a saved lens to a different corpus; its boundary decisions still bite. |
@@ -203,7 +203,7 @@ should shape it rather than be assumed. In dependency order:
 
 ---
 
-## 4. Carried-forward items
+## 6. Open questions
 
 1. **Open questions still owned here:** tenancy mapping — Numbatch
    `organisation_id` ↔ Wayfinder identity (settle before a lens is shared between
@@ -321,7 +321,7 @@ should shape it rather than be assumed. In dependency order:
 
 ---
 
-## 5. Sequencing
+## 7. Sequencing
 
 **The lean vertical runs to completion before the deferred work starts.**
 
