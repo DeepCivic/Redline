@@ -36,7 +36,11 @@ import { ColdStartClassifier } from "./cold-start-classifier";
 //   - findSimilar is never called — the class must not depend on the deferred
 //     nearest-neighbour step;
 //   - the output is RequirementClassification[], interchangeable with every
-//     other path (a downstream cannot tell which ran).
+//     other path (a downstream cannot tell which ran);
+//   - a document that addresses several topics yields one row per topic, each
+//     carrying its own evidence chunk and that chunk's element order;
+//   - a document that matches nothing still yields one row, carrying the reason
+//     that distinguishes "addressed nothing" from "no extraction".
 
 const topic = (id: string, name: string): Topic => ({
   id,
@@ -125,6 +129,27 @@ class FirstCandidateAdjudicator implements IAdjudicator {
   async adjudicate(request: AdjudicationRequest) {
     this.requests.push(request);
     return ok(verdictFor(request, request.candidates[0]!.topicId));
+  }
+}
+
+// An adjudicator naming every topic it was offered, each cited to a distinct
+// passage — the multi-topic case that proves the (document, topic) grain.
+class EveryTopicAdjudicator implements IAdjudicator {
+  public requests: AdjudicationRequest[] = [];
+  async adjudicate(request: AdjudicationRequest) {
+    this.requests.push(request);
+    const verdict: Adjudication = {
+      documentId: request.documentId,
+      topics: request.candidates.map((candidate, index) => ({
+        topicId: candidate.topicId,
+        // Cite a different passage per topic, so each row's provenance differs.
+        evidenceChunkIds: [request.passages[index % request.passages.length]!.chunkId],
+        rationale: `addresses ${candidate.topicId}`,
+      })),
+      exception: null,
+      cost: null,
+    };
+    return ok(verdict);
   }
 }
 
@@ -219,6 +244,9 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
       requirementId: "req-support",
       confidence: 1,
       sourceChunkId: "doc-1:0",
+      // The evidence chunk was chunkIndex 0, so the row's element order is 0.
+      sourceElementOrder: 0,
+      unclassified: null,
     });
 
     // The lens was resolved for this evaluation, carrying the documents in play.
@@ -240,6 +268,45 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
     // The exact-fetch half was used; the deferred nearest-neighbour step was not.
     expect(store.structureCalls).toEqual([{ documentId: "doc-1" }]);
     expect(store.findSimilarCalls).toBe(0);
+  });
+
+  it("emits one row per topic the document addresses, each with its own evidence and element", async () => {
+    const store = new RecordingChunkStore();
+    store.seed("doc-1", [
+      chunk({ chunkId: "doc-1:0", chunkIndex: 0, text: "we provide 24/7 support" }),
+      chunk({ chunkId: "doc-1:1", chunkIndex: 1, text: "hosted in ap-southeast-2" }),
+    ]);
+    const adjudicator = new EveryTopicAdjudicator();
+    const classifier = new ColdStartClassifier({
+      chunkStore: store,
+      adjudicator,
+      lensReader: readerFor(),
+    });
+
+    const result = await classifier.classifyResponseGroup({
+      evaluationId: "e1",
+      responseGroupId: "g1",
+      documentIds: ["doc-1"],
+    });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    // One row per lens topic, each on its own (document, topic) grain.
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0]).toMatchObject({
+      requirementId: "req-support",
+      sourceChunkId: "doc-1:0",
+      sourceElementOrder: 0,
+      unclassified: null,
+    });
+    expect(result.data[1]).toMatchObject({
+      requirementId: "req-hosting",
+      sourceChunkId: "doc-1:1",
+      sourceElementOrder: 1,
+      unclassified: null,
+    });
+    // The whole document went up once, not one call per topic.
+    expect(adjudicator.requests).toHaveLength(1);
   });
 
   it("classifies two evaluations against their own lenses from one instance", async () => {
@@ -385,7 +452,7 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
     expect(adjudicator.requests).toEqual([]);
   });
 
-  it("skips a document the store has no chunks for (absent extraction, not a failed run)", async () => {
+  it("marks a document the store has no chunks for as unclassified (no_extraction), not dropped", async () => {
     const store = new RecordingChunkStore(); // doc-1 not seeded
     const adjudicator = new RecordingAdjudicator("req-support");
 
@@ -403,12 +470,19 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
 
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
-    expect(result.data).toEqual([]);
+    // Visible as a row, not dropped — a grid is rows, so a dropped document
+    // vanishes. The reason says we never read the file.
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      documentId: "doc-1",
+      requirementId: null,
+      unclassified: "no_extraction",
+    });
     // No passages, so the model is never asked to adjudicate nothing.
     expect(adjudicator.requests).toEqual([]);
   });
 
-  it("emits no row for a document the adjudicator says addresses no topic", async () => {
+  it("marks a document the adjudicator says addresses nothing as unclassified (addressed_nothing)", async () => {
     const store = new RecordingChunkStore();
     store.seed("doc-1", [chunk({ chunkId: "doc-1:0", chunkIndex: 0 })]);
     const adjudicator = new AddressesNothingAdjudicator();
@@ -425,12 +499,18 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
       documentIds: ["doc-1"],
     });
 
-    // The document was read and adjudicated — it simply matched nothing, which
-    // is a verdict, not a failure. Carrying that exception on to a surface a
-    // specialist looks at is delivery-plan item 2's job, not this port's.
+    // The document was read and adjudicated — it matched nothing, which is a
+    // verdict, not a failure. It is visible with the reason that tells a
+    // specialist the vendor answered nothing we asked, distinct from an unread
+    // file.
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
-    expect(result.data).toEqual([]);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      documentId: "doc-1",
+      requirementId: null,
+      unclassified: "addressed_nothing",
+    });
     expect(adjudicator.requests).toHaveLength(1);
   });
 

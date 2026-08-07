@@ -95,6 +95,8 @@ const classifier: IProcurementClassifier = {
         requirementId: "req-1",
         confidence: 0.9,
         sourceChunkId: `${documentId}:0`,
+        sourceElementOrder: 0,
+        unclassified: null,
       })),
     );
   },

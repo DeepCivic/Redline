@@ -141,6 +141,8 @@ const emitRows = (
       // is treated as certain (like a hard-rule claim, confidence 1).
       confidence: 1,
       sourceChunkId: evidenceChunkId,
+      sourceElementOrder: null,
+      unclassified: null,
       rationale: topic.rationale,
     });
   }

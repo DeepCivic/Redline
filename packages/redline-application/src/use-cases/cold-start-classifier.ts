@@ -5,6 +5,7 @@ import {
   isErr,
   ok,
   type AdjudicationCandidate,
+  type ChunkRow,
   type ClassificationLens,
   type ClassificationRequest,
   type HardRuleCandidate,
@@ -37,7 +38,18 @@ import {
 //      document, its passages are read verbatim from the store by structure
 //      (`fetchByStructure({ documentId })`) — the transfer mechanic, not a
 //      similarity ranking — and the adjudicator names the lens topics the
-//      document addresses, each with the chunks that placed it.
+//      document addresses, each with the chunks that placed it. Every addressed
+//      topic becomes its own row (the (document, topic) grain), carrying the
+//      chunk that placed *that* topic and the element that chunk came from, so a
+//      downstream summary and deep-link are per-topic rather than per-document.
+//
+// A document that matched nothing does not vanish: a grid is rows, so an
+// unmatched document is invisible unless it carries one. Two no-match reasons
+// stay distinguishable — a document the model said addresses nothing
+// ("addressed_nothing") and one the store held no chunks for ("no_extraction") —
+// each surfacing as one row with a null requirementId and its reason set, which
+// is what lets a specialist tell "they answered nothing we asked" from "we never
+// read this file".
 //
 // The lens context (topics, rule set, per-document candidates) is resolved
 // **per call** through `IClassificationLensReader`, not held as constructor
@@ -105,12 +117,16 @@ export class ColdStartClassifier implements IProcurementClassifier {
       const outcome = evaluateHardRules({ ruleSet: lens.ruleSet, candidate });
 
       // 1. A rule claim is deterministic and final: no store read, no model call.
+      // A claimed document still yields one row per matching rule — the rule leg
+      // keeps its own grain, not one row per lens topic.
       if (outcome.kind === "claimed") {
         rows.push({
           documentId: outcome.documentId,
           requirementId: outcome.topicId,
           confidence: CERTAIN,
           sourceChunkId: null,
+          sourceElementOrder: null,
+          unclassified: null,
         });
         continue;
       }
@@ -122,26 +138,24 @@ export class ColdStartClassifier implements IProcurementClassifier {
         lens.adjudicationCandidates,
       );
       if (isErr(adjudicated)) return adjudicated;
-      if (adjudicated.data) rows.push(adjudicated.data);
+      rows.push(...adjudicated.data);
     }
 
     return ok(rows);
   }
 
   // Fetch a document's chunks verbatim by structure and let the model name the
-  // topics it addresses. Two documents produce no row and are skipped rather
-  // than failed: one the store has no chunks for (an absent extraction is a
-  // legitimate outcome, not a failed run — ADR-0018), and one the model says
-  // addresses nothing in the lens. Returns null for both.
-  //
-  // The verdict is set-valued but only its first topic becomes a row here: the
-  // (document, topic) grain is delivery-plan item 2's change to this class, and
-  // carrying both exceptions to a surface a specialist reads belongs with it.
+  // topics it addresses. Returns one row per addressed topic, or a single
+  // unclassified row for either no-match reason — never an empty array, so no
+  // document ever vanishes from the grid.
+  //   - "no_extraction": the store held no chunks for the document (an absent
+  //     extraction is a legitimate outcome, not a failed run — ADR-0018);
+  //   - "addressed_nothing": the model read the passages and named no topic.
   private async adjudicate(
     evaluationId: string,
     documentId: string,
     adjudicationCandidates: readonly AdjudicationCandidate[],
-  ): Promise<Result<RequirementClassification | null>> {
+  ): Promise<Result<readonly RequirementClassification[]>> {
     // Adjudication is a choice: with fewer than two topics there is nothing to
     // adjudicate. Refuse before touching the store or the model.
     if (adjudicationCandidates.length < 2) {
@@ -158,11 +172,15 @@ export class ColdStartClassifier implements IProcurementClassifier {
     });
     if (isErr(fetched)) return err(fetched.error);
 
-    // No chunks for this document — nothing to read, so nothing to classify.
-    const [firstChunk, ...restChunks] = fetched.data;
-    if (firstChunk === undefined) return ok(null);
+    // No chunks for this document — we never read this file. One unclassified
+    // row carries that reason so a specialist sees it, distinct from a document
+    // the model read and found nothing in.
+    if (fetched.data.length === 0) {
+      return ok([unclassifiedRow(documentId, "no_extraction")]);
+    }
 
-    const passages = [firstChunk, ...restChunks].map((chunk) => ({
+    const chunksById = new Map(fetched.data.map((chunk) => [chunk.chunkId, chunk]));
+    const passages = fetched.data.map((chunk) => ({
       chunkId: chunk.chunkId,
       text: chunk.text,
     }));
@@ -174,42 +192,76 @@ export class ColdStartClassifier implements IProcurementClassifier {
     if (isErr(verdict)) return err(verdict.error);
 
     // An empty set is a verdict, not a fault: the document addresses nothing the
-    // lens asks about, so there is no row to emit.
-    const [addressed] = verdict.data.topics;
-    if (addressed === undefined) return ok(null);
-
-    // The model must name a topic it was offered — never invent one. The port
-    // promises this; the classifier enforces it at the boundary.
-    const chosen = adjudicationCandidates.find(
-      (candidate) => candidate.topicId === addressed.topicId,
-    );
-    if (!chosen) {
-      return err(
-        domainError(
-          "CLASSIFICATION_FAILED",
-          `adjudicator returned topic '${addressed.topicId}', which was not offered for document '${documentId}'`,
-        ),
-      );
+    // lens asks about. One unclassified row keeps it visible, carrying the reason
+    // that distinguishes it from a file we never read.
+    if (verdict.data.topics.length === 0) {
+      return ok([unclassifiedRow(documentId, "addressed_nothing")]);
     }
 
-    // Provenance is the chunk the model cited as placing the topic, not the
-    // document's first chunk. The port guarantees at least one; a verdict
-    // without evidence is a broken implementation, not a row to emit.
-    const [evidenceChunkId] = addressed.evidenceChunkIds;
-    if (evidenceChunkId === undefined) {
-      return err(
-        domainError(
-          "CLASSIFICATION_FAILED",
-          `adjudicator returned topic '${addressed.topicId}' with no evidence for document '${documentId}'`,
-        ),
-      );
+    const offeredTopicIds = new Set(adjudicationCandidates.map((candidate) => candidate.topicId));
+    const rows: RequirementClassification[] = [];
+
+    // One row per topic the document addresses (the (document, topic) grain),
+    // each carrying the chunk the model cited as placing *that* topic and the
+    // element that chunk came from — so a downstream summary and deep-link are
+    // per-topic rather than repeating the document's first passage on every row.
+    for (const addressed of verdict.data.topics) {
+      // The model must name a topic it was offered — never invent one. The port
+      // promises this; the classifier enforces it at the boundary.
+      if (!offeredTopicIds.has(addressed.topicId)) {
+        return err(
+          domainError(
+            "CLASSIFICATION_FAILED",
+            `adjudicator returned topic '${addressed.topicId}', which was not offered for document '${documentId}'`,
+          ),
+        );
+      }
+
+      // Provenance is the chunk the model cited as placing the topic. The port
+      // guarantees at least one; a verdict without evidence is a broken
+      // implementation, not a row to emit.
+      const [evidenceChunkId] = addressed.evidenceChunkIds;
+      if (evidenceChunkId === undefined) {
+        return err(
+          domainError(
+            "CLASSIFICATION_FAILED",
+            `adjudicator returned topic '${addressed.topicId}' with no evidence for document '${documentId}'`,
+          ),
+        );
+      }
+
+      rows.push({
+        documentId,
+        requirementId: addressed.topicId,
+        confidence: CERTAIN,
+        sourceChunkId: evidenceChunkId,
+        sourceElementOrder: elementOrderOf(chunksById.get(evidenceChunkId)),
+        unclassified: null,
+      });
     }
 
-    return ok({
-      documentId,
-      requirementId: chosen.topicId,
-      confidence: CERTAIN,
-      sourceChunkId: evidenceChunkId,
-    });
+    return ok(rows);
   }
 }
+
+// The element a chunk came from, for a row's deep-link. `chunkIndex` is the
+// stable ordinal the store carries (ADR-0014); a cited chunk that is not in the
+// fetched set (a hallucination the adjudicator port already rejects) leaves it
+// unresolved rather than pointing at element 0.
+const elementOrderOf = (chunk: ChunkRow | undefined): number | null =>
+  chunk ? chunk.chunkIndex : null;
+
+// One row for a document that matched no requirement, carrying why. A null
+// requirementId is the unclassified signal; the reason is what a specialist
+// reads to tell the two no-match cases apart.
+const unclassifiedRow = (
+  documentId: string,
+  reason: RequirementClassification["unclassified"],
+): RequirementClassification => ({
+  documentId,
+  requirementId: null,
+  confidence: CERTAIN,
+  sourceChunkId: null,
+  sourceElementOrder: null,
+  unclassified: reason,
+});

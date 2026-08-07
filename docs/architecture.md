@@ -434,10 +434,12 @@ NB: the nearest-neighbour **placing** step is deferred — it is
 the only leg needing vector similarity search (`findSimilar`), not built this
 release. So the cold-start path runs hard rules + adjudication over
 exact/structural fetch, **without** a similarity ranking; the `sourceChunkId` is
-the chunk the model cited as placing the topic. Output is
-`RequirementClassification { documentId, requirementId, confidence,
-sourceChunkId }` — identical shape whichever path produced it. Composed as
-`ColdStartClassifier` (redline-application), wired behind the port in
+the chunk the model cited as placing the topic and `sourceElementOrder` is the
+element that chunk came from. Output is
+`RequirementClassification { documentId, requirementId, confidence, sourceChunkId,
+sourceElementOrder, unclassified }` — identical shape whichever path produced it,
+with `requirementId` null and `unclassified` set exactly on the no-match rows.
+Composed as `ColdStartClassifier` (redline-application), wired behind the port in
 `lib/container.ts` (`buildColdStartClassifier`).
 
 **(6') Classification — the trained overlay (later).** Once boundary

@@ -47,7 +47,11 @@ const readerWith = (chunksByDocument: Record<string, ExtractionChunk[]>): IProcu
 
 const echoModel: ILanguageModel = {
   async summarise(request: SummaryRequest) {
-    return ok(`${request.productName} by ${request.vendorName}: ${request.passages.length} passages`);
+    // Echo the passages so a test can prove the summary is built over the
+    // topic's evidence, not the whole document.
+    return ok(
+      `${request.productName} by ${request.vendorName}: ${request.passages.length} passages [${request.passages.join(" | ")}]`,
+    );
   },
 };
 
@@ -81,6 +85,8 @@ const dependencies = (repository: InMemoryEvaluationRepository) => ({
       requirementId: "req-data-residency",
       confidence: 0.86,
       sourceChunkId: "doc-a:2",
+      sourceElementOrder: 5,
+      unclassified: null,
     },
   ]),
   financialExtractor: extractorReturning([
@@ -122,11 +128,12 @@ describe("BuildEvaluationTable — the exit test", () => {
     expect(response.confidence).toBeCloseTo(0.86);
     // Costing carried the real currency figure from the financial extractor.
     expect(response.costing.estimateAud).toBe(1500.5);
-    // Provenance points at the financial extraction's element order.
-    expect(response.source.elementOrder).toBe(7);
+    // Provenance points at the element the evidence chunk came from, not the
+    // financial extraction's element or element 0.
+    expect(response.source.elementOrder).toBe(5);
     expect(response.source.chunkId).toBe("doc-a:2");
-    // The summary condensed the matched passages.
-    expect(response.productSummary).toContain("2 passages");
+    // The summary condensed only the evidence passage, not the whole document.
+    expect(response.productSummary).toContain("1 passages");
 
     // The responses were persisted and the stage advanced to review.
     expect(repository.responses.get("eval-1")).toHaveLength(1);
@@ -202,5 +209,99 @@ describe("BuildEvaluationTable — the exit test", () => {
     expect(isErr(result)).toBe(true);
     if (!isErr(result)) return;
     expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("summarises each row over its own topic's evidence, so a vendor's rows never repeat a summary", async () => {
+    const repository = await seededRepository();
+    const deps = {
+      ...dependencies(repository),
+      classifier: classifierReturning([
+        {
+          documentId: "doc-a",
+          requirementId: "req-data-residency",
+          confidence: 0.9,
+          sourceChunkId: "doc-a:2",
+          sourceElementOrder: 2,
+          unclassified: null,
+        },
+        {
+          documentId: "doc-a",
+          requirementId: "req-support",
+          confidence: 0.8,
+          sourceChunkId: "doc-a:3",
+          sourceElementOrder: 3,
+          unclassified: null,
+        },
+      ]),
+    };
+    const useCase = new BuildEvaluationTable(deps);
+
+    const result = await useCase.execute({ evaluationId: "eval-1" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data).toHaveLength(2);
+    const [residency, support] = result.data;
+    // Each row summarised only its own evidence chunk.
+    expect(residency.productSummary).toContain("data stays in AU");
+    expect(support.productSummary).toContain("region ap-southeast-2");
+    // No two rows of the same vendor carry the same summary text.
+    expect(residency.productSummary).not.toBe(support.productSummary);
+    // And each deep-links to the element its evidence came from.
+    expect(residency.source.elementOrder).toBe(2);
+    expect(support.source.elementOrder).toBe(3);
+  });
+
+  it("renders an unclassified document as a visible row that names its reason", async () => {
+    const repository = await seededRepository();
+    const deps = {
+      ...dependencies(repository),
+      classifier: classifierReturning([
+        {
+          documentId: "doc-a",
+          requirementId: null,
+          confidence: 1,
+          sourceChunkId: null,
+          sourceElementOrder: null,
+          unclassified: "addressed_nothing",
+        },
+      ]),
+    };
+    const useCase = new BuildEvaluationTable(deps);
+
+    const result = await useCase.execute({ evaluationId: "eval-1" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    // The document is visible — a grid is rows, so it must carry one — and its
+    // summary states the reason a specialist acts on.
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].requirementId).toBe("(unclassified)");
+    expect(result.data[0].productSummary).toMatch(/addressed none/i);
+  });
+
+  it("distinguishes an unread file from a document that answered nothing", async () => {
+    const repository = await seededRepository();
+    const deps = {
+      ...dependencies(repository),
+      classifier: classifierReturning([
+        {
+          documentId: "doc-a",
+          requirementId: null,
+          confidence: 1,
+          sourceChunkId: null,
+          sourceElementOrder: null,
+          unclassified: "no_extraction",
+        },
+      ]),
+    };
+    const useCase = new BuildEvaluationTable(deps);
+
+    const result = await useCase.execute({ evaluationId: "eval-1" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].productSummary).toMatch(/never read/i);
   });
 });

@@ -95,7 +95,7 @@ describe("AdjudicateUnclear", () => {
     // Same keys as RequirementClassification, plus `rationale`. Strip the extra
     // field and a downstream sees exactly the shared shape (D2).
     expect(Object.keys(row).sort()).toEqual(
-      ["confidence", "documentId", "rationale", "requirementId", "sourceChunkId"].sort(),
+      ["confidence", "documentId", "rationale", "requirementId", "sourceChunkId", "sourceElementOrder", "unclassified"].sort(),
     );
     // The chosen topic's id is written straight into requirementId (ADR-0010).
     expect(row.requirementId).toBe("topic-security");
