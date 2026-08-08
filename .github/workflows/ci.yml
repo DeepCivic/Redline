@@ -15,9 +15,10 @@
 # To bump Wayfinder, edit wayfinder.pin — not this file. Repository variables
 # still override for a one-off experiment:
 #   vars.WAYFINDER_REPO / vars.WAYFINDER_REF
-# rbrasier/wayfinder is public, so the default GITHUB_TOKEN suffices. If you
-# point WAYFINDER_REPO at a private repo, add a secret WAYFINDER_TOKEN (a PAT
-# with contents:read on that repo).
+# The pinned repo is johntooth/wayfinder — the fork, the same one
+# services/wayfinder mounts. It is public, so the default GITHUB_TOKEN suffices.
+# If you point WAYFINDER_REPO at a private repo, add a secret WAYFINDER_TOKEN (a
+# PAT with contents:read on that repo).
 
 name: CI
 

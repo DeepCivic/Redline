@@ -14,13 +14,13 @@ imported into the TypeScript packages; the extraction-reader adapter
 > stage (`kanon-2-embedder`) is Isaacus-only, so `*.embeddings.parquet` — and
 > therefore redline's cold-start retrieval — needs a live `ISAACUS_API_KEY`.
 > Extraction and chunking run offline; retrieval does not. See
-> [ADR-0008](../../docs/adr/0008-trained-classifier-is-an-optional-overlay.adr.md)
+> ADR-0008
 > (amended) and [`docs/architecture.md`](../../docs/architecture.md).
 
 ## The Parquet→JSON boundary
 
 The boundary is a **JSON seam**
-([ADR-0003](../../docs/adr/0003-parquet-to-json-boundary.adr.md)): this sidecar
+(ADR-0003): this sidecar
 owns the heavy womblex/Parquet stack, reads its own shards, and serves a typed
 JSON read model. The TypeScript adapter never links a Parquet reader. The one
 place that understands womblex's schema is here (`records.py` +
@@ -54,7 +54,7 @@ durable record, per ADR-0002).
 
 ## The embeddings seam
 
-[ADR-0014](../../docs/adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md)
+ADR-0014
 widens the JSON boundary to a second, **sibling** resource carrying womblex's
 `*.embeddings.parquet` — one vector per chunk:
 
@@ -194,7 +194,7 @@ still land, but there is no retrieval.
 
 ## Configuration
 
-All from the environment (per [ADR-0002](../../docs/adr/0002-own-minio-and-postgres.adr.md),
+All from the environment (per ADR-0002,
 the S3 target is fully config-driven — never a hardcoded Wayfinder endpoint):
 
 | Var | Default | Meaning |

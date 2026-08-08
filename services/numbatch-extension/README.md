@@ -2,10 +2,10 @@
 
 The **Numbatch** classification engine (DeepCivic/Numbatch) is a **git submodule**
 at [`../numbatch`](../numbatch), pinned to `72bcead`
-([ADR-0015](../../docs/adr/0015-upstream-python-engines-are-submodules.adr.md)).
+(ADR-0015).
 redline runs its **backend API + Arq worker + inference service** (plus Postgres +
 Redis, reusing redline's MinIO) and **never** its SvelteKit frontend — redline owns its
-own control surface and review grid ([ADR-0005](../../docs/adr/0005-numbatch-fork-all-but-frontend.adr.md)).
+own control surface and review grid (ADR-0005).
 
 > **This directory is redline's code, not upstream's.** The submodule tree stays
 > byte-identical to upstream so the pin means something and "we never modify the
@@ -23,7 +23,7 @@ keyed on `source_doc_id` (Womblex's `source_hash`), each with a score and `chunk
 (`docs/DATA_MODEL.md` `document_classifications`; `docs/ARCHITECTURE.md`).
 
 A redline **requirement/criterion** ⇔ a Numbatch **topic**; an evaluation's
-`RequirementSet` ⇔ a Numbatch **profile** (≤10) ([ADR-0004](../../docs/adr/0004-user-defined-requirements-not-fixed-1-6.adr.md)).
+`RequirementSet` ⇔ a Numbatch **profile** (≤10) (ADR-0004).
 
 ## Running it (all-but-frontend)
 
@@ -40,7 +40,7 @@ sidecar wrote.
 
 `bootstrap-profile.py` turns a redline `RequirementSet` (+ curated example passages per
 requirement) into a **trained Numbatch profile**, entirely over the backend API — no DB
-seeds ([ADR-0005](../../docs/adr/0005-numbatch-fork-all-but-frontend.adr.md)):
+seeds (ADR-0005):
 
 1. `POST /topics` per requirement (`name` = requirement name, `description` = definition).
 2. `POST /topics/{id}/samples` with that requirement's curated example passages.

@@ -8,31 +8,12 @@
 // financial extension's read seam (topic_id → requirementId; currency numeric).
 // Thread 9: DrizzleEvaluationRepository implements IEvaluationRepository over the
 // redline_ Postgres schema (ADR-0002).
-// Thread 20: WomblexEmbeddingReader implements IEmbeddingReader over the
-// womblex-ingest sidecar's retrieval read seam (Float32Array; cached per
-// evaluation — ADR-0014).
-// Thread 22: WomblexTextEmbedder implements ITextEmbedder over the same
-// sidecar's query-embedding seam (POST /embeddings/query), so a topic
-// definition embeds in the same space as the chunk vectors (ADR-0014).
 export {
   WomblexExtractionReader,
   type HttpClient,
   type HttpResponse,
   type WomblexExtractionReaderOptions,
 } from "./womblex/womblex-extraction-reader";
-export {
-  WomblexEmbeddingReader,
-  type HttpClient as WomblexEmbeddingHttpClient,
-  type HttpResponse as WomblexEmbeddingHttpResponse,
-  type WomblexEmbeddingReaderOptions,
-} from "./embeddings/womblex-embedding-reader";
-export {
-  WomblexTextEmbedder,
-  type HttpClient as WomblexTextEmbedderHttpClient,
-  type HttpRequest as WomblexTextEmbedderHttpRequest,
-  type HttpResponse as WomblexTextEmbedderHttpResponse,
-  type WomblexTextEmbedderOptions,
-} from "./embeddings/womblex-text-embedder";
 export {
   NumbatchClassifier,
   type HttpClient as NumbatchHttpClient,

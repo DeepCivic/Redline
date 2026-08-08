@@ -10,7 +10,7 @@ git submodule update --init
 ```
 
 `services/womblex` and `services/numbatch` are the upstream engines, consumed as
-submodules ([ADR-0015](../adr/0015-upstream-python-engines-are-submodules.adr.md)).
+submodules (ADR-0015).
 `validate.sh` **SKIPs** rather than fails when they are absent, so a shallow clone
 still goes green — but the compose `womblex` / `numbatch` profiles build from
 them, and the pin-drift guard (check 13) only bites when they are present. CI
@@ -212,13 +212,15 @@ failure rather than a skip.
 | secret | `WAYFINDER_TOKEN` | `github.token` | PAT with read access if you point `WAYFINDER_REPO` at a private repo |
 
 **Bump Wayfinder by editing [`wayfinder.pin`](../../wayfinder.pin), not CI.** The pin
-names `rbrasier/wayfinder` at a full SHA, and both CI and `scripts/vendor-wayfinder.sh`
-read it, so the two materialise identical trees (ADR-0012). After a bump, re-vendor and
+names `johntooth/wayfinder` at a full SHA — the fork, the same repo the
+`services/wayfinder` submodule mounts and the same branch; rbrasier is not a build
+source here. Both CI and `scripts/vendor-wayfinder.sh` read it, so the two
+materialise identical trees. After a bump, re-vendor and
 run `pnpm install && ./validate.sh`; the drift check
 (`packages/redline-adapters/src/wayfinder/wayfinder-contract.test.ts`) is what tells you
 whether the new commit still satisfies the contract redline reuses. The repository
 variables above stay available for a one-off experiment without committing a pin change.
 
-The default `rbrasier/wayfinder` is public, so no secret is needed. If you point
+The pinned `johntooth/wayfinder` is public, so no secret is needed. If you point
 `WAYFINDER_REPO` at a private repo, add a `WAYFINDER_TOKEN` secret (a fine-grained
 PAT with `contents: read` on that repo) so the cross-repo checkout succeeds.

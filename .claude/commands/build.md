@@ -11,9 +11,8 @@ specific item.
    the deferred set, §5 for sequencing.
 2. [`docs/architecture.md`](../../docs/architecture.md) for the seams the item
    touches. It is the design truth; the plan never restates it.
-3. Any ADR(s) either references, in `docs/adr/`.
 
-**Upstream gate — ADR-0015.** If the item builds anything an upstream engine
+**Upstream gate.** If the item builds anything an upstream engine
 might already provide, read that engine's source first: `services/womblex` and
 `services/numbatch` are submodules and are on disk (`git submodule update
 --init`). This is not optional diligence — redline has already shipped a
@@ -21,20 +20,9 @@ duplicate container stack, an import of functions that do not exist, and a schem
 mapping against columns upstream never writes, all by integrating against a
 dependency nobody had opened.
 
-**ADR gate — before writing any code.** If the item rests on a decision that is
-not yet settled, or needs a new architectural decision:
-
-1. Draft the ADR in `docs/adr/` (`NNNN-<decision>.adr.md`).
-2. Present it for review and **stop**.
-3. Build only once the user has settled it.
-
-Do not build past a precondition decision that is still open.
-
-**ADRs carry no status field.** Review happens on the PR that contains the ADR;
-merged is decided, unmerged is not. Do not add one, and do not "flip" anything.
-What an ADR *does* record is its relationships to
-other ADRs — what it amends, narrows or overturns, and what of an earlier
-decision survives — because that is the decision's content, not its workflow.
+**Do not stop to write a decision record.** If a choice needs making, make it,
+say so in the commit, and keep building. Nothing in this repo gates a build on a
+document.
 
 Confirm the item's **exit test** before writing a line of code. Read the
 relevant `@rbrasier/*` source in `vendor/wayfinder/packages/*` for any Wayfinder
@@ -92,9 +80,8 @@ and paste the passing output:
 - **Update `docs/architecture.md`** only if the build changed what redline *is* —
   a new seam, a changed contract, a corrected assumption (§7). Routine
   implementation does not touch it.
-- **Discovered decisions** — if the build forced an architectural choice that
-  could not have been known at planning time, record it as an ADR now, in this
-  item's commit. Precedent: ADR-0002 and ADR-0003 were both locked mid-build.
+- **Discovered decisions** go in the commit message. Do not create a document
+  for them.
 - There is **no per-item doc**. `docs/threads/` does not exist and is not to be
   recreated; a package README is the right home for anything longer than a
   commit-message note.
