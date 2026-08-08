@@ -36,7 +36,7 @@
 > 2026-08-08). Five queries, zero mutations, four read routes: nothing in the
 > browser creates an evaluation, uploads a document or starts a run — the seed
 > script does all three. The plan previously said "what remains is one step: run
-> a real corpus", which was wrong in kind. §2 items 1–4 now carry that work, and
+> a real corpus", which was wrong in kind. §2 items 1–5 now carry that work, and
 > the corpus run sits behind them.
 >
 > **One thing found while building, still needing a decision.**
@@ -67,7 +67,7 @@
 > **Nothing here has been run against live services.** The wiring and the write
 > path typecheck and are unit-tested; no Postgres, sidecar or adjudicator has
 > ever been behind either. Expect config-level breakage on first boot, and treat
-> the corpus run (§2 item 5) as the first real proof rather than a formality.
+> the corpus run (§2 item 6) as the first real proof rather than a formality.
 >
 > **Revised after a pre-user-testing review of the whole outstanding set.** That
 > review verified every "built" claim above against the trees (the submodules were
@@ -135,16 +135,38 @@ router has **five `.query()` procedures and zero mutations**; the route set is
 the `/evaluations` index plus four read views. Nothing in the browser creates an
 evaluation, ingests a document, or starts a classification run — all of that is
 `apps/web/scripts/seed-redline-evaluation.ts`, a CLI script an operator runs in
-a terminal. The use-cases behind it (`IngestDocuments`,
-`AssignDocumentsToGroups`, cold-start classify, `BuildEvaluationTable`) are
-built and wired in `container-redline.ts`; **only the surface is missing.** So
-the goal above is half-met: the results come out on screen, but the corpus goes
-in through a shell.
+a terminal. So the goal above is half-met: the results come out on screen, but
+the corpus goes in through a shell.
 
-Items 1–3 close that, and item 4 covers a gap they expose. They come **before**
-the corpus run (item 5) so the run proves the product a specialist uses rather
-than a script — the script stays available if you want to de-risk the first live
-run without also debugging new UI.
+**How much is "only a surface" varies sharply by item, and a first draft of this
+section got it wrong.** Creating an evaluation and running the pipeline really
+are thin — `makeEvaluation`, the repository write path,
+`AssignDocumentsToGroups`, the cold-start classifier and `BuildEvaluationTable`
+are all built and wired in `container-redline.ts`, wanting only a mutation.
+**Getting a document in is not.** Two facts settle it:
+
+- **`IngestDocuments` does not ingest.** Its input is `documentIds: string[]`,
+  and its job is to confirm each already-extracted document reads back through
+  `IProcurementExtractionReader` and advance the stage. Its own comment: *"It
+  does not trigger womblex itself — that is the sidecar's job."*
+- **redline has no object-storage code in TypeScript at all** — no port, no
+  adapter, no client, in any package. Files reach redline's bucket by `mc cp` in
+  `scripts/womblex-engine-smoke.sh`, staged to `proc/{evaluationId}/inputs/`,
+  after which the sidecar extracts, chunks and embeds.
+
+So a browser upload needs a new port *and* adapter *and* a sidecar trigger — the
+build-step contract splits that, hence items 2 and 3 below. **Wayfinder's own
+document machinery does not close it**: `extraction.ts` (10 queries, 19
+mutations), `document.ts` and `/api/documents` drive Wayfinder's *own*
+extraction pipeline into Wayfinder's storage, not womblex into redline's bucket.
+The upload *widget* may be reusable; the pipeline behind it is not, and
+substituting it would contradict the architecture. Worth confirming against
+`apps/web` before item 2 starts, since reusing the widget would shrink it.
+
+Items 1–4 close the gap, item 5 covers a hole they expose, and the corpus run
+(item 6) comes last so it proves the product a specialist uses rather than a
+script — the script stays available if you want to de-risk the first live run
+without also debugging new UI.
 
 ### 1 — Create an evaluation from the browser
 
@@ -161,39 +183,56 @@ _Version bump: MINOR._
 _Exit: a specialist creates a named evaluation in the browser and it appears on
 `/evaluations`, empty, without the seed script having run._
 
-### 2 — Ingest documents from the browser
+### 2 — An object-storage port, so redline can put a file in its own bucket
 
-Documents reach an evaluation only through the seed script today. Add the upload
-surface and the mutation behind it, over the built `IngestDocuments` use-case.
-
-_Version bump: MINOR._
-_Exit: a specialist uploads documents to an evaluation in the browser and sees
-them listed against it._
-
-### 3 — Run classification from the browser
-
-`AssignDocumentsToGroups` → cold-start classify → `BuildEvaluationTable` runs
-only from the script. Add the mutation and the control that starts it, with
-whatever run state the screen needs to not look frozen.
+redline writes nothing to object storage from TypeScript today; `mc cp` in a
+shell script does it. Add the port in `redline-domain` and the adapter in
+`redline-adapters`, writing to `proc/{evaluationId}/inputs/` — the layout the
+sidecar already reads. No UI in this item.
 
 _Version bump: MINOR._
-_Exit: starting a run on an evaluation that has documents produces a populated
-grid at `/evaluations/:id/review`._
+_Exit: the adapter puts a file at the sidecar's expected key and reads it back,
+against a real bucket in the compose stack._
 
-### 4 — Test the React bind layer
+### 3 — Upload documents from the browser, and start the womblex run
+
+Item 2's port behind an upload mutation and control, plus the seam that triggers
+the sidecar's extract → chunk → embed for the uploaded set. Check first whether
+Wayfinder's existing upload component can be reused for the file-picking half;
+only the pipeline behind it has to be redline's.
+
+Crosses TypeScript and the Python sidecar, so expect the seam — an endpoint or a
+job — to be the real work rather than the widget.
+
+_Version bump: MINOR._
+_Exit: a specialist uploads documents to an evaluation in the browser and, once
+the sidecar finishes, they read back through `IProcurementExtractionReader`._
+
+### 4 — Run the pipeline from the browser
+
+`IngestDocuments` (the stage confirmation) → `AssignDocumentsToGroups` →
+cold-start classify → `BuildEvaluationTable` run only from the script. All four
+are wired in `container-redline.ts`; put one mutation and one control in front
+of them, with whatever run state the screen needs to not look frozen.
+
+_Version bump: MINOR._
+_Exit: starting a run on an evaluation whose documents have been extracted
+produces a populated grid at `/evaluations/:id/review`._
+
+### 5 — Test the React bind layer
 
 `review-table.test.tsx` and `pricing-pivots.test.tsx` are twelve lines each,
 asserting only that the export is a function and its `.name` matches — against a
 207-line grid and a 157-line pivot component. The cores under
 `apps/redline-web/` are covered and the served DOM is not; the Playwright specs
 that would cover it skip without `E2E_REDLINE_EVALUATION_ID`, which does not
-exist until item 5 has run. Nothing tests the binding between core and DOM.
+exist until item 6 has run. Nothing tests the binding between core and DOM.
 
 _Version bump: PATCH._
 _Exit: both components render against fake query data in a test and assert the
 rows and columns they produce, failing if the binding to the core breaks._
 
-### 5 — Real corpus, end to end
+### 6 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
@@ -352,7 +391,7 @@ order:
 1. **The write path is built** (2026-08-03), on top of that wiring: the lens
    writer in `redline-adapters` and, in the fork, the manifest reader, the
    seeding composition and `scripts/seed-redline-evaluation.ts`. Proven against
-   in-memory adapters only — the live run is §2 item 5.
+   in-memory adapters only — the live run is §2 item 6.
 
 2. **The way *to* it is built** (2026-08-03): `listEvaluations()` on
    `IEvaluationRepository` and `DrizzleEvaluationRepository`, the router's `list`
@@ -369,25 +408,30 @@ order:
    an anchor, and the fork serves `/evaluations/:id/documents/:documentId` beside
    its siblings, gated in the page as well as in the procedure. Every provenance
    deep-link the review grid and the Excel export write now resolves, which is
-   what §2 item 5's exit test needs to pass honestly.
+   what §2 item 6's exit test needs to pass honestly.
 
-4. **§2 items 1–3, the write surface.** Create, ingest and run, from the
-   browser. The use-cases exist and are wired; these three put a mutation and a
-   control in front of each. Until they land, the only operator is someone with
+4. **§2 items 1–4, the write surface.** Create, upload, run — from the browser.
+   Items 1 and 4 are thin: the use-cases are built and wired, wanting only a
+   mutation and a control. Items 2 and 3 are not, because redline has no
+   object-storage code in TypeScript and `IngestDocuments` confirms extraction
+   rather than performing it — getting a file in means a new port, a new adapter
+   and a sidecar trigger. Until all four land, the only operator is someone with
    a terminal and the seed script.
 
-5. **§2 item 4, the bind-layer tests**, which items 1–3 make worth having: once
+5. **§2 item 5, the bind-layer tests**, which items 1–4 make worth having: once
    a specialist can drive the screens, an untested core→DOM binding is the most
    likely place for a silent wrong number.
 
-6. **§2 item 5, the corpus run.** What all of it is for. Running it after 1–3
+6. **§2 item 6, the corpus run.** What all of it is for. Running it after 1–4
    proves the product rather than the script — though the script remains a
    deliberate fallback for de-risking the first live run on its own.
 
-   **One open decision inside §2:** item 1 must settle where a
+   **Two open decisions inside §2.** Item 1 must settle where a
    browser-created evaluation's lens comes from, since nothing authors one
-   (§4.2). The manifest is the expected answer; the item must say so explicitly
-   rather than inherit it.
+   (§4.2); the manifest is the expected answer, and the item must say so rather
+   than inherit it. Item 3 must settle whether Wayfinder's existing upload
+   component can be reused for file-picking — the pipeline behind it cannot be,
+   but reusing the widget would shrink the item.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.
