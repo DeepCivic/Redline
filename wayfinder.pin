@@ -21,11 +21,14 @@
 # (.github/workflows/ci.yml checks out `repo` @ `ref`), so it is a live source,
 # not a label.
 #
-# The ref must be a commit on the fork's `main` — its clean mirror of upstream —
-# and never one on `redline-integration`. main carries no redline changes
-# (validate.sh #15b enforces that), so the contract below is tested against
-# un-forked Wayfinder; pointing at redline-integration would vendor redline's own
-# additions back into redline and make the drift check tautological.
+# The ref below is a commit on the fork's `main` that predates PR #9, so the
+# vendored tree is still un-forked Wayfinder. Do not read that as "main is the
+# clean mirror" — it no longer is. PR #9 merged `redline-integration` into main
+# (main's tip now carries redline's own `evaluation:review` permission), which
+# breaches the invariant validate.sh #15b asserts: redline changes must stay off
+# main so upstreaming remains a clean diff. That breach is unresolved; until it
+# is, choose a bump ref deliberately rather than assuming any main commit is
+# upstream-clean.
 #
 # To bump: change ref below, re-run scripts/vendor-wayfinder.sh, then
 # `pnpm install && ./validate.sh`. The drift check
