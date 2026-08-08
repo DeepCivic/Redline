@@ -32,6 +32,13 @@
 > no document gates a build. Citations of the form `ADR-00NN` still appear in
 > code comments and in this file — they read as historical markers now.
 >
+> **The served UI is read-only, and this plan had not recorded it** (found
+> 2026-08-08). Five queries, zero mutations, four read routes: nothing in the
+> browser creates an evaluation, uploads a document or starts a run — the seed
+> script does all three. The plan previously said "what remains is one step: run
+> a real corpus", which was wrong in kind. §2 items 1–4 now carry that work, and
+> the corpus run sits behind them.
+>
 > **One thing found while building, still needing a decision.**
 >
 > - **A topic id is global.** `redline_topics.id` is a plain primary key, so a
@@ -60,7 +67,7 @@
 > **Nothing here has been run against live services.** The wiring and the write
 > path typecheck and are unit-tested; no Postgres, sidecar or adjudicator has
 > ever been behind either. Expect config-level breakage on first boot, and treat
-> the corpus run (item 1) as the first real proof rather than a formality.
+> the corpus run (§2 item 5) as the first real proof rather than a formality.
 >
 > **Revised after a pre-user-testing review of the whole outstanding set.** That
 > review verified every "built" claim above against the trees (the submodules were
@@ -69,9 +76,11 @@
 > the topics table ADR-0020 sanctions (now built, with that table); nothing
 > created an evaluation or built the review table (now built, above); and the
 > review grid's provenance deep-link pointed at a route that did not exist — the
-> `/evaluations/:id/documents/:documentId` view is now built too, so the corpus
-> run is the only step left on the vertical. Housekeeping that is not on the
-> vertical but is wanted before users is at the end of §2.
+> `/evaluations/:id/documents/:documentId` view is now built too. That review
+> then concluded the corpus run was the only step left, which the 08-08 read of
+> the fork disproved: it had checked what renders, not what a specialist can
+> *do*. Housekeeping that is not on the vertical but is wanted before users is at
+> the end of §2.
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
@@ -118,12 +127,73 @@ UI-mount legs are **built and merged** — see [`architecture.md`](./architectur
 the served fork, and §5 below for how they were sequenced. The persisted lens is
 built too, so `IClassificationLensReader` now has an adapter behind it, and the
 write path that creates, seeds, groups and builds an evaluation is built on top
-of it. The way in is built too — `listEvaluations()`, the router's `list`, the
-`/evaluations` index and the sidebar entry that points at it. The document route
-the provenance deep-links point at is built as well, so what remains is one step:
-run a real corpus through the lot (item 1).
+of it. The document route the provenance deep-links point at is built as well.
 
-### 1 — Real corpus, end to end
+**But the served UI is read-only, and the plan did not say so** (found
+2026-08-08, by reading the fork rather than this file). The `evaluation` tRPC
+router has **five `.query()` procedures and zero mutations**; the route set is
+the `/evaluations` index plus four read views. Nothing in the browser creates an
+evaluation, ingests a document, or starts a classification run — all of that is
+`apps/web/scripts/seed-redline-evaluation.ts`, a CLI script an operator runs in
+a terminal. The use-cases behind it (`IngestDocuments`,
+`AssignDocumentsToGroups`, cold-start classify, `BuildEvaluationTable`) are
+built and wired in `container-redline.ts`; **only the surface is missing.** So
+the goal above is half-met: the results come out on screen, but the corpus goes
+in through a shell.
+
+Items 1–3 close that, and item 4 covers a gap they expose. They come **before**
+the corpus run (item 5) so the run proves the product a specialist uses rather
+than a script — the script stays available if you want to de-risk the first live
+run without also debugging new UI.
+
+### 1 — Create an evaluation from the browser
+
+Add a `create` mutation to the `evaluation` router and the route that calls it.
+Gate it in the page as well as in the procedure, as the index already does, so a
+user without `evaluation:review` gets neither.
+
+**This item must answer where the lens comes from.** Nothing authors a lens
+(§4.2) and the authoring surface stays deferred (§3), so the minimum here is
+selecting or uploading a corpus manifest at create time. Decide it in this item
+rather than assuming it.
+
+_Version bump: MINOR._
+_Exit: a specialist creates a named evaluation in the browser and it appears on
+`/evaluations`, empty, without the seed script having run._
+
+### 2 — Ingest documents from the browser
+
+Documents reach an evaluation only through the seed script today. Add the upload
+surface and the mutation behind it, over the built `IngestDocuments` use-case.
+
+_Version bump: MINOR._
+_Exit: a specialist uploads documents to an evaluation in the browser and sees
+them listed against it._
+
+### 3 — Run classification from the browser
+
+`AssignDocumentsToGroups` → cold-start classify → `BuildEvaluationTable` runs
+only from the script. Add the mutation and the control that starts it, with
+whatever run state the screen needs to not look frozen.
+
+_Version bump: MINOR._
+_Exit: starting a run on an evaluation that has documents produces a populated
+grid at `/evaluations/:id/review`._
+
+### 4 — Test the React bind layer
+
+`review-table.test.tsx` and `pricing-pivots.test.tsx` are twelve lines each,
+asserting only that the export is a function and its `.name` matches — against a
+207-line grid and a 157-line pivot component. The cores under
+`apps/redline-web/` are covered and the served DOM is not; the Playwright specs
+that would cover it skip without `E2E_REDLINE_EVALUATION_ID`, which does not
+exist until item 5 has run. Nothing tests the binding between core and DOM.
+
+_Version bump: PATCH._
+_Exit: both components render against fake query data in a test and assert the
+rows and columns they produce, failing if the binding to the core breaks._
+
+### 5 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds (see the runbook note below) → chunk rows and
@@ -282,14 +352,16 @@ order:
 1. **The write path is built** (2026-08-03), on top of that wiring: the lens
    writer in `redline-adapters` and, in the fork, the manifest reader, the
    seeding composition and `scripts/seed-redline-evaluation.ts`. Proven against
-   in-memory adapters only — the live run is item 1.
+   in-memory adapters only — the live run is §2 item 5.
 
-2. **The way in is built** (2026-08-03): `listEvaluations()` on
+2. **The way *to* it is built** (2026-08-03): `listEvaluations()` on
    `IEvaluationRepository` and `DrizzleEvaluationRepository`, the router's `list`
    procedure, the `/evaluations` index and the sidebar entry — the first thing in
    Wayfinder's chrome that links to redline at all. The index gates in the page as
    well as in the procedure, so a user without `evaluation:review` gets neither the
-   entry nor the route.
+   entry nor the route. This is a way to *reach* evaluations, not a way to
+   *make* one — an earlier revision of this file called it "the way in", which
+   overstated it and hid §2 items 1–3.
 
 3. **The document route is built** (2026-08-03): `WorkflowController.openDocument`
    reads the cited document's elements through `IProcurementExtractionReader`,
@@ -297,13 +369,25 @@ order:
    an anchor, and the fork serves `/evaluations/:id/documents/:documentId` beside
    its siblings, gated in the page as well as in the procedure. Every provenance
    deep-link the review grid and the Excel export write now resolves, which is
-   what §2's exit test needs to pass honestly.
+   what §2 item 5's exit test needs to pass honestly.
 
-4. **The one item of §2.** The corpus run is what all of it is for, and is the
-   point of the exercise.
+4. **§2 items 1–3, the write surface.** Create, ingest and run, from the
+   browser. The use-cases exist and are wired; these three put a mutation and a
+   control in front of each. Until they land, the only operator is someone with
+   a terminal and the seed script.
 
-   **Nothing in §2 is gated on a decision.** ADR-0020 settled where cold-start
-   topic definitions live and the lens schema is built against it.
+5. **§2 item 4, the bind-layer tests**, which items 1–3 make worth having: once
+   a specialist can drive the screens, an untested core→DOM binding is the most
+   likely place for a silent wrong number.
+
+6. **§2 item 5, the corpus run.** What all of it is for. Running it after 1–3
+   proves the product rather than the script — though the script remains a
+   deliberate fallback for de-risking the first live run on its own.
+
+   **One open decision inside §2:** item 1 must settle where a
+   browser-created evaluation's lens comes from, since nothing authors one
+   (§4.2). The manifest is the expected answer; the item must say so explicitly
+   rather than inherit it.
 
 Then, and only then: the deferred lens work (§3) in dependency order, and finally
 workspace extraction and release.
