@@ -181,7 +181,7 @@ from anything you can read off the corpus directory.
       { "id": "support", "name": "Support", "definition": "Service levels, response times and escalation." }
     ],
     "rules": [
-      { "id": "rule-sla", "pattern": "service level", "topicId": "support" }
+      { "id": "rule-sla", "pattern": "A-03", "topicId": "support" }
     ]
   },
   "vendors": [
@@ -198,6 +198,13 @@ from anything you can read off the corpus directory.
 A document belongs to exactly one group: the manifest parser rejects a document
 claimed by two, naming both. Rules are matched by specificity then declaration
 order, so their order in the file is load-bearing.
+
+**A rule's `pattern` matches an identifier token, never prose.** The pre-pass
+splits element text into separator-free tokens and keeps only those carrying a
+letter *and* a digit (`A-03`, `ISO27001`, `C-C14`); `*` is the only wildcard.
+So `"service level"` matches nothing — it has a space no token can — and
+`"price"` matches nothing either — no digit. `makeHardRule` now rejects such a
+pattern outright, naming the rule, rather than letting it silently never fire.
 
 ## What you can and cannot reach
 

@@ -32,18 +32,12 @@
       }
     ],
     "rules": [
-      { "id": "rule-sla", "pattern": "service level", "topicId": "support" },
-      { "id": "rule-response-time", "pattern": "response time", "topicId": "support" },
-      { "id": "rule-escalation", "pattern": "escalation", "topicId": "support" },
-      { "id": "rule-price", "pattern": "price", "topicId": "commercial" },
-      { "id": "rule-licence", "pattern": "licence", "topicId": "commercial" },
-      { "id": "rule-gst", "pattern": "GST", "topicId": "commercial" },
-      { "id": "rule-security", "pattern": "security", "topicId": "compliance" },
-      { "id": "rule-privacy", "pattern": "privacy", "topicId": "compliance" },
-      { "id": "rule-data-residency", "pattern": "data residency", "topicId": "compliance" },
-      { "id": "rule-milestone", "pattern": "milestone", "topicId": "delivery" },
-      { "id": "rule-implementation", "pattern": "implementation", "topicId": "delivery" },
-      { "id": "rule-architecture", "pattern": "architecture", "topicId": "solution" }
+      { "id": "rule-response-a01", "pattern": "A-01", "topicId": "solution" },
+      { "id": "rule-response-a02", "pattern": "A-02", "topicId": "delivery" },
+      { "id": "rule-response-a03", "pattern": "A-03", "topicId": "support" },
+      { "id": "rule-response-a04", "pattern": "A-04", "topicId": "commercial" },
+      { "id": "rule-response-conditions", "pattern": "C-C*", "topicId": "compliance" },
+      { "id": "rule-reoi-criteria", "pattern": "1*", "topicId": "solution" }
     ]
   },
   "vendors": [
