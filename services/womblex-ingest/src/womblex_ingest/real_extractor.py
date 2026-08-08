@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -59,6 +60,13 @@ _CHUNKS_SUFFIX = ".chunks.parquet"
 _TABLE_CELLS_SUFFIX = ".table_cells.parquet"
 _EMBEDDINGS_SUFFIX = ".embeddings.parquet"
 
+# The engine lands every run under `proc/{evaluationId}/runs/<run_id>/documents/`
+# (womblex `store/retention.py`). A key without that segment is the flat legacy
+# layout, which we read as a single implicit run so the earliest corpora still
+# ingest. `run_id` is captured so shards can be grouped by run and one selected.
+_RUN_SEGMENT = re.compile(r"/runs/(?P<run_id>[^/]+)/")
+_NO_RUN = ""
+
 
 class RealWomblexExtractor:
     """Reads the womblex pod's Parquet shards from MinIO and serves them as JSON.
@@ -74,20 +82,16 @@ class RealWomblexExtractor:
         self._storage = storage
         self._bucket = bucket
 
-    def extract(self, evaluation_id: str, document_names: List[str]) -> ExtractionResult:
+    def extract(
+        self,
+        evaluation_id: str,
+        document_names: List[str],
+        run_id: Optional[str] = None,
+    ) -> ExtractionResult:
         prefix = f"proc/{evaluation_id}/"
         keys = self._storage.list_objects(prefix)
-        parquet_keys = [key for key in keys if key.endswith(".parquet")]
-        if not parquet_keys:
-            # No shards under the prefix means the womblex pod has not run for this
-            # evaluation (or ran elsewhere). Fail loudly: an empty ExtractionResult
-            # would masquerade as "extracted, found nothing", a different and
-            # misleading state.
-            raise ShardSchemaError(
-                f"no womblex Parquet shards under {prefix!r}: run the womblex pod "
-                "(the `womblex` compose profile) for this evaluation before ingesting "
-                "in real mode"
-            )
+        all_parquet_keys = [key for key in keys if key.endswith(".parquet")]
+        parquet_keys = self._select_run(all_parquet_keys, evaluation_id, run_id)
 
         elements = self._read_shards(parquet_keys, _ELEMENTS_SUFFIX)
         chunks = self._read_shards(parquet_keys, _CHUNKS_SUFFIX)
@@ -116,6 +120,49 @@ class RealWomblexExtractor:
             documents=documents,
             embeddings=document_embeddings,
         )
+
+    def _select_run(
+        self,
+        parquet_keys: Sequence[str],
+        evaluation_id: str,
+        run_id: Optional[str],
+    ) -> List[str]:
+        """Narrow the evaluation's shards to exactly one run's worth.
+
+        Multiple runs land under one evaluation prefix, so reading them all merges
+        every `source_hash` once per run — `elementOrder` repeats and the chunk
+        store doubles on the next ingest. Group by run and pick one: the explicit
+        `run_id` if given, else the latest. Run ids are `run-YYYYMMDDTHHMMSSZ`, so
+        the lexicographically-greatest id is the most recent (womblex
+        `retention.most_recent_run` sorts the same way).
+        """
+        by_run: Dict[str, List[str]] = {}
+        for key in parquet_keys:
+            match = _RUN_SEGMENT.search(key)
+            by_run.setdefault(match.group("run_id") if match else _NO_RUN, []).append(key)
+
+        if run_id is not None:
+            selected = by_run.get(run_id)
+            if not selected:
+                raise ShardSchemaError(
+                    f"no womblex Parquet shards for run {run_id!r} under "
+                    f"proc/{evaluation_id}/: check the run id, or omit it to read the "
+                    "latest run"
+                )
+            return selected
+
+        if not by_run:
+            # No shards under the prefix means the womblex pod has not run for this
+            # evaluation (or ran elsewhere). Fail loudly: an empty ExtractionResult
+            # would masquerade as "extracted, found nothing", a different and
+            # misleading state.
+            raise ShardSchemaError(
+                f"no womblex Parquet shards under proc/{evaluation_id}/: run the "
+                "womblex pod (the `womblex` compose profile) for this evaluation "
+                "before ingesting in real mode"
+            )
+        latest_run = max(by_run)
+        return by_run[latest_run]
 
     def _read_shards(self, parquet_keys: Sequence[str], suffix: str) -> List[Row]:
         rows: List[Row] = []

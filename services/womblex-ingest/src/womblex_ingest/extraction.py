@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import List, Protocol
+from typing import List, Optional, Protocol
 
 from womblex_ingest.records import (
     ChunkRecord,
@@ -66,7 +66,12 @@ class ExtractionResult:
 
 
 class Extractor(Protocol):
-    def extract(self, evaluation_id: str, document_names: List[str]) -> ExtractionResult: ...
+    def extract(
+        self,
+        evaluation_id: str,
+        document_names: List[str],
+        run_id: Optional[str] = None,
+    ) -> ExtractionResult: ...
 
 
 class StubWomblexExtractor:
@@ -78,7 +83,14 @@ class StubWomblexExtractor:
     end-to-end offline.
     """
 
-    def extract(self, evaluation_id: str, document_names: List[str]) -> ExtractionResult:
+    def extract(
+        self,
+        evaluation_id: str,
+        document_names: List[str],
+        run_id: Optional[str] = None,
+    ) -> ExtractionResult:
+        # The stub produces its own shards, so run selection does not apply; the
+        # parameter exists only to satisfy the protocol the real extractor needs.
         shards: List[Shard] = [
             Shard(
                 filename="_manifest.parquet",

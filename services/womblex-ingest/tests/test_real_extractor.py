@@ -103,29 +103,52 @@ def _table_cell(row: int, col: int, value: str) -> dict:
     }
 
 
-def _put(storage: FakeObjectStorage, evaluation_id: str, name: str, body: bytes) -> None:
-    storage.put_object(f"proc/{evaluation_id}/{name}", body, "application/octet-stream")
+def _put(
+    storage: FakeObjectStorage,
+    evaluation_id: str,
+    name: str,
+    body: bytes,
+    *,
+    run_id: Optional[str] = None,
+) -> None:
+    """Land one shard for an evaluation, optionally under a run's own directory.
+
+    With `run_id`, the key mirrors what the engine writes —
+    `proc/{evaluationId}/runs/<run_id>/documents/<name>` — so run selection is
+    tested against the real layout. Without one, the flat legacy layout the
+    earliest fixtures use, which the extractor still reads as a single run.
+    """
+    prefix = f"proc/{evaluation_id}/"
+    if run_id is not None:
+        prefix += f"runs/{run_id}/documents/"
+    storage.put_object(f"{prefix}{name}", body, "application/octet-stream")
 
 
-def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
-    """A pod-produced shard set for one evaluation, batched womblex-style."""
-    storage = FakeObjectStorage()
+def _put_document_shards(
+    storage: FakeObjectStorage,
+    *,
+    source_hash: str = SOURCE_HASH,
+    with_embeddings: bool = True,
+    run_id: Optional[str] = None,
+) -> None:
+    """Land one document's element/chunk/cell (and optional embedding) shards."""
     _put(
         storage,
         "eval-real",
         "batch-0000.elements.parquet",
         _parquet(
             [
-                {"source_hash": SOURCE_HASH, "elem_order": 0, "page": 1, "kind": "heading", "text": "Heading", "alt_text": None},
-                {"source_hash": SOURCE_HASH, "elem_order": 1, "page": 1, "kind": "paragraph", "text": "network security controls", "alt_text": None},
+                {"source_hash": source_hash, "elem_order": 0, "page": 1, "kind": "heading", "text": "Heading", "alt_text": None},
+                {"source_hash": source_hash, "elem_order": 1, "page": 1, "kind": "paragraph", "text": "network security controls", "alt_text": None},
                 # Thread 61: non-text kinds serialise `text: None`. The `table`
                 # element is the parent of the `table_cells` below, so if its null
                 # text raised, the document — and all of its pricing — would be
                 # lost. The `image` carries only `alt_text`.
-                {"source_hash": SOURCE_HASH, "elem_order": 2, "page": 1, "kind": "table", "text": None, "alt_text": None},
-                {"source_hash": SOURCE_HASH, "elem_order": 3, "page": 1, "kind": "image", "text": None, "alt_text": "Vendor logo"},
+                {"source_hash": source_hash, "elem_order": 2, "page": 1, "kind": "table", "text": None, "alt_text": None},
+                {"source_hash": source_hash, "elem_order": 3, "page": 1, "kind": "image", "text": None, "alt_text": "Vendor logo"},
             ]
         ),
+        run_id=run_id,
     )
     _put(
         storage,
@@ -134,19 +157,20 @@ def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
         _parquet(
             [
                 {
-                    "source_hash": SOURCE_HASH,
+                    "source_hash": source_hash,
                     "chunk_index": 1,
                     "text": "network security controls",
                     "content_type": "narrative",
                 },
                 {
-                    "source_hash": SOURCE_HASH,
+                    "source_hash": source_hash,
                     "chunk_index": 0,
                     "text": "heading",
                     "content_type": "narrative",
                 },
             ]
         ),
+        run_id=run_id,
     )
     _put(
         storage,
@@ -161,6 +185,7 @@ def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
             ],
             schema=TABLE_CELLS_SCHEMA,
         ),
+        run_id=run_id,
     )
     if with_embeddings:
         _put(
@@ -170,7 +195,7 @@ def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
             _parquet(
                 [
                     {
-                        "source_hash": SOURCE_HASH,
+                        "source_hash": source_hash,
                         "chunk_index": 0,
                         "content_type": "narrative",
                         "model": MODEL,
@@ -179,7 +204,7 @@ def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
                         "vector": [0.9, 0.1, 0.0],
                     },
                     {
-                        "source_hash": SOURCE_HASH,
+                        "source_hash": source_hash,
                         "chunk_index": 1,
                         "content_type": "narrative",
                         "model": MODEL,
@@ -189,7 +214,14 @@ def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
                     },
                 ]
             ),
+            run_id=run_id,
         )
+
+
+def _corpus_storage(*, with_embeddings: bool = True) -> FakeObjectStorage:
+    """A pod-produced shard set for one evaluation, batched womblex-style."""
+    storage = FakeObjectStorage()
+    _put_document_shards(storage, with_embeddings=with_embeddings)
     return storage
 
 
@@ -283,6 +315,51 @@ def test_retrieval_sorts_a_query_onto_its_nearest_chunk() -> None:
         return sum(q * c for q, c in zip(query, vectors[chunk_index]))
 
     assert cosine(1) > cosine(0)
+
+
+def test_defaults_to_the_latest_run_when_more_than_one_is_present() -> None:
+    """Two runs under the same evaluation prefix must not merge into one document.
+
+    The store held exactly one run's worth of rows only by accident — the oldest
+    run predated the chunk stage and carried no shards. Once two real runs are
+    present, globbing the whole prefix double-counts every `source_hash`:
+    `elementOrder` repeats and the chunk store doubles. Run selection reads one
+    run, defaulting to the latest, so the extraction returns 7 elements with
+    `elementOrder` 0-6 once each.
+    """
+    storage = FakeObjectStorage()
+    _put_document_shards(storage, run_id="run-20260101T000000Z")
+    _put_document_shards(storage, run_id="run-20260806T000000Z")
+
+    result = RealWomblexExtractor(storage, "redline").extract("eval-real", ["x.pdf"])
+
+    assert result.document_count == 1
+    document = result.documents[0]
+    assert [e.elementOrder for e in document.elements] == [0, 1, 2, 3]
+
+
+def test_an_explicit_run_id_selects_that_run_not_the_latest() -> None:
+    storage = FakeObjectStorage()
+    _put_document_shards(storage, source_hash=SOURCE_HASH, run_id="run-20260101T000000Z")
+    _put_document_shards(storage, source_hash=OTHER_HASH, run_id="run-20260806T000000Z")
+
+    result = RealWomblexExtractor(storage, "redline").extract(
+        "eval-real", ["x.pdf"], run_id="run-20260101T000000Z"
+    )
+
+    assert result.document_count == 1
+    assert result.documents[0].documentId == SOURCE_HASH
+
+
+def test_an_absent_explicit_run_id_fails_loudly() -> None:
+    # A typo'd run id must not read as "extracted, found nothing".
+    storage = FakeObjectStorage()
+    _put_document_shards(storage, run_id="run-20260806T000000Z")
+
+    with pytest.raises(ShardSchemaError):
+        RealWomblexExtractor(storage, "redline").extract(
+            "eval-real", ["x.pdf"], run_id="run-does-not-exist"
+        )
 
 
 def test_the_embed_stage_model_falls_back_to_shard_metadata() -> None:

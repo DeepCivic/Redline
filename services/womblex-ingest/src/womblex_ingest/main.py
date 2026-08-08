@@ -41,6 +41,10 @@ def embeddings_key(evaluation_id: str, document_id: str) -> str:
 class IngestRequest(BaseModel):
     evaluationId: str
     documentNames: List[str]
+    # Optional: which womblex run to read. Omitted reads the latest run under the
+    # evaluation's prefix, so every existing caller keeps working; an explicit id
+    # pins a specific run (the real extractor selects it — the stub ignores it).
+    runId: Optional[str] = None
 
 
 class QueryEmbeddingRequest(BaseModel):
@@ -108,7 +112,9 @@ def build_app(
         prefix = f"proc/{evaluation_id}/"
 
         try:
-            result = extractor.extract(evaluation_id, request.documentNames)
+            result = extractor.extract(
+                evaluation_id, request.documentNames, request.runId
+            )
         except Exception as extraction_error:  # womblex failure is a runtime seam error
             registry.mark_failed(run.run_id, str(extraction_error))
             return _error(502, "EXTRACTION_FAILED", str(extraction_error), run_id=run.run_id)
