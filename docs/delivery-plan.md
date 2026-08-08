@@ -27,6 +27,10 @@
 - One agent, one context. One commit. A PR only on explicit request.
 - Tests-first: the test file is written before the implementation file.
 - One package where possible.
+- **A fork-side step is two commits, not one.** Work in `services/wayfinder`
+  lands on `redline-integration` there, then needs the gitlink *and*
+  `wayfinder.pin`'s `ref` moved here in step. Letting those two drift is what
+  left redline typechecking against a domain package the fork had moved past.
 
 ---
 
@@ -57,6 +61,10 @@ Items 1 and 2 close that, and they are genuinely thin: `makeEvaluation`, the
 repository write path, `AssignDocumentsToGroups`, the cold-start classifier and
 `BuildEvaluationTable` are all built and wired in `container-redline.ts`, wanting
 only a mutation and a control in front of them.
+
+**Items 1–3 are fork-side** — the router, the routes and the components all live
+in `services/wayfinder/apps/web`. Each is two commits under §1's contract: the
+work on `redline-integration`, then the gitlink and pin moved here in step.
 
 **Browser *upload* is deliberately not here.** Staging a corpus needs
 `ISAACUS_API_KEY`, compute and a cost decision, so it is an operator action
