@@ -18,20 +18,22 @@
 > `scripts/seed-redline-evaluation.ts`. It is proven against in-memory adapters,
 > **not** against live services — the live run is the corpus item's business.
 >
-> **Two things found while building it, both needing a decision.**
+> **Everything now points at johntooth/wayfinder** (2026-08-08). The fork gitlink
+> and `wayfinder.pin` both track `redline-integration` at `c0967c5`; the pin's
+> `repo` was naming `rbrasier/wayfinder`, which CI was cloning literally.
+> `validate.sh` #15 lost its "main undiverged from upstream" half — it policed a
+> clean upstreaming diff to rbrasier, a relationship redline does not have.
+> **`./validate.sh` is 14/14 green on a fully initialised clone**, which it had
+> never been: the previously recorded green depended on leaving the fork
+> submodule uninitialised so #15 would SKIP.
 >
-> - **The fork gitlink lags its branch.** An earlier revision recorded the pin as
->   sitting off `redline-integration` entirely; **that is no longer true** — the
->   superproject now records `43625002`, which *is* an ancestor of
->   `origin/redline-integration` (verified 2026-08-08). What remains is drift in
->   the other direction: the branch is ~90 commits ahead of the gitlink, carrying
->   both redline work (manifest hard-rule validation, the container fake's
->   `RequirementClassification` and set-valued `IAdjudicator` shapes) and a
->   Wayfinder release merge. So `validate.sh` #15 — which compares the submodule
->   checkout against the branch tip — **FAILs the moment anyone runs the
->   documented `git submodule update --init`**, and only SKIPs (the state behind
->   the recorded 13/13 green) while the submodule is uninitialised. Bumping the
->   gitlink is its own build step: it pulls a Wayfinder release in with it.
+> **ADRs are gone** (2026-08-08). `docs/adr/` is deleted and no skill instructs
+> writing one. Decisions are made and recorded in the commit that acts on them;
+> no document gates a build. Citations of the form `ADR-00NN` still appear in
+> code comments and in this file — they read as historical markers now.
+>
+> **One thing found while building, still needing a decision.**
+>
 > - **A topic id is global.** `redline_topics.id` is a plain primary key, so a
 >   topic belongs to exactly one lens and a second lens reusing an id fails. Fine
 >   for now; it will need revisiting when lens portability (§3) lands.
@@ -177,18 +179,7 @@ evaluation as the automatable half._
 
 ### Housekeeping — off the vertical, wanted before users
 
-Neither is on the critical path.
-
-- **Bump the fork gitlink to `redline-integration`'s tip.** The submodule records
-  `43625002`; the branch is ~90 commits ahead (see the header). Until it is
-  bumped, `validate.sh` #15 FAILs for anyone who follows the documented
-  `git submodule update --init`, so the workspace has no honest green on a fully
-  initialised clone. Not cheap and not merely bookkeeping: the span carries a
-  Wayfinder release merge (`0.23.1`) plus redline-side changes to the container
-  fake's `RequirementClassification` and `IAdjudicator` shapes, so the bump must
-  be validated, not just recorded. Its own build step for that reason.
-  _Version bump: PATCH._
-  _Exit: `git submodule update --init` then `./validate.sh` green, #15 included._
+Not on the critical path.
 
 - **Watch the PGlite hook timeout in the persistence suites.** An earlier
   revision recorded `./validate.sh` as FAILing with six `Hook timed out in

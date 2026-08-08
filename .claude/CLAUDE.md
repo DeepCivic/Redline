@@ -47,22 +47,22 @@ lands sooner. Procurement is the purpose; the lens is the means (decision **D1**
 settled 2026-07-24). Generalising the lens beyond procurement is **not a goal**.
 
 Our own packages live under `@redline/*` in `packages/`. Wayfinder is consumed
-read-only under `@rbrasier/*` (see ADR-0001). Two documents govern:
+read-only under `@rbrasier/*` — the package scope the fork inherits, not a
+pointer at rbrasier's repo. Two documents govern:
 [`docs/architecture.md`](../docs/architecture.md) is what redline **is**, and
 [`docs/delivery-plan.md`](../docs/delivery-plan.md) is what is **left to build**.
 [`docs/design-principles.md`](../docs/design-principles.md) holds the durable
-adopted principles and non-goals (the D1–D13 decision register lives there and in
-the ADRs). The delivery plan tracks outstanding work only; it does not restate
+adopted principles and non-goals. The delivery plan tracks outstanding work only; it does not restate
 design, and its item numbers are local to that file and renumbered whenever the
 outstanding set changes.
 
 Both upstream Python engines are **git submodules** consumed for their existing
-capabilities, not reimplemented (**ADR-0015**): `services/womblex` (`v0.3.0`) and
+capabilities, not reimplemented: `services/womblex` (`v0.3.0`) and
 `services/numbatch` (`72bcead`). A submodule holds upstream source only — redline's
 own code sits beside it (`services/womblex-ingest`, `services/numbatch-extension`).
-Run `git submodule update --init` on a fresh clone. Wayfinder stays a build-time
-pin because a submodule would drag its package set into the pnpm workspace
-(ADR-0012).
+Run `git submodule update --init` on a fresh clone. Wayfinder is also vendored
+from a build-time pin (`wayfinder.pin`, johntooth/wayfinder) because vendoring
+the whole package set would drag it into the pnpm workspace.
 
 Publishing target: the **DeepCivic** org (not johntooth).
 
@@ -115,8 +115,8 @@ reality demands it. These are decisions, not omissions:
 
 | Area | Wayfinder | redline | Why |
 |---|---|---|---|
-| Planning artefact | PRD + ADR + phase doc per feature | `architecture.md` (design) + `delivery-plan.md` (outstanding **items**, locally numbered); ADRs as needed | One-repo delivery, sequenced directly in the plan |
-| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed item is **removed** from `delivery-plan.md`; its reasoning lives in git history and any durable change lands in `architecture.md` / an ADR. **No per-item docs** — `docs/threads/` was deleted deliberately | Keeps the plan to outstanding work only |
+| Planning artefact | PRD + ADR + phase doc per feature | `architecture.md` (design) + `delivery-plan.md` (outstanding **items**, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the plan; documents never gate a build |
+| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed item is **removed** from `delivery-plan.md`; its reasoning lives in git history and any durable change lands in `architecture.md`. **No per-item docs** — `docs/threads/` was deleted deliberately | Keeps the plan to outstanding work only |
 | Validation | `validate.sh` assuming local Node + services | `validate.sh` runs via **Podman** when no local Node; services added per build step | Host here has no local Node |
 | E2E | Playwright suite exists day one (`/e2e`) | The UI cores + view models are framework-free and unit-tested under `apps/redline-web/`; the Playwright acceptance specs live in the forked Wayfinder (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`) and run against the served `/evaluations` index, the `/evaluations/:id/{review,pivots,grouping}` routes and `/evaluations/:id/documents/:documentId` | UI logic lives in a pure, testable core; the specs now target the served mount inside the fork — the `/e2e` deviation is closed |
 | Release model | alpha branches, `VERSION` sync | Pre-1.0; no alpha branches yet. Version bumps stated per build step | Not yet releasing |
@@ -128,7 +128,7 @@ Wayfinder (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`, branch
 `redline-integration`) beside Wayfinder's own suite, running against the served
 `/evaluations` index, the `/evaluations/:id/{grouping,review,pivots}` routes and
 `/evaluations/:id/documents/:documentId`
-(ADR-0006/ADR-0019). Every spec that needs a *populated* evaluation gates on
+Every spec that needs a *populated* evaluation gates on
 `E2E_REDLINE_EVALUATION_ID` — a real redline evaluation, which lands with the
 live corpus run — and skips otherwise, matching the fork's other seed-gated phase
 specs. The index spec is the exception: it renders its own empty state, so its

@@ -1,34 +1,29 @@
 # The Wayfinder commit redline is built and tested against.
 #
-# Wayfinder is consumed read-only (ADR-0001) and never committed here
-# (validate.sh check #6): CI and local dev *materialise* it into vendor/wayfinder
-# via scripts/vendor-wayfinder.sh. This file is what makes that materialisation
-# reproducible — without it CI tracked a moving `main`, so an upstream commit
-# could turn redline red with nothing changed on our side, and no SHA to bisect.
+# Wayfinder is consumed read-only and never committed here (validate.sh check
+# #6): CI and local dev *materialise* it into vendor/wayfinder via
+# scripts/vendor-wayfinder.sh. This file is what makes that materialisation
+# reproducible — without it CI tracked a moving branch, so a commit upstream of
+# us could turn redline red with nothing changed on our side, and no SHA to
+# bisect.
 #
 # Why a pin file and not a git submodule: a submodule checkout puts *all* of
 # Wayfinder's packages under vendor/wayfinder/packages/*, which our pnpm
 # workspace glob would absorb — dragging @huggingface/transformers, the
 # OpenTelemetry SDK, minio, docx and pdf-parse into redline's install. The
 # vendoring script deliberately copies only the one package we consume
-# (WAYFINDER_PACKAGES, default: domain). See ADR-0012.
+# (WAYFINDER_PACKAGES, default: domain).
 #
-# Why johntooth/wayfinder and not rbrasier/wayfinder: redline builds and runs
-# against the fork, never against rbrasier directly — the same repo the
-# services/wayfinder submodule mounts (.gitmodules). rbrasier is upstream of the
-# fork and runs drastically ahead of it, so naming it here would let a `ref`
-# bump vendor a tree the fork has never carried. CI reads this field literally
-# (.github/workflows/ci.yml checks out `repo` @ `ref`), so it is a live source,
-# not a label.
+# johntooth/wayfinder is the only Wayfinder redline builds or runs against —
+# the same repo services/wayfinder mounts (.gitmodules), and the same branch.
+# rbrasier is not a build source here. CI reads both fields literally
+# (.github/workflows/ci.yml checks out `repo` @ `ref`), so they are a live
+# source, not a label.
 #
-# The ref below is a commit on the fork's `main` that predates PR #9, so the
-# vendored tree is still un-forked Wayfinder. Do not read that as "main is the
-# clean mirror" — it no longer is. PR #9 merged `redline-integration` into main
-# (main's tip now carries redline's own `evaluation:review` permission), which
-# breaches the invariant validate.sh #15b asserts: redline changes must stay off
-# main so upstreaming remains a clean diff. That breach is unresolved; until it
-# is, choose a bump ref deliberately rather than assuming any main commit is
-# upstream-clean.
+# The ref tracks `redline-integration`, so the vendored @rbrasier/domain is the
+# one the app we mount into actually runs. Keep it in step with the
+# services/wayfinder gitlink; the two drifting apart is what let redline
+# typecheck against a domain package the fork had already moved past.
 #
 # To bump: change ref below, re-run scripts/vendor-wayfinder.sh, then
 # `pnpm install && ./validate.sh`. The drift check
@@ -36,4 +31,4 @@
 # tells you whether the new commit still satisfies the contract redline reuses.
 
 repo=johntooth/wayfinder
-ref=60767f41ec3ee2a793897dbee6a31cc62e967fef
+ref=c0967c52327a27c4d407498d03b19862b12bbcfb
