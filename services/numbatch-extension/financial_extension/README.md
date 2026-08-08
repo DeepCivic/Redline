@@ -1,7 +1,7 @@
 # numbatch-financial — the financial extension (Threads 6–8)
 
 redline's **additive** extension to the forked Numbatch backend
-([ADR-0005](../../../docs/adr/0005-numbatch-fork-all-but-frontend.adr.md): the
+(ADR-0005: the
 financial extension is additive — new tables + a new Arq worker stage). This
 directory holds the extension as a self-contained overlay so it is buildable and
 testable **without vendoring the GPU-bearing fork on disk** (like Thread 5's
@@ -24,7 +24,7 @@ requirement)** pair with no duplication:
 
 | Table | Purpose | Key |
 |---|---|---|
-| `financial_profiles` | Per Numbatch **topic** (= a redline requirement, [ADR-0004](../../../docs/adr/0004-user-defined-requirements-not-fixed-1-6.adr.md)), config for *what* monetary facts to pull (`target_currency`, `cost_basis` one-off/recurring, `granularity` line-item/bundle) and *how* to normalise. | one live profile per `topic_id` |
+| `financial_profiles` | Per Numbatch **topic** (= a redline requirement, ADR-0004), config for *what* monetary facts to pull (`target_currency`, `cost_basis` one-off/recurring, `granularity` line-item/bundle) and *how* to normalise. | one live profile per `topic_id` |
 | `financial_extractions` | The Thread 7 worker's output: one figure (or description fallback) per document, with provenance to womblex's `elem_order`. | **`uq_financial_extractions_doc_topic (source_doc_id, topic_id)`** — the no-duplication invariant |
 
 `source_doc_id` is womblex's `source_hash`; `topic_id` is the Numbatch topic the

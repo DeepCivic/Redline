@@ -157,8 +157,7 @@ flowchart TB
 redline-web brains and view models inside Wayfinder's chrome, auth and router,
 resolving `@redline/*` as workspace packages (`../../apps/*`, `../../packages/*`
 globs) exactly as it resolves `@rbrasier/*`. **The mount lives only here**, never
-in redline's tree, and the fork's `main` stays a clean upstream mirror
-(`validate.sh` #15).
+in redline's tree; `validate.sh` #15 keeps the checkout on that branch.
 
 As built: the `evaluation` tRPC router (read-side `list` / `reviewGrid` /
 `pricingPivot` / `workbook` / `document`); `container-redline.ts`
@@ -549,9 +548,11 @@ redline/
     submodule redline *runs and edits* (unlike the byte-identical
     womblex/numbatch submodules): the review UI mounts into the fork's `apps/web`,
     which resolves redline's `@redline/*` packages as workspace members. The
-    invariant that replaces "never modified" is enforced by `validate.sh` #15 —
-    the checkout stays on `redline-integration` and the fork's `main` never
-    diverges from upstream, so upstreaming stays a clean diff (ADR-0019).
+    invariant that replaces "never modified" is enforced by `validate.sh` #15:
+    the checkout stays on `redline-integration`. The check once also asserted the
+    fork's `main` never diverged from rbrasier, protecting a clean upstreaming
+    diff; redline builds against johntooth/wayfinder only, so that half was
+    removed rather than left policing a relationship we do not have.
 
 ---
 
@@ -716,7 +717,6 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
   (the submodule's own docs — authoritative for the engine).
 - **The wire shape redline serves:** `services/womblex-ingest/src/womblex_ingest/`
   (`records.py` = DTOs, `shard_reader.py` = the schema map, `real_extractor.py`).
-- **Decisions:** `docs/adr/` (authoritative).
 - **Outstanding work:** [`delivery-plan.md`](./delivery-plan.md) — the only
   document that tracks what is left to build.
 - **Design rationale (durable, non-tracking):** [`design-principles.md`](./design-principles.md)

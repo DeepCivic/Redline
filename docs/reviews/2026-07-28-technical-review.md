@@ -1,13 +1,14 @@
 # redline — Technical Review (2026-07-28)
 
 > **Status:** point-in-time review record · does not track work. Anything here
-> that becomes work belongs in [`delivery-plan.md`](../delivery-plan.md) as a
-> thread; anything that changes design belongs in an ADR.
+> that becomes work belongs in [`delivery-plan.md`](../delivery-plan.md);
+> anything that changes design belongs in
+> [`architecture.md`](../architecture.md).
 >
 > **Context:** requested while womblex currency handling is awaited upstream.
 > At `v0.2.0` the engine has no currency capability at all — `value_type` is
 > always `"text"`, `number_format` is unset — so redline derives `isCurrency`
-> at the seam per [ADR-0016](../adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md).
+> at the seam per ADR-0016.
 > That interim derivation, and everything that consumes it, got particular
 > attention here.
 
