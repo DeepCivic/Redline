@@ -2,7 +2,7 @@
 
 > **Status:** durable design rationale · companion to
 > [`architecture.md`](./architecture.md) (what redline *is*) and
-> [`adr/`](./adr/) (the decisions).
+> adr/ (the decisions).
 >
 > This file records the principles redline **adopted from its upstream engines**
 > and the **non-goals** it holds — the rationale that is not tied to a single
@@ -12,10 +12,10 @@
 > These were originally the D4–D10 register and §8 non-goals of the retired
 > `dev-iteration-2.md` (the comprehension-lens design). The D1–D3, D11–D13
 > decisions from that document became ADRs
-> ([0007](./adr/0007-procurement-purpose-lens-means.adr.md)–[0009](./adr/0009-numbatch-library-is-system-of-record.adr.md),
-> [0010](./adr/0010-topic-identity-carries-into-the-requirement-projection.adr.md),
-> [0011](./adr/0011-hard-rule-precedence-is-specificity-then-declaration-order.adr.md),
-> [0014](./adr/0014-embeddings-cross-the-json-boundary-as-float-arrays.adr.md));
+> (0007–0009,
+> 0010,
+> 0011,
+> 0014);
 > the principles below did not, because they are adopted-and-recorded rather than
 > debated, and each governs many threads rather than one.
 
@@ -44,7 +44,7 @@ lessons and how each lands here:
   reuses `enrich`'s sidecar when present and self-enriches when absent. → The
   trained Numbatch adapter is an **optional overlay**, not a required stage; the
   cold-start path (hard rules → retrieval → adjudication) runs without it. (This
-  is the mechanism behind [ADR-0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md).)
+  is the mechanism behind ADR-0008.)
 
 - **Content-addressed identity makes reuse a cache hit by construction.**
   `source_hash = sha256(record_id + text)` — re-ingesting an unchanged record
@@ -92,7 +92,7 @@ Recorded so they do not creep back thread by thread:
 - **No confidence scores in the UI.** Replaced by Clear/Ambiguous buckets.
 - **No lens orchestrator.** Explicitly rejected — womblex deleted theirs.
 - **Air-gap / offline operation.** Retrieval requires Isaacus; a deployment that
-  cannot reach it cannot retrieve. (See [ADR-0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md),
+  cannot reach it cannot retrieve. (See ADR-0008,
   amended, and `architecture.md` §2.)
 
 Re-entry condition for the first five: revisit after a lens has accumulated 20+

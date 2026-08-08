@@ -42,7 +42,8 @@ look right?" Wait for confirmation before starting.
      status row — the plan tracks outstanding work only.
    - Update `docs/architecture.md` only if the revision changed what redline *is*
      — a seam, a contract, a corrected assumption.
-   - If a decision changed, add or supersede an ADR in `docs/adr/`.
+   - If a decision changed, say so in the commit message. Do not create a
+     document for it.
    - State the version bump intent.
    - Run `./validate.sh` — fix all failures before declaring done.
    - **One revision = one commit.**

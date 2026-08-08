@@ -40,7 +40,6 @@ export * from "./ports/classification-lens-reader";
 // The write half of that seam — the minimum that lets a corpus driver seed the
 // lens it is about to classify against. Not the authoring surface (deferred).
 export * from "./ports/classification-lens-writer";
-export * from "./ports/embedding-reader";
 export * from "./ports/evaluation-repository";
 export * from "./ports/financial-extractor";
 export * from "./ports/language-model";
@@ -50,8 +49,3 @@ export * from "./ports/language-model";
 export * from "./ports/money-span-store";
 export * from "./ports/procurement-classifier";
 export * from "./ports/procurement-extraction-reader";
-
-// Retrieval — embeds a topic definition into a query vector, in the
-// same space as the chunk vectors, so the lens's first pass can match without a
-// trained model (ADR-0014).
-export * from "./ports/text-embedder";

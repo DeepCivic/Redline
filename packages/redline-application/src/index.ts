@@ -38,14 +38,6 @@ export type {
   ClassifyWithHardRulesInput,
 } from "./use-cases/classify-with-hard-rules";
 
-// Comprehension lens — first-pass classification. Model-free
-// retrieval: rank chunk vectors against topic definitions by cosine similarity.
-export { ClassifyByRetrieval } from "./use-cases/classify-by-retrieval";
-export type {
-  ClassifyByRetrievalDependencies,
-  ClassifyByRetrievalInput,
-} from "./use-cases/classify-by-retrieval";
-
 // Comprehension lens — first-pass classification. LLM adjudication:
 // choose among the contending topics for what retrieval left unclear, and carry
 // the model's one-sentence rationale alongside the shared classification shape.

@@ -329,15 +329,19 @@ fi
 
 # ── 15. Wayfinder fork hygiene (services/wayfinder submodule) ────────────────
 # The Wayfinder fork is a submodule we RUN and EDIT (ADR-0019), unlike the
-# byte-identical Python submodules. Two invariants replace "never modified":
-#   (a) the checkout is on the redline-integration branch's commit the
-#       superproject records — redline's mount lives only there;
-#   (b) the fork's `main` has NOT diverged from upstream/main — redline changes
-#       must never leak onto `main`, so upstreaming stays a clean diff.
-# SKIPs (never fails) on a clone without the submodule initialised or without an
-# `upstream` remote to compare against, matching #13's clean-clone posture; CI
-# checks out submodules and has the remote, so CI is where this bites.
-section "15. Wayfinder fork on redline-integration, main undiverged from upstream"
+# byte-identical Python submodules. One invariant replaces "never modified": the
+# checkout is on the redline-integration branch's commit the superproject
+# records — redline's mount lives only there.
+#
+# This check used to carry a second half, asserting the fork's `main` had not
+# diverged from rbrasier's — protecting a clean upstreaming diff. redline builds
+# and runs against johntooth/wayfinder only, so that guard policed a
+# relationship we do not have, and PR #9 (redline-integration merged into main)
+# breached it with no consequence. Removed rather than left failing.
+#
+# SKIPs (never fails) on a clone without the submodule initialised, matching
+# #13's clean-clone posture.
+section "15. Wayfinder fork checkout is on redline-integration"
 if [ ! -d services/wayfinder/.git ] && [ ! -f services/wayfinder/.git ]; then
   skip "wayfinder fork — services/wayfinder not initialised (git submodule update --init)"
 elif ! command -v git >/dev/null 2>&1; then
@@ -359,39 +363,20 @@ else
   if [ "$WF_CURRENT_BRANCH" = "$WF_CONFIGURED_BRANCH" ]; then WF_ON_BRANCH=true;
   elif [ -n "$WF_BRANCH_SHA" ] && [ "$WF_HEAD_SHA" = "$WF_BRANCH_SHA" ]; then WF_ON_BRANCH=true; fi
 
-  # (b) The fork's main must not have diverged from upstream/main: every commit
-  # on the fork's main is an ancestor of upstream/main (a clean mirror) OR the
-  # two are identical. Any fork-only commit on `main` is the leak this catches.
-  # Needs an `upstream` remote; SKIP that half rather than fail when it is absent.
-  WF_MAIN_DIVERGED="unknown"
-  if git -C services/wayfinder rev-parse upstream/main >/dev/null 2>&1 \
-     && git -C services/wayfinder rev-parse origin/main >/dev/null 2>&1; then
-    if [ -z "$(git -C services/wayfinder log --oneline upstream/main..origin/main 2>/dev/null)" ]; then
-      WF_MAIN_DIVERGED=false
-    else
-      WF_MAIN_DIVERGED=true
-    fi
-  fi
-
   if [ "$WF_ON_BRANCH" != true ] && [ -z "$WF_BRANCH_SHA" ]; then
     # Neither a branch name nor a resolvable branch commit: a shallow submodule
     # checkout (actions/checkout's `git submodule update --depth=1`) fetches the
     # pinned commit detached and NO branch refs, so a correct checkout is
     # indistinguishable from a wrong one. Refusing here failed every CI run from
     # this check's introduction (966361b) onward. Skip rather than assert what
-    # cannot be observed — the same posture as #13 and (b) below. The workflow
+    # cannot be observed — the same posture as #13. The workflow
     # fetches the ref so CI still exercises the guard.
     warn "wayfinder fork: '${WF_CONFIGURED_BRANCH}' is not resolvable in services/wayfinder — a shallow checkout carries no branch refs, so a detached-but-correct HEAD cannot be told from a wrong one"
     skip "wayfinder fork — no ${WF_CONFIGURED_BRANCH} ref to compare HEAD against"
   elif [ "$WF_ON_BRANCH" != true ]; then
     fail "wayfinder fork: checkout is not on '${WF_CONFIGURED_BRANCH}' (redline's mount must live only there). Run 'git submodule update --init' or 'git -C services/wayfinder checkout ${WF_CONFIGURED_BRANCH}'"
-  elif [ "$WF_MAIN_DIVERGED" = true ]; then
-    fail "wayfinder fork: origin/main has commits not in upstream/main — redline changes have leaked onto main. Keep main a clean upstream mirror; land redline work only on ${WF_CONFIGURED_BRANCH}"
-  elif [ "$WF_MAIN_DIVERGED" = unknown ]; then
-    warn "wayfinder fork: no upstream remote in services/wayfinder — cannot verify main is undiverged (add 'upstream' or rely on CI)"
-    pass "wayfinder fork on ${WF_CONFIGURED_BRANCH} (main divergence unchecked — no upstream remote)"
   else
-    pass "wayfinder fork on ${WF_CONFIGURED_BRANCH}, main undiverged from upstream"
+    pass "wayfinder fork on ${WF_CONFIGURED_BRANCH}"
   fi
 fi
 

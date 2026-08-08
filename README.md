@@ -18,8 +18,8 @@ Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 Under construction. Two documents govern:
 [`docs/architecture.md`](./docs/architecture.md) is what redline **is**, and
 [`docs/delivery-plan.md`](./docs/delivery-plan.md) is what is **left to build**.
-Durable design rationale lives in [`docs/design-principles.md`](./docs/design-principles.md)
-and the [ADRs](./docs/adr/); neither tracks work.
+Durable design rationale lives in [`docs/design-principles.md`](./docs/design-principles.md);
+it does not track work.
 
 The foundations are built and green under `./validate.sh`: the scaffold,
 `redline-domain` (user-defined requirements + the lens domain), the
@@ -39,7 +39,7 @@ run — see [`delivery-plan.md`](./docs/delivery-plan.md) §2.
 
 A true **adapter**, not a Wayfinder fork. Wayfinder is consumed at runtime seams
 (HTTP/MCP + object storage + a separate `redline_`-prefixed DB schema) and its typed
-domain helpers are reused read-only. See [ADR-0001](./docs/adr/0001-adapter-over-wayfinder.adr.md).
+domain helpers are reused read-only.
 
 Publishing target: the **DeepCivic** org.
 
