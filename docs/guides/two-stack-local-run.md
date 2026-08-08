@@ -240,7 +240,7 @@ account.
 - **`embed` genuinely needs a real key** (`kanon-2-embedder` is an API call).
 - **`enrich` genuinely needs a real key too** (`kanon-2-enricher`), and it is on
   by default as of 2026-08-06: `enrichment.enabled: true` in
-  `infra/womblex/redline.yaml`, because delivery-plan items 2–6 read the graph.
+  `infra/womblex/redline.yaml`, because the pilot-report items read the graph.
   This is the first real Isaacus spend beyond embeddings.
 
 Chunks are what the cold-start classifier reads — `IChunkStore`'s row has no
