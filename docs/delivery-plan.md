@@ -1,6 +1,13 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-03
+> **Status:** the live tracking document · **Date:** 2026-08-08
+>
+> **The superseded retrieval leg is deleted** (2026-08-08). `ClassifyByRetrieval`,
+> `IEmbeddingReader`, `ITextEmbedder`, the two womblex embeddings adapters and
+> their wire parsers and fixtures — ~1,300 lines ADR-0017/0018 had superseded but
+> which were still exported and still running tests — are gone. Nothing outside
+> those files referenced them, in this repo or in the fork on either the pinned
+> commit or the branch tip.
 >
 > **The corpus write path is built.** `IngestDocuments` → lens seed →
 > `AssignDocumentsToGroups` → `BuildEvaluationTable` now runs end to end from a
@@ -13,13 +20,18 @@
 >
 > **Two things found while building it, both needing a decision.**
 >
-> - **The fork's `redline-integration` branch does not carry the live
->   `getContainer()` wiring.** The superproject pins `d177bf07`, which sits on
->   `origin/claude/delivery-plan-user-testing-bses4f` and is *not* an ancestor of
->   `redline-integration`. The Redline-side PR merged; the fork-side branch never
->   did. The seeding work is branched from the pin, so it carries the wiring —
->   but both need merging into `redline-integration` before `validate.sh` #15 can
->   be green, since that check asserts the checkout is on that branch.
+> - **The fork gitlink lags its branch.** An earlier revision recorded the pin as
+>   sitting off `redline-integration` entirely; **that is no longer true** — the
+>   superproject now records `43625002`, which *is* an ancestor of
+>   `origin/redline-integration` (verified 2026-08-08). What remains is drift in
+>   the other direction: the branch is ~90 commits ahead of the gitlink, carrying
+>   both redline work (manifest hard-rule validation, the container fake's
+>   `RequirementClassification` and set-valued `IAdjudicator` shapes) and a
+>   Wayfinder release merge. So `validate.sh` #15 — which compares the submodule
+>   checkout against the branch tip — **FAILs the moment anyone runs the
+>   documented `git submodule update --init`**, and only SKIPs (the state behind
+>   the recorded 13/13 green) while the submodule is uninitialised. Bumping the
+>   gitlink is its own build step: it pulls a Wayfinder release in with it.
 > - **A topic id is global.** `redline_topics.id` is a plain primary key, so a
 >   topic belongs to exactly one lens and a second lens reusing an id fails. Fine
 >   for now; it will need revisiting when lens portability (§3) lands.
@@ -165,18 +177,18 @@ evaluation as the automatable half._
 
 ### Housekeeping — off the vertical, wanted before users
 
-Neither is on the critical path; both were found by the pre-user-testing review
-and both are cheap.
+Neither is on the critical path.
 
-- **Delete the superseded retrieval leg (~1,321 lines of dead code).** §5 below
-  already records `ClassifyByRetrieval` / `IEmbeddingReader` / `ITextEmbedder` and
-  the womblex embeddings adapters as superseded by ADR-0017/0018 — but every one
-  of them is still in the tree, still exported from
-  `packages/redline-adapters/src/index.ts`, and still running tests. `AGENTS.md`:
-  *"No dead code — if something is unused, delete it entirely."* The surviving
-  invariants live in ADR-0018 and the chunk store, not in these files.
+- **Bump the fork gitlink to `redline-integration`'s tip.** The submodule records
+  `43625002`; the branch is ~90 commits ahead (see the header). Until it is
+  bumped, `validate.sh` #15 FAILs for anyone who follows the documented
+  `git submodule update --init`, so the workspace has no honest green on a fully
+  initialised clone. Not cheap and not merely bookkeeping: the span carries a
+  Wayfinder release merge (`0.23.1`) plus redline-side changes to the container
+  fake's `RequirementClassification` and `IAdjudicator` shapes, so the bump must
+  be validated, not just recorded. Its own build step for that reason.
   _Version bump: PATCH._
-  _Exit: the files are gone and `./validate.sh` is green._
+  _Exit: `git submodule update --init` then `./validate.sh` green, #15 included._
 
 - **Watch the PGlite hook timeout in the persistence suites.** An earlier
   revision recorded `./validate.sh` as FAILing with six `Hook timed out in
@@ -252,8 +264,10 @@ order:
    overturned ADR-0014 and set the store the retrieval leg is built on; the
    store-side chunk surface and the cold-start classifier over it now exist and
    are green under `./validate.sh`. They replaced the old in-TypeScript retrieval
-   leg (the former `ClassifyByRetrieval` / `IEmbeddingReader` / embeddings adapter
-   are superseded). The money `IFinancialExtractor` (`MoneySpanFinancialExtractor`)
+   leg, which has now been **deleted** (2026-08-08): `ClassifyByRetrieval`,
+   `IEmbeddingReader`, `ITextEmbedder` and the womblex embeddings adapters are gone
+   from the tree, their invariants living on in ADR-0014/0018 and the chunk store.
+   The money `IFinancialExtractor` (`MoneySpanFinancialExtractor`)
    is likewise built: it sums a document's table-cell money spans over
    `IMoneySpanStore` into grid AUD, wired behind the port in `lib/container.ts`
    (architecture.md §4 step 7 / §7 item 4). The UI mount lands in the forked
