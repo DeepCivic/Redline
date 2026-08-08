@@ -13,10 +13,24 @@
 # vendoring script deliberately copies only the one package we consume
 # (WAYFINDER_PACKAGES, default: domain). See ADR-0012.
 #
+# Why johntooth/wayfinder and not rbrasier/wayfinder: redline builds and runs
+# against the fork, never against rbrasier directly — the same repo the
+# services/wayfinder submodule mounts (.gitmodules). rbrasier is upstream of the
+# fork and runs drastically ahead of it, so naming it here would let a `ref`
+# bump vendor a tree the fork has never carried. CI reads this field literally
+# (.github/workflows/ci.yml checks out `repo` @ `ref`), so it is a live source,
+# not a label.
+#
+# The ref must be a commit on the fork's `main` — its clean mirror of upstream —
+# and never one on `redline-integration`. main carries no redline changes
+# (validate.sh #15b enforces that), so the contract below is tested against
+# un-forked Wayfinder; pointing at redline-integration would vendor redline's own
+# additions back into redline and make the drift check tautological.
+#
 # To bump: change ref below, re-run scripts/vendor-wayfinder.sh, then
 # `pnpm install && ./validate.sh`. The drift check
 # (packages/redline-adapters/src/wayfinder/wayfinder-contract.test.ts) is what
 # tells you whether the new commit still satisfies the contract redline reuses.
 
-repo=rbrasier/wayfinder
+repo=johntooth/wayfinder
 ref=60767f41ec3ee2a793897dbee6a31cc62e967fef
