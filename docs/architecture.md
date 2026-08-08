@@ -3,7 +3,7 @@
 > **Status:** ground-truth reference · supersedes the per-thread docs and the
 > iteration delivery plans, all deleted. Durable design rationale that is not a
 > single decision lives in [`design-principles.md`](./design-principles.md); the
-> decisions themselves are in [`adr/`](./adr/).
+> decisions themselves are in adr/.
 >
 > This is the single source of truth for **what redline is, what it depends on,
 > and how data moves through it**. Its companion is
@@ -536,7 +536,7 @@ redline/
   `infra/docker/*.Dockerfile`s; run all-but-frontend (ADR-0005). redline's
   additive overlay is **not** in the submodule — it lives beside it in
   `services/numbatch-extension/` and grafts onto the fork's `app/` + `alembic/`.
-  This supersedes [ADR-0013](./adr/0013-numbatch-fork-is-materialised-from-a-pin.adr.md),
+  This supersedes ADR-0013,
   which chose a build-time pin for consistency with Wayfinder; Wayfinder's pin
   exists because a submodule drags its package set into the pnpm workspace, which
   is a JavaScript problem Numbatch does not have (D14, ADR-0015).
@@ -631,7 +631,7 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    `table_cells` and is left unset, and that engine had no currency capability
    anywhere in `src/`. So `isCurrency` was derived from the **verbatim `value`
    string**, requiring an explicit currency marker — a bare number is not
-   currency. See [ADR-0016](./adr/0016-currency-is-derived-from-the-verbatim-cell-value.adr.md),
+   currency. See ADR-0016,
    which owns the rule and its limits. Both columns are still read first, so a
    future openpyxl-based reader upgrades the signal with no redline change.
 

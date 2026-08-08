@@ -73,22 +73,16 @@
 > run is the only step left on the vertical. Housekeeping that is not on the
 > vertical but is wanted before users is at the end of §2.
 >
-> **A note on ADRs, since an earlier revision got this wrong.** An ADR records a
-> decision; it does not gate a build. This plan previously carried "do not build
-> until the ADR's PR is merged" language against the lens item. That was a
-> mistake in kind, not just in fact — where a decision is unsettled, say what is
-> unsettled and what the item assumes, and keep building.
->
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is the single source of truth for *what
-> redline is and how data moves through it*; [`adr/`](./adr/) holds the decisions;
+> redline is and how data moves through it*;
 > [`design-principles.md`](./design-principles.md) holds the durable adopted
 > principles and non-goals. This file holds *what is left to do* and nothing else.
 > Completed work and the reasoning behind superseded plans live in git history.
 >
 > Item numbers here are local to this document and are renumbered whenever the
 > outstanding set changes; they carry no history and never need to line up with
-> anything in the code or the ADRs.
+> anything in the code.
 
 ---
 
@@ -110,7 +104,7 @@ the trained-classifier overlay are **deferred** (§3) — they are a second-orde
 improvement on a product that does not yet render.
 
 **Numbatch is not on this path.** Classification runs cold-start over womblex
-extraction ([ADR-0008](./adr/0008-trained-classifier-is-an-optional-overlay.adr.md)'s
+extraction (ADR-0008's
 first pass — no samples, no training, no adapter): hard rules + LLM adjudication
 navigating the store's chunks/provenance, with the nearest-neighbour step deferred
 (ADR-0018 addendum). Pricing comes from womblex's own currency-typed table cells /
@@ -185,7 +179,8 @@ Not on the critical path.
   revision recorded `./validate.sh` as FAILing with six `Hook timed out in
   10000ms` errors across
   `drizzle-{evaluation-repository,money-span-store,chunk-store}.test.ts`. **It did
-  not reproduce on 2026-08-03** — a full `./validate.sh` ran 13/13 green with the
+  not reproduce on 2026-08-03, nor on 2026-08-08** — a full `./validate.sh` ran
+  green (14/14 on the 08-08 run) with the
   adapters suite finishing in ~23s under turbo. So this is load-dependent
   flakiness on a slower or busier machine, not a standing failure. Raise the hook
   budget if it returns; do not treat it as a known-red gate in the meantime.
@@ -219,8 +214,8 @@ order:
 ## 4. Carried-forward items
 
 1. **Open questions still owned here** (from the retired lens design): tenancy
-   mapping — Numbatch `organisation_id` ↔ Wayfinder identity (needs an ADR before
-   a lens is shared between users); primary/secondary semantics (net-new
+   mapping — Numbatch `organisation_id` ↔ Wayfinder identity (must be settled
+   before a lens is shared between users); primary/secondary semantics (net-new
    modelling — Numbatch returns score-sorted ≤3 topics with no primary/secondary
    distinction; owned by the `BoundaryDecision` item in §3); ambiguity thresholds
    (the signal register needs initial values, unmeasured until a real corpus runs
@@ -264,7 +259,7 @@ order:
    (architecture.md §4 step 7 / §7 item 4). The UI mount lands in the forked
    Wayfinder (`services/wayfinder`, branch `redline-integration`), not in
    `apps/redline-web` —
-   [ADR-0019](./adr/0019-wayfinder-fork-submodule-for-ui-mount.adr.md): the
+   ADR-0019: the
    `@redline/*` workspace link, the `evaluation` tRPC router, the
    `container-redline.ts` seam, the `/evaluations` routes + components, the
    `evaluation:review` auth gate and the served-fork Playwright specs are all
@@ -280,7 +275,7 @@ order:
    `./validate.sh` (architecture.md §3). The persisted lens and the live wiring
    followed (2026-08-03): `DrizzleClassificationLensReader` over the four lens
    tables, then `resolveRedlineModule` + the `ILanguageModel` bridge in the fork.
-   `validate.sh` is 13/13 and the fork's typecheck went 3 errors → 0 — one of
+   `validate.sh` was 13/13 at the time and the fork's typecheck went 3 errors → 0 — one of
    those was pre-existing, `container-redline.test.ts` still composing
    `buildColdStartClassifier` with `topics`/`ruleSet`/`candidates` after the lens
    moved behind `IClassificationLensReader`.
