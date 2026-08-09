@@ -31,4 +31,4 @@
 # tells you whether the new commit still satisfies the contract redline reuses.
 
 repo=johntooth/wayfinder
-ref=c0967c52327a27c4d407498d03b19862b12bbcfb
+ref=f43b59507c49648aa438be89b8693022f5c7b01a

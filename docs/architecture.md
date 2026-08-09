@@ -160,24 +160,44 @@ globs) exactly as it resolves `@rbrasier/*`. **The mount lives only here**, neve
 in redline's tree; `validate.sh` #15 keeps the checkout on that branch.
 
 As built: the `evaluation` tRPC router (read-side `list` / `reviewGrid` /
-`pricingPivot` / `workbook` / `document`); `container-redline.ts`
-(`buildRedlineModule` → `WorkflowController` behind
-`ctx.container.redline.workflowController`); the `/evaluations` index and the
-`/evaluations/:id/{review,pivots,grouping}` routes plus
+`pricingPivot` / `workbook` / `document`, plus the create half — `stagedCorpora`
+/ `stagedDocuments` and the router's first mutation, `create`);
+`container-redline.ts` (`buildRedlineModule` → `WorkflowController` behind
+`ctx.container.redline.workflowController`); the `/evaluations` index,
+`/evaluations/new`, the `/evaluations/:id/{review,pivots,grouping}` routes plus
 `/evaluations/:id/documents/:documentId` — the document view every review row's
 source deep-link points at — with `"use client"` surfaces that render the view
 models (grouping is a read-side landing) — all mirroring the fork's own extraction
-feature. The index and the document route gate in the page as well as in the
-procedure: they call `notFound()` without `evaluation:review`. For the index that
-is because the sidebar entry pointing at it is hidden by the same rule, and a
-discoverable surface that renders an empty list to someone who may not see it
-would contradict that; for the document route it is because the URL carries a
-document id, so a shell that renders and only then fails to load would confirm
-which ids exist. The controller's ports cross `container-redline`'s
-boundary as **injected** dependencies. The repository, extraction-reader, money
-`IFinancialExtractor`, `DrizzleChunkStore` and `HttpAdjudicator` adapters all
-exist; the `evaluation:review` auth gate (`reviewProcedure`) and the served-fork
-Playwright specs are merged.
+feature. Every route gates in the page as well as in the procedure, calling
+`notFound()` without the key. For the index that is because the sidebar entry
+pointing at it is hidden by the same rule, and a discoverable surface that
+renders an empty list to someone who may not see it would contradict that; for
+the document route it is because the URL carries a document id, so a shell that
+renders and only then fails to load would confirm which ids exist. The controller's
+ports cross `container-redline`'s boundary as **injected** dependencies. The
+repository, extraction-reader, money `IFinancialExtractor`, `DrizzleChunkStore`,
+`HttpAdjudicator` and `DrizzleStagedCorpusReader` adapters all exist; the auth
+gates (`reviewProcedure`, `createProcedure`) and the served-fork Playwright specs
+are merged.
+
+**Two keys, not one.** Reviewing and creating are separate permissions:
+`evaluation:review` opens the grid, the pivots and the export;
+`evaluation:create` starts a tender and, with it, discloses which corpora are
+staged. The fork splits `extraction:author` from `extraction:run` the same way.
+Power Users hold both out of the box, admins pass on the wildcard.
+
+**An evaluation's id is its corpus's id.** `CreateEvaluation` never mints one.
+The same string addresses the corpus in object storage (`proc/{evaluationId}/`),
+in `redline_chunks.evaluation_id` and at the sidecar
+(`/extractions/{evaluation_id}/{document_id}`), so a fresh id would produce an
+evaluation whose documents cannot be read — which is exactly what a retyped
+manifest id used to do, silently, until classification returned nothing.
+`IStagedCorpusReader` exists to make that a choice rather than a transcription:
+it lists what the load path has already staged, with an opening-passage preview
+so an opaque womblex `source_hash` is choosable. It is deliberately not on
+`IChunkStore` — that port is the classifier's provenance-addressed fetch, keyed
+by an evaluation that already exists; this one answers the question asked
+*before* there is one.
 
 **How an evaluation reaches its lens.** `ClassificationRequest` carries no lens,
 so a classifier holding one as constructor state could serve only one evaluation
@@ -216,21 +236,28 @@ fork boots as plain Wayfinder with the mount unavailable, so redline's absence
 never fails Wayfinder's fail-fast env parse. Running both stacks locally is
 [`guides/two-stack-local-run.md`](./guides/two-stack-local-run.md).
 
-**How an evaluation gets created.** Everything served is read-side, so the write
-path is a script in the fork, not a route: `scripts/seed-redline-evaluation.ts`
-reads a corpus manifest and runs `IngestDocuments` → `saveLens` →
+**How an evaluation gets created.** From the browser, at `/evaluations/new`:
+`CreateEvaluation` takes a picked staged corpus, its documents with a brand
+against each, and the fields the responses are read against, and writes the
+evaluation, its vendors, its response groups and its lens. Everything is
+validated and composed *before* anything is written, because the repository's
+saves are upserts — creating twice over one corpus must return `ALREADY_EXISTS`
+rather than silently overwrite the first. One group per brand: the review grid
+delineates by brand, and a document may be claimed by only one group, since
+`assignDocument` moves rather than copies. The lens is written **last**: its
+binding row references the evaluation, so the evaluation must exist first, and
+the lens must exist before classification or the reader resolves `NOT_FOUND`. It
+carries **no hard rules** — none can honestly be written before anyone has seen
+how these fields land on this corpus — so every field goes to adjudication.
+
+The create half (`stagedCorpusReader`, `lensWriter`) is therefore **on**
+`RedlineModule`, reversing the earlier decision to keep every write part off it.
+What is still script-only is the *run*: `scripts/seed-redline-evaluation.ts`
+reads a corpus manifest and drives `IngestDocuments` → `saveLens` →
 `AssignDocumentsToGroups` → `BuildEvaluationTable`, printing the evaluation id
-that opens the review grid and feeds `E2E_REDLINE_EVALUATION_ID`. The manifest
-carries what the operator controls — vendors, response groups, and the lens —
-because the served grouping page is read-only until the stage machine lands; a
-document may be claimed by only one group, since `assignDocument` moves rather
-than copies. The lens is written *between* ingest and grouping: its binding row
-references the evaluation, so the evaluation must exist first, and the lens must
-exist before classification or the reader resolves `NOT_FOUND`. A tRPC mutation
-was deliberately not built — it would drag in the stage machine it should not own
-yet. The seeding parts are resolved beside `resolveRedlineModule` from the same
-adapter construction but stay **off** `RedlineModule`: nothing served writes an
-evaluation, so the served container carries no write capability.
+that opens the review grid and feeds `E2E_REDLINE_EVALUATION_ID`. It stays the
+only path that can write a lens *with* hard rules, and the deliberate fallback
+for de-risking a live run without a browser (delivery-plan §2 item 1).
 
 ### Why womblex is split into a pod + a sidecar
 
@@ -493,14 +520,15 @@ redline/
 │                                  branch redline-integration. apps/web serves
 │                                  the redline-web UI; resolves @redline/* as
 │                                  workspace packages. Mount lives here only.
-│                                  As built: server/routers/evaluation.ts (tRPC,
-│                                  read-side, forwards sort/filter),
+│                                  As built: server/routers/evaluation.ts (tRPC;
+│                                  read side forwards sort/filter, plus the
+│                                  create mutation over a staged corpus),
 │                                  lib/container-redline.ts (buildRedlineModule →
 │                                  WorkflowController), the
-│                                  app/(user)/evaluations index + [id]/{review,
-│                                  pivots,grouping} routes, [id]/documents/
-│                                  [documentId] (the provenance deep-link target)
-│                                  + components/evaluation/*
+│                                  app/(user)/evaluations index + new + [id]/
+│                                  {review,pivots,grouping} routes, [id]/
+│                                  documents/[documentId] (the provenance
+│                                  deep-link target) + components/evaluation/*
 │                                  "use client" surfaces, the sidebar Evaluations
 │                                  entry, the evaluation:review auth gate and the
 │                                  served-fork Playwright specs.

@@ -1,6 +1,6 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-08
+> **Status:** the live tracking document · **Date:** 2026-08-09
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is what redline *is*;
@@ -12,11 +12,14 @@
 > **Nothing here has been run against live services.** The wiring and the write
 > path typecheck and are unit-tested; no Postgres, sidecar or adjudicator has
 > ever been behind either. Expect config-level breakage on first boot, and treat
-> the corpus run (§2 item 4) as the first real proof rather than a formality.
+> the corpus run (§2 item 3) as the first real proof rather than a formality.
 >
 > **One open decision carried in the code.** `redline_topics.id` is a plain
 > primary key, so a topic belongs to exactly one lens and a second lens reusing
-> an id fails. Fine for now; revisit when lens portability (§3) lands.
+> an id fails. `CreateEvaluation` works around it by scoping every topic id to
+> its corpus (`{corpusId}:{field}`), which is why two tenders can both have a
+> "Warranty" field — but that is a workaround, not a decision. Revisit when lens
+> portability (§3) lands.
 
 ---
 
@@ -48,23 +51,22 @@ re-enters only when a *trained* overlay or the financial extension's roll-up is
 wanted; neither is needed to see the grid.
 
 The read path is built and merged end to end — store-backed classifier, money
-extractor, the served fork, the persisted lens, the write path behind the seed
-script, the `/evaluations` index and the document route. See
+extractor, the served fork, the persisted lens, the `/evaluations` index and the
+document route. **Creating** an evaluation is now a browser action too: the
+`evaluation` router's `create` mutation over a picked staged corpus, gated on its
+own `evaluation:create` permission. See
 [`architecture.md`](./architecture.md) §3/§4/§5/§6.
 
-**What is not built is the write *surface*.** The `evaluation` tRPC router has
-five `.query()` procedures and **zero mutations** — the only router of thirty in
-the fork with none. Nothing in the browser creates an evaluation or starts a
-run; `apps/web/scripts/seed-redline-evaluation.ts` does both from a terminal.
+**What is left of the write surface is the run.** `IngestDocuments`,
+`AssignDocumentsToGroups`, the cold-start classifier and `BuildEvaluationTable`
+are all built and wired in `container-redline.ts`, but nothing served calls them
+— `apps/web/scripts/seed-redline-evaluation.ts` still drives the pipeline from a
+terminal. Item 1 closes that, and it is genuinely thin: one mutation and one
+control in front of four use cases that already compose.
 
-Items 1 and 2 close that, and they are genuinely thin: `makeEvaluation`, the
-repository write path, `AssignDocumentsToGroups`, the cold-start classifier and
-`BuildEvaluationTable` are all built and wired in `container-redline.ts`, wanting
-only a mutation and a control in front of them.
-
-**Items 1–3 are fork-side** — the router, the routes and the components all live
-in `services/wayfinder/apps/web`. Each is two commits under §1's contract: the
-work on `redline-integration`, then the gitlink and pin moved here in step.
+**Items 1 and 2 are fork-side** — the router, the routes and the components all
+live in `services/wayfinder/apps/web`. Each is two commits under §1's contract:
+the work on `redline-integration`, then the gitlink and pin moved here in step.
 
 **Browser *upload* is deliberately not here.** Staging a corpus needs
 `ISAACUS_API_KEY`, compute and a cost decision, so it is an operator action
@@ -75,20 +77,7 @@ not trigger womblex itself — that is the sidecar's job"*). A new port, a new
 adapter and a sidecar trigger, to remove a step from a user who is not yet in the
 loop. Deferred to §3.
 
-### 1 — Create an evaluation from the browser
-
-A `create` mutation on the `evaluation` router, and the route that calls it.
-Gate it in the page as well as the procedure, as the index already does.
-
-**This item must settle where the lens comes from.** Nothing authors one (§4.2)
-and the authoring surface stays deferred, so the minimum is selecting or
-uploading a corpus manifest at create time. Say which, rather than inherit it.
-
-_Version bump: MINOR._
-_Exit: a specialist creates a named evaluation in the browser and it appears on
-`/evaluations`, empty, without the seed script having run._
-
-### 2 — Run the pipeline from the browser
+### 1 — Run the pipeline from the browser
 
 `IngestDocuments` (the stage confirmation) → `AssignDocumentsToGroups` →
 cold-start classify → `BuildEvaluationTable` run only from the script. One
@@ -96,23 +85,31 @@ mutation and one control in front of all four, with whatever run state the scree
 needs to not look frozen. Documents are already staged and extracted at this
 point — that is the operator's step, and stays so.
 
+**Settle what `AssignDocumentsToGroups` is for on this path.** `CreateEvaluation`
+now writes the vendors and response groups itself and leaves the evaluation at
+`documents_uploaded`, so on a browser-created evaluation that use case is
+re-persisting a composition it already agrees with and advancing the stage to
+`classifying`. Either call it for the stage advance and say so, or move the
+advance and stop calling it — do not leave two writers of the same rows
+unexplained. A script-seeded evaluation still needs it in full.
+
 _Version bump: MINOR._
 _Exit: starting a run on an evaluation whose documents have been extracted
 produces a populated grid at `/evaluations/:id/review`._
 
-### 3 — Test the React bind layer
+### 2 — Test the React bind layer
 
 `review-table.test.tsx` and `pricing-pivots.test.tsx` are twelve lines each,
 asserting only that the export is a function and its `.name` matches — against a
 207-line grid and a 157-line pivot component. The cores under `apps/redline-web/`
 are covered; the core→DOM binding is not, and the Playwright specs that would
-cover it skip until item 4 has run.
+cover it skip until item 3 has run.
 
 _Version bump: PATCH._
 _Exit: both components render against fake query data in a test and assert the
 rows and columns they produce, failing if the binding to the core breaks._
 
-### 4 — Real corpus, end to end
+### 3 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds → chunk rows and embeddings materialise into the
@@ -154,18 +151,11 @@ _Exit: a specialist opens the review grid for a real tender and sees each
 document delineated by topic and brand, with provenance back to source — with the
 five `E2E_REDLINE_EVALUATION_ID`-gated specs
 (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`) green against that
-evaluation as the automatable half._
-
-### Housekeeping — off the critical path
-
-- **Watch the PGlite hook timeout in the persistence suites.** An earlier
-  revision recorded six `Hook timed out in 10000ms` errors across
-  `drizzle-{evaluation-repository,money-span-store,chunk-store}.test.ts`. It did
-  not reproduce on 2026-08-03 or 2026-08-08 (14/14 green, adapters suite ~23s
-  under turbo), so it is load-dependent flakiness, not a standing failure. Raise
-  the hook budget if it returns; do not treat it as a known-red gate meanwhile.
-  _Version bump: PATCH._
-  _Exit: `./validate.sh` green on a cold cache, twice in a row._
+evaluation as the automatable half. The run also unblocks
+`redline-create-evaluation.spec.ts`, which gates on
+`E2E_REDLINE_STAGED_CORPUS_ID` and needs a staged corpus **no evaluation has
+claimed** — a second corpus, or one staged and left uncreated, since `create`
+refuses a claimed one with `ALREADY_EXISTS`._
 
 ---
 
@@ -200,10 +190,13 @@ should shape it rather than be assumed. In dependency order:
    ambiguity thresholds (the signal register needs initial values, unmeasured
    until the corpus runs).
 
-2. **A lens is seeded, not authored.** The corpus driver writes a lens, its
-   topics and its hard rules alongside the evaluation, but the lens comes from a
-   hand-written manifest. Nothing authors or edits one, and there is no versioning
-   or durable-asset lifecycle; that surface stays in §3.
+2. **A lens is declared at create time, not authored.** The create screen's
+   fields become the lens's topics, so the manifest is gone — but the lens is
+   written once, with **no hard rules** (none can honestly be written before
+   anyone has seen how these fields land on this corpus, so every field goes to
+   adjudication). Nothing edits a lens after the fact, and there is no versioning
+   or durable-asset lifecycle; that surface stays in §3. The seed script still
+   writes rules from a manifest, and is now the only path that can.
 
 3. **D5 is contradicted by what shipped.** `design-principles.md` still lists
    *"Retrieval is womblex's; redline builds no vector store of its own"* as
@@ -222,10 +215,11 @@ should shape it rather than be assumed. In dependency order:
 
 **The lean vertical runs to completion before the deferred work starts.**
 
-Items 1 and 2 make the product operable by someone without a terminal. Item 3
-makes the screens they now drive worth trusting. Item 4 is what all of it is for,
-and runs last so it proves the product rather than the script — though the script
-stays a deliberate fallback for de-risking the first live run on its own.
+Item 1 finishes making the product operable by someone without a terminal —
+creating an evaluation already is. Item 2 makes the screens they now drive worth
+trusting. Item 3 is what all of it is for, and runs last so it proves the product
+rather than the script — though the script stays a deliberate fallback for
+de-risking the first live run on its own.
 
 Then, and only then: §3 in dependency order, and finally workspace extraction and
 release.
