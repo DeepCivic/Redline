@@ -126,6 +126,8 @@ def _spans_from(storage: FakeObjectStorage) -> list[dict]:
 
 
 def test_publishes_both_sidecars_beside_the_shards() -> None:
+    # No `span_store`: the no-DSN lane, where the annotation still runs and the
+    # sidecars are still durable in object storage.
     storage = FakeObjectStorage()
     _seed_real_shards(storage)
 
@@ -191,7 +193,7 @@ def test_loads_the_published_spans_into_the_store_field_by_field() -> None:
     run_money_stage(storage, evaluation_id=EVAL, span_store=store)
 
     published = _spans_from(storage)
-    landed = store.spans[(EVAL, DOC)]
+    landed = store.for_document(EVAL, DOC)
     assert len(landed) == len(published) == len(_priced_amounts())
     for shard_row, stored in zip(published, landed):
         assert stored.document_id == shard_row["source_hash"]
@@ -213,17 +215,6 @@ def test_loads_the_published_spans_into_the_store_field_by_field() -> None:
         assert stored.range_role == shard_row["range_role"]
 
 
-def test_publishes_the_sidecars_with_no_store_wired() -> None:
-    # The air-gapped / no-DSN lane: the annotation still runs and the sidecars are
-    # still durable in object storage, so the load can be replayed later.
-    storage = FakeObjectStorage()
-    _seed_real_shards(storage)
-
-    run_money_stage(storage, evaluation_id=EVAL, span_store=None)
-
-    assert f"{PREFIX}batch-0000.money_spans.parquet" in storage.keys_under(PREFIX)
-
-
 # --- CLI entrypoint (the runnable step, mirrors `womblex finalize`) ----------
 
 
@@ -240,7 +231,7 @@ def test_cli_runs_the_real_stage_for_the_given_evaluation() -> None:
 
     assert exit_code == 0
     assert f"{PREFIX}batch-0000.money_spans.parquet" in storage.keys_under(PREFIX)
-    assert len(store.spans[(EVAL, DOC)]) == len(_priced_amounts())
+    assert len(store.for_document(EVAL, DOC)) == len(_priced_amounts())
 
 
 def test_cli_requires_an_evaluation_id() -> None:

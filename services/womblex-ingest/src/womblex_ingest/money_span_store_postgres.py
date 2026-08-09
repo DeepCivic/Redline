@@ -23,74 +23,52 @@ from typing import Sequence
 
 from womblex_ingest.money_span_store import MoneySpanRow
 
-# The columns the writer names, in insert order. `created_at` / `updated_at` are
-# left to the table's defaults.
-INSERT_COLUMNS = (
-    "id",
-    "evaluation_id",
-    "document_id",
-    "locus",
-    "text_source",
-    "start_char",
-    "end_char",
-    "page",
-    "element_order",
-    "parent_element_order",
-    "sheet",
-    "row_index",
-    "column_index",
-    "text",
-    "value",
-    "currency",
-    "currency_source",
-    "evidence",
-    "modifier",
-    "multiplier",
-    "negative",
-    "confidence",
-    "range_group",
-    "range_role",
-    "column_id",
-    "context",
+# Each column paired with the `MoneySpanRow` attribute it carries. ONE list, not a
+# column tuple beside a value tuple: most of these columns are text, so a pair
+# transposed between two parallel lists would write `evidence` into `modifier` and
+# nothing would raise. `created_at` / `updated_at` are left to the table's defaults.
+ROW_COLUMNS = (
+    ("id", "span_id"),
+    ("document_id", "document_id"),
+    ("locus", "locus"),
+    ("text_source", "text_source"),
+    ("start_char", "start_char"),
+    ("end_char", "end_char"),
+    ("page", "page"),
+    ("element_order", "element_order"),
+    ("parent_element_order", "parent_element_order"),
+    ("sheet", "sheet"),
+    ("row_index", "row_index"),
+    ("column_index", "column_index"),
+    ("text", "text"),
+    ("value", "value"),
+    ("currency", "currency"),
+    ("currency_source", "currency_source"),
+    ("evidence", "evidence"),
+    ("modifier", "modifier"),
+    ("multiplier", "multiplier"),
+    ("negative", "negative"),
+    ("confidence", "confidence"),
+    ("range_group", "range_group"),
+    ("range_role", "range_role"),
+    ("column_id", "column_id"),
+    ("context", "context"),
 )
+
+# `evaluation_id` is the caller's scope, not the span's, so it is the one column
+# with no attribute behind it.
+INSERT_COLUMNS = ("evaluation_id", *(column for column, _ in ROW_COLUMNS))
 
 _INSERT_SQL = (
     f"INSERT INTO redline_money_spans ({', '.join(INSERT_COLUMNS)}) "
     f"VALUES ({', '.join(['%s'] * len(INSERT_COLUMNS))})"
 )
 
-_DELETE_SQL = "DELETE FROM redline_money_spans WHERE evaluation_id = %s AND document_id = %s"
+_DELETE_SQL = "DELETE FROM redline_money_spans WHERE evaluation_id = %s"
 
 
 def _insert_values(evaluation_id: str, row: MoneySpanRow) -> tuple:
-    return (
-        row.span_id,
-        evaluation_id,
-        row.document_id,
-        row.locus,
-        row.text_source,
-        row.start_char,
-        row.end_char,
-        row.page,
-        row.element_order,
-        row.parent_element_order,
-        row.sheet,
-        row.row_index,
-        row.column_index,
-        row.text,
-        row.value,
-        row.currency,
-        row.currency_source,
-        row.evidence,
-        row.modifier,
-        row.multiplier,
-        row.negative,
-        row.confidence,
-        row.range_group,
-        row.range_role,
-        row.column_id,
-        row.context,
-    )
+    return (evaluation_id, *(getattr(row, attribute) for _, attribute in ROW_COLUMNS))
 
 
 class PostgresMoneySpanStore:
@@ -101,19 +79,18 @@ class PostgresMoneySpanStore:
 
         self._connect = lambda: psycopg.connect(dsn)
 
-    def replace_document_spans(
-        self, evaluation_id: str, document_id: str, rows: Sequence[MoneySpanRow]
+    def replace_evaluation_spans(
+        self, evaluation_id: str, rows: Sequence[MoneySpanRow]
     ) -> None:
-        # Delete + insert in one transaction: a re-annotated document must never be
-        # readable as its old spans and its new ones at once, and no span id is
-        # stable enough across a re-run to upsert on.
+        # Delete + insert in one transaction: a re-annotated evaluation must never
+        # be readable as its old spans and its new ones at once.
         with self._connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(_DELETE_SQL, (evaluation_id, document_id))
+                cursor.execute(_DELETE_SQL, (evaluation_id,))
                 cursor.executemany(
                     _INSERT_SQL, [_insert_values(evaluation_id, row) for row in rows]
                 )
             connection.commit()
 
 
-__all__ = ["INSERT_COLUMNS", "PostgresMoneySpanStore"]
+__all__ = ["INSERT_COLUMNS", "ROW_COLUMNS", "PostgresMoneySpanStore"]

@@ -124,11 +124,12 @@ and `*.money_columns.parquet` (the per-column verdict audit). It is offline and
 API-free (no Isaacus spend), and it never rewrites element or chunk text.
 
 Because `womblex money --shards` only takes a *local* directory but the shards
-live in object storage, `money_stage.py` is the stage-in / run / stage-out step
-that bridges the gap (mirroring `womblex finalize`): it downloads an evaluation's
-money inputs to a scratch dir, runs womblex's `money_shards()`, and publishes the
-two sidecars back under `proc/{evaluationId}/documents/`. Run it on demand once a
-run has drained:
+live in object storage, `money_stage.py` is the stage-in / run / stage-out / load
+step that bridges the gap (mirroring `womblex finalize`): it downloads an
+evaluation's money inputs to a scratch dir, runs womblex's `money_shards()`,
+publishes the two sidecars back under `proc/{evaluationId}/documents/`, and loads
+the spans into `redline_money_spans` off the same scratch dir. Run it on demand
+once a run has drained:
 
 ```sh
 podman compose -f ../../infra/docker-compose.yml --profile money \
@@ -138,9 +139,21 @@ podman compose -f ../../infra/docker-compose.yml --profile money \
 The `money:` section (vocabulary, vetoes, currency default) is read from the same
 `infra/womblex/redline.yaml` the worker runs with (`WOMBLEX_CONFIG`), so the
 tuning is never restated. It builds the Dockerfile's `womblex` target — the read
-seam above stays the light, womblex-free `sidecar` target. The `IFinancialExtractor`
-adapter (delivery-plan item 1) reads `*.money_spans.parquet` back over the
-object-storage seam.
+seam above stays the light, womblex-free `sidecar` target.
+
+The load is the step that makes the annotation worth running:
+`money_span_store.py` decodes each `*.money_spans.parquet` and
+`money_span_store_postgres.py` writes it to `redline_money_spans`, which the
+TypeScript `IMoneySpanStore` then reads — no Parquet ever crosses into
+TypeScript. The span lands **uninterpreted**: womblex's own 24 columns, all three
+loci (`narrative` / `table_cell` / `sheet_cell`, exactly one anchor group non-null
+per row), the qualifiers it refuses to fold into `value` (`modifier`,
+`multiplier`, `negative`) and the `range_group` / `range_role` pairing of a
+range's endpoints. Deciding what a span *means* belongs above the store.
+`redline_money_spans` is created by redline-adapters' migrations (it holds a
+foreign key to `redline_evaluations`), so this service carries no DDL for it and
+the load needs an already-migrated database. Without `REDLINE_DATABASE_URL` the
+sidecars are still published and the load is skipped.
 
 ## Extraction modes & the womblex pod
 

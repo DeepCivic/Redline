@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Sequence
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,7 +28,7 @@ from womblex_ingest.storage import ObjectNotFound, ObjectStorage
 
 
 class RecordingMoneySpanStore:
-    """In-memory `MoneySpanStore`, keyed the way the Postgres one is.
+    """In-memory `MoneySpanStore`, scoped the way the Postgres one is.
 
     Exposes the landed rows directly so the load path's exit test can assert them
     field by field against the shard, and counts the replaces so a re-load can be
@@ -36,14 +36,21 @@ class RecordingMoneySpanStore:
     """
 
     def __init__(self) -> None:
-        self.spans: Dict[Tuple[str, str], List[MoneySpanRow]] = {}
+        self.spans: Dict[str, List[MoneySpanRow]] = {}
         self.replace_calls = 0
 
-    def replace_document_spans(
-        self, evaluation_id: str, document_id: str, rows: Sequence[MoneySpanRow]
+    def replace_evaluation_spans(
+        self, evaluation_id: str, rows: Sequence[MoneySpanRow]
     ) -> None:
         self.replace_calls += 1
-        self.spans[(evaluation_id, document_id)] = list(rows)
+        self.spans[evaluation_id] = list(rows)
+
+    def for_document(self, evaluation_id: str, document_id: str) -> List[MoneySpanRow]:
+        return [
+            row
+            for row in self.spans.get(evaluation_id, [])
+            if row.document_id == document_id
+        ]
 
 
 class FakeObjectStorage(ObjectStorage):

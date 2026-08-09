@@ -361,7 +361,12 @@ expressions*, not prices: which requirement a span belongs to, what it rolls up 
 and whether it is a price at all are readings, and every reading belongs above the
 store. A writer that decided any of them would need a second writer for the next
 financial-data type. No span id is stable across a re-annotation, so a load
-**replaces** a document's spans rather than upserting them.
+**replaces** the evaluation's spans rather than upserting them — at evaluation
+scope, not per document, because a document can re-annotate to *zero* spans (add a
+veto term and a column stops being money) and a per-document replace would never
+visit it, leaving a costing in the grid that no longer exists. An evaluation with
+no sidecars at all is left untouched: that is "the stage never ran here", not
+"it found nothing".
 
 **(3) Read seam — the sidecar (`WOMBLEX_MODE=real`).**
 
@@ -532,7 +537,8 @@ redline/
 │   ├── womblex-ingest/            FastAPI read sidecar (reads MinIO Parquet → JSON)
 │   │   ├── src/womblex_ingest/    stub + real extractor, records (wire shape),
 │   │   │                          shard_reader (schema map), storage, embedding,
-│   │   │                          money_stage (the `money` op invocation)
+│   │   │                          money_stage (the `money` op invocation) +
+│   │   │                          money_span_store[_postgres] (the span load)
 │   │   └── Dockerfile             `sidecar` (light) + `womblex` (money) targets
 │   ├── numbatch/                  ◄ SUBMODULE: the Numbatch fork @ 72bcead
 │   ├── numbatch-extension/        redline's additive overlay (financial_extension

@@ -150,8 +150,10 @@ services:
       # the engine's tuning.
       WOMBLEX_CONFIG: /app/redline-config/redline.yaml
       # Where the annotated spans land. `redline_money_spans` is created by
-      # redline-adapters' migrations, so this expects a migrated database; unset
-      # it to publish the sidecars to object storage and load them later.
+      # redline-adapters' migrations, so this expects a migrated database. Unset
+      # it to publish the sidecars and skip the load — but note the load only
+      # happens as part of this stage, so picking those sidecars up afterwards
+      # means running the stage again (offline and API-free, so cheap).
       REDLINE_DATABASE_URL: ${REDLINE_DATABASE_URL:-postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}}
     volumes:
       - ./womblex:/app/redline-config:ro

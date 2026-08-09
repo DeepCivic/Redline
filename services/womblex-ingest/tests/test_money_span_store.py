@@ -20,6 +20,7 @@ which carries pyarrow, so the mapping half runs everywhere.
 from __future__ import annotations
 
 import re
+from dataclasses import fields
 from decimal import Decimal
 from pathlib import Path
 
@@ -31,11 +32,15 @@ pq = pytest.importorskip("pyarrow.parquet")
 from tests.conftest import FakeObjectStorage, RecordingMoneySpanStore  # noqa: E402
 from womblex_ingest.money_span_store import (  # noqa: E402
     MONEY_SPANS_SCHEMA,
+    MoneySpanRow,
     MoneySpanShardError,
     load_money_spans,
 )
+from womblex_ingest.money_span_store_postgres import (  # noqa: E402
+    INSERT_COLUMNS,
+    ROW_COLUMNS,
+)
 from womblex_ingest.money_stage import MoneyStageResult, run_money_stage  # noqa: E402
-from womblex_ingest.money_span_store_postgres import INSERT_COLUMNS  # noqa: E402
 
 EVAL = "eval-money"
 DOC = "82f9355eabcd0001"
@@ -138,7 +143,7 @@ def test_lands_every_span_of_every_locus_field_by_field(tmp_path: Path) -> None:
     loaded = load_money_spans(store, EVAL, tmp_path)
 
     assert loaded == 3
-    stored = store.spans[(EVAL, DOC)]
+    stored = store.for_document(EVAL, DOC)
     assert [row.locus for row in stored] == ["narrative", "table_cell", "sheet_cell"]
     for shard_row, stored_row in zip(shard_rows, stored):
         _assert_matches_shard(shard_row, stored_row)
@@ -153,7 +158,7 @@ def test_keeps_a_qualifier_off_the_value(tmp_path: Path) -> None:
 
     load_money_spans(store, EVAL, tmp_path)
 
-    stored = store.spans[(EVAL, DOC)][0]
+    stored = store.for_document(EVAL, DOC)[0]
     assert stored.value == "2000000.0000"
     assert stored.modifier == "up to"
     assert stored.multiplier == "million"
@@ -169,7 +174,7 @@ def test_keeps_both_endpoints_of_a_range_distinguishable(tmp_path: Path) -> None
 
     load_money_spans(store, EVAL, tmp_path)
 
-    stored = store.spans[(EVAL, DOC)]
+    stored = store.for_document(EVAL, DOC)
     assert [(row.range_group, row.range_role) for row in stored] == [(7, "lower"), (7, "upper")]
 
 
@@ -182,7 +187,7 @@ def test_keeps_the_sign_and_the_exact_scale(tmp_path: Path) -> None:
 
     load_money_spans(store, EVAL, tmp_path)
 
-    stored = store.spans[(EVAL, DOC)][0]
+    stored = store.for_document(EVAL, DOC)[0]
     assert stored.value == "-1200.0000"
     assert stored.negative is True
 
@@ -202,21 +207,50 @@ def test_two_amounts_in_one_cell_land_as_two_addressable_rows(tmp_path: Path) ->
 
     loaded = load_money_spans(store, EVAL, tmp_path)
 
-    stored = store.spans[(EVAL, DOC)]
+    stored = store.for_document(EVAL, DOC)
     assert loaded == 2
     assert len({row.span_id for row in stored}) == 2
     assert [row.value for row in stored] == ["100.0000", "10.0000"]
 
 
-def test_a_second_load_replaces_a_documents_spans_rather_than_duplicating(tmp_path: Path) -> None:
+def test_a_second_load_replaces_the_spans_rather_than_duplicating_them(tmp_path: Path) -> None:
     _write_shard(tmp_path, [_table_cell()])
     store = RecordingMoneySpanStore()
 
     load_money_spans(store, EVAL, tmp_path)
     load_money_spans(store, EVAL, tmp_path)
 
-    assert len(store.spans[(EVAL, DOC)]) == 1
+    assert len(store.for_document(EVAL, DOC)) == 1
     assert store.replace_calls == 2
+
+
+def test_a_document_that_reannotates_to_nothing_loses_its_stale_spans(tmp_path: Path) -> None:
+    # A document can annotate to *zero* spans — add a veto term and a column stops
+    # being money. Replacing per document would never visit it, and the previous
+    # run's amounts would sit in the grid as a costing that no longer exists.
+    other = "aaaa000011112222"
+    store = RecordingMoneySpanStore()
+    _write_shard(tmp_path, [_table_cell(), _table_cell(source_hash=other)])
+    load_money_spans(store, EVAL, tmp_path)
+
+    _write_shard(tmp_path, [_table_cell(source_hash=other)])
+    load_money_spans(store, EVAL, tmp_path)
+
+    assert store.for_document(EVAL, DOC) == []
+    assert len(store.for_document(EVAL, other)) == 1
+
+
+def test_an_empty_shard_clears_the_evaluation(tmp_path: Path) -> None:
+    # "Ran and found nothing" arrives as an empty shard — womblex writes one per
+    # batch regardless — and must clear, unlike "never ran", which writes none.
+    store = RecordingMoneySpanStore()
+    _write_shard(tmp_path, [_table_cell()])
+    load_money_spans(store, EVAL, tmp_path)
+
+    _write_shard(tmp_path, [])
+
+    assert load_money_spans(store, EVAL, tmp_path) == 0
+    assert store.spans[EVAL] == []
 
 
 def test_span_ids_are_stable_across_loads(tmp_path: Path) -> None:
@@ -227,8 +261,8 @@ def test_span_ids_are_stable_across_loads(tmp_path: Path) -> None:
     load_money_spans(first, EVAL, tmp_path)
     load_money_spans(second, EVAL, tmp_path)
 
-    assert [row.span_id for row in first.spans[(EVAL, DOC)]] == [
-        row.span_id for row in second.spans[(EVAL, DOC)]
+    assert [row.span_id for row in first.for_document(EVAL, DOC)] == [
+        row.span_id for row in second.for_document(EVAL, DOC)
     ]
 
 
@@ -242,8 +276,8 @@ def test_groups_a_batchs_rows_by_document(tmp_path: Path) -> None:
 
     load_money_spans(store, EVAL, tmp_path)
 
-    assert len(store.spans[(EVAL, DOC)]) == 2
-    assert len(store.spans[(EVAL, other)]) == 1
+    assert len(store.for_document(EVAL, DOC)) == 2
+    assert len(store.for_document(EVAL, other)) == 1
 
 
 def test_reads_every_batch_shard_under_the_directory(tmp_path: Path) -> None:
@@ -254,16 +288,18 @@ def test_reads_every_batch_shard_under_the_directory(tmp_path: Path) -> None:
     loaded = load_money_spans(store, EVAL, tmp_path)
 
     assert loaded == 2
-    assert len(store.spans[(EVAL, DOC)]) == 2
+    assert len(store.for_document(EVAL, DOC)) == 2
 
 
-def test_no_money_shard_loads_nothing_without_failing(tmp_path: Path) -> None:
-    # The money stage is an optional overlay: an evaluation it has not run over
-    # has no sidecars, and that is an absent resource, not a broken load.
+def test_no_money_shard_loads_nothing_and_clears_nothing(tmp_path: Path) -> None:
+    # The money stage is an optional overlay: an evaluation it has not run over has
+    # no sidecars, and that is an absent resource, not a broken load — and not a
+    # reason to discard spans an earlier run did land.
     store = RecordingMoneySpanStore()
 
     assert load_money_spans(store, EVAL, tmp_path) == 0
     assert store.spans == {}
+    assert store.replace_calls == 0
 
 
 def test_a_shard_missing_a_column_fails_loudly(tmp_path: Path) -> None:
@@ -306,7 +342,7 @@ def test_the_money_stage_loads_the_sidecar_it_just_published() -> None:
     run_money_stage(storage, evaluation_id=EVAL, money_shards=annotate, span_store=store)
 
     assert f"{prefix}batch-0000.money_spans.parquet" in storage.keys_under(prefix)
-    assert [row.locus for row in store.spans[(EVAL, DOC)]] == ["table_cell", "narrative"]
+    assert [row.locus for row in store.for_document(EVAL, DOC)] == ["table_cell", "narrative"]
 
 
 # --- The two contracts this writer sits between ------------------------------
@@ -323,6 +359,19 @@ def test_the_mirrored_money_spans_schema_matches_the_engines() -> None:
     money_output = pytest.importorskip("womblex.store.money_output")
 
     assert MONEY_SPANS_SCHEMA.equals(money_output.MONEY_SPANS_SCHEMA)
+
+
+def test_the_writer_carries_every_field_of_the_span() -> None:
+    """No field of `MoneySpanRow` is dropped on the way into the INSERT.
+
+    The whole point of the widening is that all 24 of womblex's columns survive.
+    A field added to the DTO and forgotten in the writer would land as a silent
+    null, which is the failure this item exists to end.
+    """
+    carried = {attribute for _, attribute in ROW_COLUMNS}
+    declared = {field.name for field in fields(MoneySpanRow)}
+
+    assert declared - carried == set()
 
 
 def test_the_writer_only_names_columns_the_redline_migration_creates() -> None:

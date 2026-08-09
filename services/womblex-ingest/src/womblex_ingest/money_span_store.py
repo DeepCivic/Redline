@@ -113,14 +113,21 @@ class MoneySpanRow:
 class MoneySpanStore(Protocol):
     """The write surface. Reading is `DrizzleMoneySpanStore`'s, over the same table."""
 
-    def replace_document_spans(
-        self, evaluation_id: str, document_id: str, rows: Sequence[MoneySpanRow]
+    def replace_evaluation_spans(
+        self, evaluation_id: str, rows: Sequence[MoneySpanRow]
     ) -> None:
-        """Land a document's spans, discarding any it already holds.
+        """Land the evaluation's spans, discarding every span it already holds.
 
         Replace rather than upsert: the projection is rebuildable from the shards
-        (ADR-0002), and a re-run over a re-annotated document must not leave the
-        previous run's spans behind beside the new ones.
+        (ADR-0002), and no span id is stable enough across a re-annotation to
+        upsert on.
+
+        Scoped to the evaluation, not to each document in `rows`, because a
+        document can annotate to *zero* spans — add a veto term and a column stops
+        being money. Replacing per document would never visit that document, and
+        its previous run's spans would sit in the grid as a costing that no longer
+        exists. The money stage always annotates a whole evaluation, so a whole
+        evaluation is what a load replaces.
         """
         ...
 
@@ -128,26 +135,20 @@ class MoneySpanStore(Protocol):
 def load_money_spans(store: MoneySpanStore, evaluation_id: str, shard_dir: Path) -> int:
     """Project every money-span shard under `shard_dir` into the store; return the row count.
 
-    A directory with no `*.money_spans.parquet` loads nothing and does not fail:
-    the money op is an optional overlay, so an evaluation it has not run over has
-    no sidecars, which is an absent resource rather than a broken load — the same
-    posture the embeddings seam takes.
+    A directory with no `*.money_spans.parquet` loads nothing, does not fail and —
+    deliberately — does not clear the evaluation: the money op is an optional
+    overlay, so no sidecars means it never ran here, not that it found nothing.
+    (It writes a sidecar per batch even when a batch yields no amounts, so "ran and
+    found nothing" arrives as empty shards, which do clear the evaluation.)
     """
     shards = sorted(Path(shard_dir).glob(f"*{MONEY_SPANS_SUFFIX}"))
     if not shards:
         return 0
 
-    by_document: Dict[str, List[dict]] = {}
-    for shard in shards:
-        for row in _read_shard(shard):
-            by_document.setdefault(str(row["source_hash"]), []).append(row)
-
-    loaded = 0
-    for document_id, rows in by_document.items():
-        projected = _project(document_id, rows)
-        store.replace_document_spans(evaluation_id, document_id, projected)
-        loaded += len(projected)
-    return loaded
+    rows = [row for shard in shards for row in _read_shard(shard)]
+    projected = _project(rows)
+    store.replace_evaluation_spans(evaluation_id, projected)
+    return len(projected)
 
 
 def _read_shard(path: Path) -> List[dict]:
@@ -158,13 +159,21 @@ def _read_shard(path: Path) -> List[dict]:
             f"money-span shard {path} is missing columns {missing}; a womblex schema "
             "bump needs the mapping moved with it (money_span_store.py)"
         )
-    return raw.select([field.name for field in MONEY_SPANS_SCHEMA]).to_pylist()
+    # `cast`, as womblex's own reader does: a shard written at a different decimal
+    # scale would otherwise reach `format(value, "f")` with that scale and land a
+    # string the numeric(38,4) column does not round-trip.
+    return (
+        raw.select([field.name for field in MONEY_SPANS_SCHEMA])
+        .cast(MONEY_SPANS_SCHEMA)
+        .to_pylist()
+    )
 
 
-def _project(document_id: str, rows: List[dict]) -> List[MoneySpanRow]:
+def _project(rows: List[dict]) -> List[MoneySpanRow]:
     occurrences: Dict[Tuple[str, str], int] = {}
     projected: List[MoneySpanRow] = []
     for row in rows:
+        document_id = str(row["source_hash"])
         anchor = _anchor_key(row)
         occurrence = occurrences.get((document_id, anchor), 0)
         occurrences[(document_id, anchor)] = occurrence + 1

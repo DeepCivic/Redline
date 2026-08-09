@@ -414,12 +414,15 @@ should shape it rather than be assumed. In dependency order:
    "total contract value" is added to the table it summarises. Schedule this
    before anyone reads a total off the grid.
 
-4. **Source comments cite plan item numbers, which are guaranteed to rot.** Eleven
-   files across `packages/` carry `(delivery-plan §2 item 1)` referring to at
-   least three different past items — this file renumbers whenever the outstanding
-   set changes, so any such citation is dead the next time it does. Do not add
-   more: cite `architecture.md`, which is stable, or state the substance in the
-   comment. Fix the existing ones when touching the file.
+4. **Source comments cite plan item numbers, which are guaranteed to rot.** Files
+   across `packages/`, `apps/` and `services/womblex-ingest` carry
+   `(delivery-plan §2 item 1)` / `(item 1a)` / `(item 1b)` referring to several
+   different past items — this file renumbers whenever the outstanding set
+   changes, so any such citation is dead the next time it does. Do not add more:
+   cite `architecture.md`, which is stable, or state the substance in the comment.
+   Fix the existing ones when touching the file. (Deliberately not counted here: a
+   count is one more thing that rots. `grep -rn 'delivery-plan.*item\|(item 1'`
+   is the live answer.)
 
 5. **Source comments still cite dead ADR numbers.** The documents no longer do
    (see `design-principles.md`), but comments across `packages/` and the fork do

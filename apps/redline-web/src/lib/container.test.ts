@@ -646,12 +646,12 @@ describe("container — cold-start classifier wiring (item 1b)", () => {
   });
 });
 
-// The delivery-plan §2 item 1 seam: buildMoneySpanFinancialExtractor composes the
-// real IFinancialExtractor (womblex money spans → summed AUD per matched
-// requirement) behind the same port the Numbatch one satisfies. This proves the
-// money-span path is wired *behind the port* — the controller, once built with it,
-// puts real currency in the review grid, and the per-brand pivot totals it.
-describe("container — money-span financial extractor wiring (item 1)", () => {
+// buildMoneySpanFinancialExtractor composes the real IFinancialExtractor (womblex
+// money spans → summed AUD per matched requirement) behind the same port the
+// Numbatch one satisfies. This proves the money-span path is wired *behind the
+// port* — the controller, once built with it, puts real currency in the review
+// grid, and the per-brand pivot totals it.
+describe("container — money-span financial extractor wiring", () => {
   class FakeMoneySpanStore implements IMoneySpanStore {
     constructor(private readonly rows: readonly MoneySpanRow[]) {}
     async fetchByDocument(

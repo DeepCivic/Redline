@@ -30,7 +30,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence
 
-from womblex_ingest.money_span_store import MoneySpanStore, load_money_spans
+from womblex_ingest.money_span_store import (
+    MONEY_SPANS_SUFFIX,
+    MoneySpanStore,
+    load_money_spans,
+)
 from womblex_ingest.storage import ObjectStorage
 
 logger = logging.getLogger(__name__)
@@ -39,10 +43,11 @@ logger = logging.getLogger(__name__)
 # two it writes. Only the inputs are staged in; the outputs are staged back out.
 _ELEMENTS_SUFFIX = ".elements.parquet"
 _TABLE_CELLS_SUFFIX = ".table_cells.parquet"
-_MONEY_SPANS_SUFFIX = ".money_spans.parquet"
 _MONEY_COLUMNS_SUFFIX = ".money_columns.parquet"
 _MONEY_INPUT_SUFFIXES = (_ELEMENTS_SUFFIX, _TABLE_CELLS_SUFFIX)
-_MONEY_OUTPUT_SUFFIXES = (_MONEY_SPANS_SUFFIX, _MONEY_COLUMNS_SUFFIX)
+# The spans suffix is the load path's, not this module's — one spelling, so the
+# stage cannot publish under a name the loader does not glob for.
+_MONEY_OUTPUT_SUFFIXES = (MONEY_SPANS_SUFFIX, _MONEY_COLUMNS_SUFFIX)
 
 
 @dataclass(frozen=True)
