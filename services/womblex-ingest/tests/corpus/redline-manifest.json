@@ -1,0 +1,110 @@
+{
+  "evaluationId": "redline-fixture-tender",
+  "evaluationName": "Fixture tender — in-repo womblex corpus",
+  "lens": {
+    "lensId": "redline-fixture-lens",
+    "name": "Fixture tender capability lens",
+    "topics": [
+      {
+        "id": "fixture-access-control",
+        "name": "Access Control",
+        "definition": "Identity and access management: how the respondent authenticates users, federates with an existing directory, enforces multi-factor authentication, and applies role-based or conditional access policies."
+      },
+      {
+        "id": "fixture-device-management",
+        "name": "Device Management",
+        "definition": "The device register and its lifecycle: onboarding, inventory, automated compliance checks, remote attestation and decommissioning of devices at volume."
+      },
+      {
+        "id": "fixture-reporting",
+        "name": "Reporting",
+        "definition": "Regulatory and operational reporting: dashboards, scheduled exports, structured data extracts aligned to a regulator's schema, and the audit trails behind them."
+      },
+      {
+        "id": "fixture-hosting",
+        "name": "Hosting",
+        "definition": "Where the solution runs: sovereign or government-region cloud hosting, data centre accreditation, and whether data is pinned to the domestic jurisdiction or transferred across a border."
+      },
+      {
+        "id": "fixture-support",
+        "name": "Support",
+        "definition": "Support and maintenance of the delivered solution: coverage hours, response and resolution targets, and ongoing maintenance obligations."
+      },
+      {
+        "id": "fixture-delivery",
+        "name": "Delivery",
+        "definition": "How the work is delivered: phasing, milestones, proof-of-concept commitments and the delivery risk the respondent carries."
+      },
+      {
+        "id": "fixture-compliance",
+        "name": "Compliance",
+        "definition": "Declared compliance posture: national security accreditation, security certifications held, ownership and control of the respondent, and any accreditation it does not hold."
+      }
+    ],
+    "rules": [
+      {
+        "id": "rule-req-07-compliance",
+        "pattern": "*-req-07-*",
+        "topicId": "fixture-compliance"
+      }
+    ]
+  },
+  "vendors": [
+    {
+      "id": "respondent-a",
+      "displayName": "Respondent A"
+    },
+    {
+      "id": "respondent-b",
+      "displayName": "Respondent B"
+    },
+    {
+      "id": "respondent-c",
+      "displayName": "Respondent C"
+    }
+  ],
+  "groups": [
+    {
+      "id": "group-respondent-a",
+      "label": "Respondent A — capability response",
+      "vendorIds": [
+        "respondent-a"
+      ],
+      "documentIds": [
+        "1d5b0965d067342d",
+        "24b81322942c06e4",
+        "ac4d08ee5affdbc6",
+        "ba177477f68b7674",
+        "68f59805fe7d0cd9"
+      ]
+    },
+    {
+      "id": "group-respondent-b",
+      "label": "Respondent B — capability response",
+      "vendorIds": [
+        "respondent-b"
+      ],
+      "documentIds": [
+        "d8c7617f6ba54fa0",
+        "52617ea16424f293",
+        "3990a8f4d1c980be",
+        "4b2fcb5adf4643c4",
+        "e9e39c1c238ae37f"
+      ]
+    },
+    {
+      "id": "group-respondent-c",
+      "label": "Respondent C — capability response",
+      "vendorIds": [
+        "respondent-c"
+      ],
+      "documentIds": [
+        "472f4d5b630294e8",
+        "e4e65a4470de4888",
+        "3d8785b3a084a9ce",
+        "e3c61a18a52b5af7",
+        "c6763495af8fbc59"
+      ]
+    }
+  ]
+}
