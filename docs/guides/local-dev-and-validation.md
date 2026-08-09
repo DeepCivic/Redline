@@ -10,7 +10,7 @@ git submodule update --init
 ```
 
 `services/womblex` and `services/numbatch` are the upstream engines, consumed as
-submodules (ADR-0015).
+submodules.
 `validate.sh` **SKIPs** rather than fails when they are absent, so a shallow clone
 still goes green — but the compose `womblex` / `numbatch` profiles build from
 them, and the pin-drift guard (check 13) only bites when they are present. CI
@@ -39,7 +39,7 @@ Consequences to know:
 
 - **Commit the lockfile with any dependency change.** A `package.json` edit that
   leaves `pnpm-lock.yaml` unstaged is an incomplete commit.
-- **CI installs with `--frozen-lockfile`.** Since ADR-0012, `wayfinder.pin` fixes
+- **CI installs with `--frozen-lockfile`.** `wayfinder.pin` fixes
   the vendored tree to one commit, so the importer for
   `vendor/wayfinder/packages/domain` is deterministic and strictness costs
   nothing. (Before the pin this had to be `--prefer-frozen-lockfile`, because a
@@ -185,7 +185,7 @@ pnpm install && ./validate.sh
 
 ### Without Wayfinder at all
 
-Since ADR-0012, Wayfinder is an **optional** dependency: `pnpm install` and
+Wayfinder is an **optional** dependency: `pnpm install` and
 `./validate.sh` are green on a clean clone with no `vendor/wayfinder`. The three
 drift-check tests skip, and validate.sh prints a `WARN` saying so, so a green run never
 implies the Wayfinder contract was verified. CI vendors the pinned tree and sets

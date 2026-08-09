@@ -2,8 +2,7 @@
 
 > **Status:** ground-truth reference · supersedes the per-thread docs and the
 > iteration delivery plans, all deleted. Durable design rationale that is not a
-> single decision lives in [`design-principles.md`](./design-principles.md); the
-> decisions themselves are in adr/.
+> single decision lives in [`design-principles.md`](./design-principles.md).
 >
 > This is the single source of truth for **what redline is, what it depends on,
 > and how data moves through it**. Its companion is
@@ -33,7 +32,7 @@ model. It **composes three upstream systems** over runtime seams and owns only:
 - the **domain** (evaluations, requirements, the comprehension lens, responses);
 - the **orchestration** (use-cases that drive documents through the pipeline);
 - the **control surface** (the review grid, pivots, export, workflow UI);
-- its **own** MinIO bucket and Postgres schema (ADR-0002).
+- its **own** MinIO bucket and Postgres schema.
 
 Everything heavy — OCR, chunking, embeddings, trained classification, LLM
 adjudication — lives behind a seam in an upstream system or an external API.
@@ -42,7 +41,7 @@ adjudication — lives behind a seam in an upstream system or an external API.
 
 | System | What it is | How redline consumes it |
 |---|---|---|
-| **womblex** (`services/womblex`, submodule @ `v0.3.0`) | Python document-extraction pipeline: detect → extract → (redact) → chunk → (embed / enrich / pii), plus the offline **`money`** annotation op (added `v0.3.0`). Writes **Parquet shards** to object storage. | As a **worker pod** that lands shards in MinIO, plus a thin **FastAPI read sidecar** (`services/womblex-ingest`) that reads those shards and serves **JSON** (ADR-0003). redline's TypeScript never links a Parquet reader. The sidecar also carries the **money-stage invocation** (`run_money_stage` / the `money` compose profile). |
+| **womblex** (`services/womblex`, submodule @ `v0.3.0`) | Python document-extraction pipeline: detect → extract → (redact) → chunk → (embed / enrich / pii), plus the offline **`money`** annotation op (added `v0.3.0`). Writes **Parquet shards** to object storage. | As a **worker pod** that lands shards in MinIO, plus a thin **FastAPI read sidecar** (`services/womblex-ingest`) that reads those shards and serves **JSON**. redline's TypeScript never links a Parquet reader. The sidecar also carries the **money-stage invocation** (`run_money_stage` / the `money` compose profile). |
 | **Numbatch** (`services/numbatch`, submodule @ `72bcead`) | Python no-code multi-topic classifier: curated samples → LoRA adapter → per-document classification. FastAPI backend + Arq worker + DB-free inference service. Ships a corrections API with an append-only audit trail, topic-scoped sample dedupe, and user-controlled adapter activation with replay comparison. | As a **backend+worker+inference stack** (SvelteKit frontend excluded — redline owns its UI), built from the fork's own Dockerfiles. A redline requirement ↔ a Numbatch topic; a requirement set ↔ a profile. redline **extends** the backend for financial-figure extraction via `services/numbatch-extension/`. |
 | **Isaacus** (external SaaS API) | The Kanon model family: `kanon-2-embedder` (retrieval embeddings), `kanon-2-enricher` (entity/graph enrichment + AI chunking), `kanon-universal-classifier`, `kanon-answer-extractor`. | **Only** through womblex's embed/enrich stages. redline never calls Isaacus directly. Requires `ISAACUS_API_KEY`. |
 
@@ -63,7 +62,7 @@ Womblex's stages split cleanly into offline and Isaacus-gated:
 | **`embed`** | **YES** — `kanon-2-embedder` via `client.embeddings.create` | **`*.embeddings.parquet`** |
 | `enrich` | **YES** — `kanon-2-enricher` | `*.enrichment_*`, `*.graph_edges`, `*.entity_links` parquet |
 
-**Consequence for redline's classification leg (ADR-0008, amended 2026-07-27; ADR-0018):**
+**Consequence for redline's classification leg (settled 2026-07-27):**
 redline's cold-start classification reads womblex's chunks/embeddings from the
 `redline_` store. The chunk *and* embed stages are Isaacus-gated. Therefore:
 
@@ -77,11 +76,11 @@ redline's cold-start classification reads womblex's chunks/embeddings from the
   an "Isaacus-optional / air-gapped" posture (a hangover from womblex's own edge
   modes and Wayfinder's air-gap validation). redline does not pursue it — a
   deployment that cannot reach Isaacus cannot retrieve, which is the whole
-  first-pass. Ratified in ADR-0008's 2026-07-27 amendment; the
+  first-pass. Settled 2026-07-27; the
   `EnrichmentMode.OFFLINE` machinery, the air-gap tests and the Isaacus on/off
   toggle have been removed.
 - The only genuinely offline concern is **redline's own infra** (its MinIO/Postgres
-  are its own, config-driven, never a hardcoded Wayfinder endpoint — ADR-0002).
+  are its own, config-driven, never a hardcoded Wayfinder endpoint).
   That is unrelated to the Isaacus dependency.
 - **Chunking is also Isaacus-gated (v0.3.0) — by policy, not by capability.** An
   earlier revision recorded the default chunk stage as offline; a later one blamed
@@ -138,12 +137,12 @@ flowchart TB
   `IMoneySpanStore`, `IAdjudicator`, `ILanguageModel`, `IEvaluationRepository`.
   The lens seam's adapters are `DrizzleClassificationLensReader` and
   `DrizzleClassificationLensWriter`, both over the four lens tables.
-- **`packages/redline-adapters`** — each seam is "as if C" (ADR-0001):
+- **`packages/redline-adapters`** — each seam is "as if C":
   `womblex/` speaks HTTP+JSON to the sidecar, `numbatch/` HTTP to the Numbatch
   backend (classify + finance), `persistence/` Drizzle to `redline_` Postgres —
   including the `DrizzleChunkStore` `IChunkStore` reader over `redline_chunks`
   (the sidecar writes that table; this adapter reads it — see §4/§5).
-- **`redline_chunks`** is the ADR-0018 store, **written by the sidecar's ingest**:
+- **`redline_chunks`** is the chunk store, **written by the sidecar's ingest**:
   chunk rows + provenance + the embedding as data.
 - **`services/womblex`** is built from its **own** Dockerfile and run through its
   **own** cloud runner (Postgres job queue, scalable worker, native S3 staging).
@@ -153,31 +152,51 @@ flowchart TB
   shards down, runs womblex's `money_shards()`, and publishes `*.money_spans` /
   `*.money_columns` back — offline, no Isaacus. See §4 step (2').
 
-**The fork (`services/wayfinder`, ADR-0019).** Its `apps/web` serves the
+**The fork (`services/wayfinder`).** Its `apps/web` serves the
 redline-web brains and view models inside Wayfinder's chrome, auth and router,
 resolving `@redline/*` as workspace packages (`../../apps/*`, `../../packages/*`
 globs) exactly as it resolves `@rbrasier/*`. **The mount lives only here**, never
 in redline's tree; `validate.sh` #15 keeps the checkout on that branch.
 
 As built: the `evaluation` tRPC router (read-side `list` / `reviewGrid` /
-`pricingPivot` / `workbook` / `document`); `container-redline.ts`
-(`buildRedlineModule` → `WorkflowController` behind
-`ctx.container.redline.workflowController`); the `/evaluations` index and the
-`/evaluations/:id/{review,pivots,grouping}` routes plus
+`pricingPivot` / `workbook` / `document`, plus the create half — `stagedCorpora`
+/ `stagedDocuments` and the router's first mutation, `create`);
+`container-redline.ts` (`buildRedlineModule` → `WorkflowController` behind
+`ctx.container.redline.workflowController`); the `/evaluations` index,
+`/evaluations/new`, the `/evaluations/:id/{review,pivots,grouping}` routes plus
 `/evaluations/:id/documents/:documentId` — the document view every review row's
 source deep-link points at — with `"use client"` surfaces that render the view
 models (grouping is a read-side landing) — all mirroring the fork's own extraction
-feature. The index and the document route gate in the page as well as in the
-procedure: they call `notFound()` without `evaluation:review`. For the index that
-is because the sidebar entry pointing at it is hidden by the same rule, and a
-discoverable surface that renders an empty list to someone who may not see it
-would contradict that; for the document route it is because the URL carries a
-document id, so a shell that renders and only then fails to load would confirm
-which ids exist. The controller's ports cross `container-redline`'s
-boundary as **injected** dependencies. The repository, extraction-reader, money
-`IFinancialExtractor`, `DrizzleChunkStore` and `HttpAdjudicator` adapters all
-exist; the `evaluation:review` auth gate (`reviewProcedure`) and the served-fork
-Playwright specs are merged.
+feature. Every route gates in the page as well as in the procedure, calling
+`notFound()` without the key. For the index that is because the sidebar entry
+pointing at it is hidden by the same rule, and a discoverable surface that
+renders an empty list to someone who may not see it would contradict that; for
+the document route it is because the URL carries a document id, so a shell that
+renders and only then fails to load would confirm which ids exist. The controller's
+ports cross `container-redline`'s boundary as **injected** dependencies. The
+repository, extraction-reader, money `IFinancialExtractor`, `DrizzleChunkStore`,
+`HttpAdjudicator` and `DrizzleStagedCorpusReader` adapters all exist; the auth
+gates (`reviewProcedure`, `createProcedure`) and the served-fork Playwright specs
+are merged.
+
+**Two keys, not one.** Reviewing and creating are separate permissions:
+`evaluation:review` opens the grid, the pivots and the export;
+`evaluation:create` starts a tender and, with it, discloses which corpora are
+staged. The fork splits `extraction:author` from `extraction:run` the same way.
+Power Users hold both out of the box, admins pass on the wildcard.
+
+**An evaluation's id is its corpus's id.** `CreateEvaluation` never mints one.
+The same string addresses the corpus in object storage (`proc/{evaluationId}/`),
+in `redline_chunks.evaluation_id` and at the sidecar
+(`/extractions/{evaluation_id}/{document_id}`), so a fresh id would produce an
+evaluation whose documents cannot be read — which is exactly what a retyped
+manifest id used to do, silently, until classification returned nothing.
+`IStagedCorpusReader` exists to make that a choice rather than a transcription:
+it lists what the load path has already staged, with an opening-passage preview
+so an opaque womblex `source_hash` is choosable. It is deliberately not on
+`IChunkStore` — that port is the classifier's provenance-addressed fetch, keyed
+by an evaluation that already exists; this one answers the question asked
+*before* there is one.
 
 **How an evaluation reaches its lens.** `ClassificationRequest` carries no lens,
 so a classifier holding one as constructor state could serve only one evaluation
@@ -195,10 +214,13 @@ prose. The trained overlay takes the same treatment when it re-enters.
 `redline_` tables — `redline_lenses`, `redline_topics` (id, name, definition),
 `redline_hard_rules` and `redline_lens_bindings` — so the reader has a real
 adapter behind it. Topics and rules come from the store in their stored order
-(topic `position`, rule `declaration_order`, the latter load-bearing under
-ADR-0011); `candidates` are derived per call by an identifier-token pre-pass over
+(topic `position`, rule `declaration_order`, the latter load-bearing as the
+**tie-break**: `evaluateHardRules` takes the more specific pattern first
+whichever order it was declared in, and falls back to declaration order only
+between equally specific matches); `candidates` are derived per call by an
+identifier-token pre-pass over
 `IProcurementExtractionReader.readElements`, which is the adapter's second
-collaborator. Cold-start definition text is redline-owned (**ADR-0020**), so this
+collaborator. Cold-start definition text is **redline-owned**, so this
 works with no Numbatch deployed. `IClassificationLensWriter` /
 `DrizzleClassificationLensWriter` is the write half: the whole lens goes in one
 transaction (a half-written lens is one the reader rejects), array order becomes
@@ -216,21 +238,28 @@ fork boots as plain Wayfinder with the mount unavailable, so redline's absence
 never fails Wayfinder's fail-fast env parse. Running both stacks locally is
 [`guides/two-stack-local-run.md`](./guides/two-stack-local-run.md).
 
-**How an evaluation gets created.** Everything served is read-side, so the write
-path is a script in the fork, not a route: `scripts/seed-redline-evaluation.ts`
-reads a corpus manifest and runs `IngestDocuments` → `saveLens` →
+**How an evaluation gets created.** From the browser, at `/evaluations/new`:
+`CreateEvaluation` takes a picked staged corpus, its documents with a brand
+against each, and the fields the responses are read against, and writes the
+evaluation, its vendors, its response groups and its lens. Everything is
+validated and composed *before* anything is written, because the repository's
+saves are upserts — creating twice over one corpus must return `ALREADY_EXISTS`
+rather than silently overwrite the first. One group per brand: the review grid
+delineates by brand, and a document may be claimed by only one group, since
+`assignDocument` moves rather than copies. The lens is written **last**: its
+binding row references the evaluation, so the evaluation must exist first, and
+the lens must exist before classification or the reader resolves `NOT_FOUND`. It
+carries **no hard rules** — none can honestly be written before anyone has seen
+how these fields land on this corpus — so every field goes to adjudication.
+
+The create half (`stagedCorpusReader`, `lensWriter`) is therefore **on**
+`RedlineModule`, reversing the earlier decision to keep every write part off it.
+What is still script-only is the *run*: `scripts/seed-redline-evaluation.ts`
+reads a corpus manifest and drives `IngestDocuments` → `saveLens` →
 `AssignDocumentsToGroups` → `BuildEvaluationTable`, printing the evaluation id
-that opens the review grid and feeds `E2E_REDLINE_EVALUATION_ID`. The manifest
-carries what the operator controls — vendors, response groups, and the lens —
-because the served grouping page is read-only until the stage machine lands; a
-document may be claimed by only one group, since `assignDocument` moves rather
-than copies. The lens is written *between* ingest and grouping: its binding row
-references the evaluation, so the evaluation must exist first, and the lens must
-exist before classification or the reader resolves `NOT_FOUND`. A tRPC mutation
-was deliberately not built — it would drag in the stage machine it should not own
-yet. The seeding parts are resolved beside `resolveRedlineModule` from the same
-adapter construction but stay **off** `RedlineModule`: nothing served writes an
-evaluation, so the served container carries no write capability.
+that opens the review grid and feeds `E2E_REDLINE_EVALUATION_ID`. It stays the
+only path that can write a lens *with* hard rules, and the deliberate fallback
+for de-risking a live run without a browser (delivery-plan §2 item 1).
 
 ### Why womblex is split into a pod + a sidecar
 
@@ -243,20 +272,20 @@ evaluation, so the served container carries no write capability.
   the sidecar on one appropriately-sized host is a valid topology (the sidecar
   image is `python:3.12-slim`, inside womblex's own 3.11/3.12 support, so the
   engine installs alongside it). Its only seam to the rest of the stack is
-  **object storage** (ADR-0002) either way — it writes shards, nothing reads back
+  **object storage** either way — it writes shards, nothing reads back
   into it. redline does not wrap the engine: batching, retry, horizontal scale-out
   and staging are the engine's own (`cloud/worker.py`, `store/remote.py`), driven
   through its `enqueue` / `worker` CLI, and are there to be used *if* the corpus
   justifies scaling out — not a precondition for running at all.
 - **The sidecar** (`services/womblex-ingest`) is a lightweight FastAPI app that
   **reads** the engine's Parquet shards from object storage and serves them as
-  JSON so redline's TypeScript never links a Parquet reader (ADR-0003).
+  JSON so redline's TypeScript never links a Parquet reader.
   `WOMBLEX_MODE` selects `stub` (a deterministic, dependency-free test double for
   fast CI + the adapter contract) or `real` (reads the engine's actual shards).
 - **Whether the engine and sidecar are one deployment or two** (a one-shot job, a
   scaled worker fleet, a co-located process) is a **deployment choice, not a code
   choice** — the seam is object storage, and what backs that storage (an S3
-  bucket, or an AWS-managed equivalent) is itself config, per ADR-0002. The code
+  bucket, or an AWS-managed equivalent) is itself config. The code
   is architected to make co-location *possible*, not to *require* a shared local
   filesystem.
 
@@ -323,18 +352,18 @@ target). The spans are materialised into `redline_money_spans` and read through
 
 | Route | Behaviour |
 |---|---|
-| `POST /ingest` | reads the pod's shards, maps womblex's schema → the JSON read model, writes `{source_hash}.extraction.json` + `.embeddings.json` beside the shards (durable across restart), **and** — when a `redline_` DSN is wired — projects each document's chunk rows + embeddings into `redline_chunks`, addressable by provenance (ADR-0017/0018) |
+| `POST /ingest` | reads the pod's shards, maps womblex's schema → the JSON read model, writes `{source_hash}.extraction.json` + `.embeddings.json` beside the shards (durable across restart), **and** — when a `redline_` DSN is wired — projects each document's chunk rows + embeddings into `redline_chunks`, addressable by provenance |
 | `GET /extractions/{eval}/{doc}` | `{ documentId, elements[], chunks[], tableCells[] }` |
 | `GET /embeddings/{eval}/{doc}` | `{ documentId, model, dimensions, vectors[] }` |
 | `POST /embeddings/query {text}` | `{ model, dimensions, values[] }` (query vector) |
 
-Extraction provenance stays JSON (ADR-0003). Bulk vectors do **not** cross to
+Extraction provenance stays JSON. Bulk vectors do **not** cross to
 TypeScript for classification: at real corpus scale (~90k chunks) they are loaded
 into the `redline_` store as data and queried in place through `IChunkStore`,
-superseding the embeddings-as-JSON path for the classifier (ADR-0017/0018 amend
-ADR-0014). The `/embeddings` JSON routes remain for the query-embed seam and small
+superseding the earlier embeddings-as-JSON path for the classifier. The
+`/embeddings` JSON routes remain for the query-embed seam and small
 reads. The embeddings are loaded and addressable, but **not yet under a similarity
-index** (ADR-0018's addendum defers pgvector/ANN + `findSimilar`).
+index** — pgvector/ANN and `findSimilar` are deferred.
 
 **(4) Ingest use-case — redline-application.** `IngestDocuments` confirms every
 document reads back through the extraction port, persists the evaluation, and
@@ -342,7 +371,7 @@ advances the stage: `documents_uploaded → grouping`.
 
 **(5) Grouping.** The specialist assigns documents to response groups / vendors.
 
-**(6) Classification — first pass, no trained model (ADR-0008).** For each
+**(6) Classification — first pass, no trained model.** For each
 (document, requirement):
 
 1. **Hard rules** resolve deterministically first — rule-claimed documents never
@@ -351,9 +380,9 @@ advances the stage: `documents_uploaded → grouping`.
    are read verbatim from the `redline_` store by structure
    (`IChunkStore.fetchByStructure({ documentId })`) and an LLM (`IAdjudicator`)
    chooses among the lens topics, emitting a one-sentence rationale. The chosen
-   topic's id **is** the `requirementId` it projects to (ADR-0010).
+   topic's id **is** the `requirementId` it projects to.
 
-NB (ADR-0018 addendum): the nearest-neighbour **placing** step is deferred — it is
+NB: the nearest-neighbour **placing** step is deferred — it is
 the only leg needing vector similarity search (`findSimilar`), not built this
 release. So the cold-start path runs hard rules + adjudication over
 exact/structural fetch, **without** a similarity ranking; the store's stable order
@@ -363,14 +392,14 @@ sourceChunkId }` — identical shape whichever path produced it. Composed as
 `ColdStartClassifier` (redline-application), wired behind the port in
 `lib/container.ts` (`buildColdStartClassifier`).
 
-**(6') Classification — the trained overlay (later; ADR-0008/0009).** Once boundary
+**(6') Classification — the trained overlay (later).** Once boundary
 decisions accumulate ≥ `MIN_SAMPLES_PER_TOPIC` per topic, a Numbatch LoRA adapter
 is trained and activated and subsequent runs use it via `IProcurementClassifier`.
 Same port, same output shape — consumers cannot tell.
 
 **(7) Financial extraction — `MoneySpanFinancialExtractor`.** The real
 `IFinancialExtractor` reads a document's table-cell money spans over
-`IMoneySpanStore` (materialised from `*.money_spans.parquet` — ADR-0017) and sums
+`IMoneySpanStore` (materialised from `*.money_spans.parquet`) and sums
 them into one AUD figure per (document, requirement). A span carries no
 requirement, so attribution is the extractor's job: a document's spans attach to
 the **one** requirement its classification matched with the highest confidence
@@ -395,7 +424,7 @@ locations.
 **(10) Provenance, followed.** Every deep-link the grid and the workbook write
 resolves. `WorkflowController.openDocument` reads the cited document's elements
 back through `IProcurementExtractionReader` — the same JSON presentation seam the
-rest of the read path uses (ADR-0003/0017), so no Parquet reader is linked — and
+rest of the read path uses, so no Parquet reader is linked — and
 `renderDocumentView` orders them by `elem_order` and resolves the `element` query
 parameter to the anchor the served route scrolls to. A cited element the
 extraction no longer carries is reported as such rather than silently rendering
@@ -425,7 +454,7 @@ is not.
 
 redline's JSON wire shape (the sidecar's `records.py` / the domain DTOs) uses
 `chunkId = "{source_hash}:{chunk_index}"` and L2-normalises vectors so a
-consumer's cosine similarity is a dot product (ADR-0014). `content_type` is
+consumer's cosine similarity is a dot product. `content_type` is
 carried as provenance, not as part of the join key (see §7).
 
 ---
@@ -435,37 +464,36 @@ carried as provenance, not as part of the join key (see §7).
 1. **Parquet→JSON is one-directional and lives in one place.** Only
    `services/womblex-ingest` understands womblex's Parquet schema. It maps
    `source_hash`/`elem_order`/`chunk_index`/cells/vectors into camelCase JSON
-   DTOs. The TypeScript adapters are thin, allocation-only mappings. (ADR-0003)
+   DTOs. The TypeScript adapters are thin, allocation-only mappings.
 
 2. **Object storage is the only seam to the womblex engine.** The engine writes;
    the sidecar reads. Neither imports the other — which is what keeps them
    *separately deployable and freely co-locatable*: the coupling is a storage API
    (S3-shaped), never an in-process link, so the same code runs whether the two
    share a host or not, and what backs the storage (an S3 bucket or an
-   AWS-managed equivalent) is config. (ADR-0002)
+   AWS-managed equivalent) is config.
 
 3. **Embeddings are loaded into the store as data and never cross to TypeScript.**
    At real corpus scale bulk vectors are projected into `redline_chunks`
    (`embedding jsonb` + `embedding_model`, L2-normalised, keyed on the stable
    `chunkId`), addressable through `IChunkStore` but returned as *rows*, never raw
-   vectors — `redline-domain` stays vector-free (ADR-0017). Vectors from different
+   vectors — `redline-domain` stays vector-free. Vectors from different
    models are incomparable, so a future similarity match must compare like model
-   with like; the vector is present but not yet under a similarity index (ADR-0018
-   addendum defers `pgvector`/ANN + `findSimilar`). This supersedes ADR-0014's
-   embeddings-as-JSON seam. (ADR-0014, ADR-0017, ADR-0018)
+   with like; the vector is present but not yet under a similarity index —
+   `pgvector`/ANN and `findSimilar` are deferred. This supersedes the earlier
+   embeddings-as-JSON seam, which carried vectors across to TypeScript.
 
 4. **Both classification paths satisfy one port.** `RequirementClassification` is
    produced by the cold-start path (hard rules + adjudication over the store's
    exact/structural fetch) or by the trained Numbatch adapter (overlay); consumers
-   cannot tell which ran. (ADR-0008)
+   cannot tell which ran.
 
 5. **Numbatch is used exactly as built.** `MIN_SAMPLES_PER_TOPIC` is never
    relaxed; the fork is additive-only (backend financial extension, no frontend).
-   (ADR-0005, ADR-0009)
 
 6. **redline owns its infra.** Its MinIO bucket and Postgres schema are its own,
    config-driven, never a hardcoded Wayfinder endpoint. Wayfinder is consumed
-   read-only and materialised from a pin. (ADR-0001, ADR-0002, ADR-0012)
+   read-only and materialised from a pin.
 
 ---
 
@@ -489,18 +517,19 @@ redline/
 │   ├── numbatch/                  ◄ SUBMODULE: the Numbatch fork @ 72bcead
 │   ├── numbatch-extension/        redline's additive overlay (financial_extension
 │   │                              + bootstrap-profile.py), grafts onto the fork
-│   └── wayfinder/                 ◄ SUBMODULE: the Wayfinder FORK (ADR-0019),
+│   └── wayfinder/                 ◄ SUBMODULE: the Wayfinder FORK,
 │                                  branch redline-integration. apps/web serves
 │                                  the redline-web UI; resolves @redline/* as
 │                                  workspace packages. Mount lives here only.
-│                                  As built: server/routers/evaluation.ts (tRPC,
-│                                  read-side, forwards sort/filter),
+│                                  As built: server/routers/evaluation.ts (tRPC;
+│                                  read side forwards sort/filter, plus the
+│                                  create mutation over a staged corpus),
 │                                  lib/container-redline.ts (buildRedlineModule →
 │                                  WorkflowController), the
-│                                  app/(user)/evaluations index + [id]/{review,
-│                                  pivots,grouping} routes, [id]/documents/
-│                                  [documentId] (the provenance deep-link target)
-│                                  + components/evaluation/*
+│                                  app/(user)/evaluations index + new + [id]/
+│                                  {review,pivots,grouping} routes, [id]/
+│                                  documents/[documentId] (the provenance
+│                                  deep-link target) + components/evaluation/*
 │                                  "use client" surfaces, the sidebar Evaluations
 │                                  entry, the evaluation:review auth gate and the
 │                                  served-fork Playwright specs.
@@ -512,9 +541,9 @@ redline/
 ├── docs/
 │   ├── architecture.md            ◄ THIS FILE — what redline IS (the design truth)
 │   ├── delivery-plan.md           what is LEFT TO DO (the tracking truth)
-│   ├── adr/                       architecture decision records (still authoritative)
 │   ├── design-principles.md       adopted principles + non-goals (durable, not tracking)
-│   └── guides/
+│   ├── guides/                    local dev, validation, two-stack run
+│   └── reviews/                   dated point-in-time reviews (historical record)
 ├── scripts/                       vendor-wayfinder, womblex-pod smoke, etc.
 ├── vendor/wayfinder/              materialised from wayfinder.pin (never committed)
 └── validate.sh                    the CI gate
@@ -532,17 +561,16 @@ redline/
 - **Numbatch** — git **submodule** at `services/numbatch` (DeepCivic/Numbatch),
   pinned to `72bcead`. Upstream has no tags, so the pin is a SHA rather than a
   tag as womblex's is. The `numbatch` compose profile builds the fork's own
-  `infra/docker/*.Dockerfile`s; run all-but-frontend (ADR-0005). redline's
+  `infra/docker/*.Dockerfile`s; run all-but-frontend. redline's
   additive overlay is **not** in the submodule — it lives beside it in
   `services/numbatch-extension/` and grafts onto the fork's `app/` + `alembic/`.
-  This supersedes ADR-0013,
-  which chose a build-time pin for consistency with Wayfinder; Wayfinder's pin
-  exists because a submodule drags its package set into the pnpm workspace, which
-  is a JavaScript problem Numbatch does not have (D14, ADR-0015).
+  This reverses an earlier choice of a build-time pin for consistency with
+  Wayfinder; Wayfinder's pin exists because a submodule drags its package set into
+  the pnpm workspace, which is a JavaScript problem Numbatch does not have.
 - **Wayfinder** — consumed through **two** distinct seams, mechanism following
-  runtime (ADR-0015, ADR-0019):
+  runtime:
   - the **build-time typed-reuse seam** — materialised read-only from
-    `wayfinder.pin` into `vendor/wayfinder`, never committed (ADR-0012);
+    `wayfinder.pin` into `vendor/wayfinder`, never committed;
   - the **runtime UI-mount seam** — the Wayfinder **fork** as a submodule at
     `services/wayfinder`, tracking branch `redline-integration`. This is a
     submodule redline *runs and edits* (unlike the byte-identical
@@ -599,7 +627,7 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    (`cli/pipeline.py:417-419`).
 
 2. **Retrieval requires Isaacus.** `*.embeddings.parquet` is produced only by
-   `kanon-2-embedder` (Isaacus). redline's retrieval classification (ADR-0008)
+   `kanon-2-embedder` (Isaacus). redline's retrieval classification
    therefore requires `ISAACUS_API_KEY`. The "full pipeline runs offline" framing
    from the earlier air-gap work is retired: it was only ever true up to the chunk
    stage, and air-gap is not a redline goal.
@@ -632,8 +660,7 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    `table_cells` and is left unset, and that engine had no currency capability
    anywhere in `src/`. So `isCurrency` was derived from the **verbatim `value`
    string**, requiring an explicit currency marker — a bare number is not
-   currency. See ADR-0016,
-   which owns the rule and its limits. Both columns are still read first, so a
+   currency. Both columns are still read first, so a
    future openpyxl-based reader upgrades the signal with no redline change.
 
    **Superseded by the `money` op (v0.3.0), and now the real pricing leg.** The
@@ -645,7 +672,7 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    `IFinancialExtractor` (`MoneySpanFinancialExtractor`) is built** — it sums a
    document's spans over `IMoneySpanStore` into grid AUD (§4 step 7), covering the
    header-evidenced bare-number column. This is the lean-vertical pricing leg,
-   replacing the `isCurrency`-at-the-seam derivation ADR-0016 describes; that
+   replacing the `isCurrency`-at-the-seam derivation above; that
    derivation remains only as a fallback for shards produced without a money
    sidecar. The one upstream limit no config fixes: `classify_column` checks
    vetoes before money terms, so a bare `Hourly Rate` / `Day Rate` column (no
@@ -679,9 +706,8 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    describing what the *Isaacus platform* offers. womblex does not wire them, so
    consuming them would mean redline calling Isaacus directly — which §1 forbids.
    Numbatch has no currency capability of its own either. redline's classification
-   and financial extraction therefore stay where ADR-0004/0005/0008 put them, and
-   the Numbatch financial extension is genuinely additive, exactly as ADR-0005
-   intended.
+   and financial extraction therefore stay exactly where §1 and §4 put them, and
+   the Numbatch financial extension stays genuinely additive.
 
 ---
 
@@ -706,7 +732,7 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
   extraction shards land, but there are **no chunks and no embeddings** (both the
   `chunk` and `embed` stages are Isaacus-gated in v0.3.0), so nothing lands in the
   `redline_` store and there is nothing to classify over. redline treats that as a
-  misconfiguration, not a supported mode (§2; ADR-0008, amended 2026-07-27).
+  misconfiguration, not a supported mode (§2, settled 2026-07-27).
 
 ---
 

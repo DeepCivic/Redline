@@ -117,8 +117,8 @@ reality demands it. These are decisions, not omissions:
 |---|---|---|---|
 | Planning artefact | PRD + ADR + phase doc per feature | `architecture.md` (design) + `delivery-plan.md` (outstanding **items**, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the plan; documents never gate a build |
 | Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed item is **removed** from `delivery-plan.md`; its reasoning lives in git history and any durable change lands in `architecture.md`. **No per-item docs** — `docs/threads/` was deleted deliberately | Keeps the plan to outstanding work only |
-| Validation | `validate.sh` assuming local Node + services | `validate.sh` runs via **Podman** when no local Node; services added per build step | Host here has no local Node |
-| E2E | Playwright suite exists day one (`/e2e`) | The UI cores + view models are framework-free and unit-tested under `apps/redline-web/`; the Playwright acceptance specs live in the forked Wayfinder (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`) and run against the served `/evaluations` index, the `/evaluations/:id/{review,pivots,grouping}` routes and `/evaluations/:id/documents/:documentId` | UI logic lives in a pure, testable core; the specs now target the served mount inside the fork — the `/e2e` deviation is closed |
+| Validation | `validate.sh` assuming local Node + services | `validate.sh` detects its runner — local Node when present, **Podman** otherwise; services added per build step | Written for a host with no local Node; both lanes are supported, so check the `runner:` line it prints rather than assuming |
+| E2E | Playwright suite exists day one (`/e2e`) | The UI cores + view models are framework-free and unit-tested under `apps/redline-web/`; the Playwright acceptance specs live in the forked Wayfinder (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`) and run against the served `/evaluations` index, `/evaluations/new`, the `/evaluations/:id/{review,pivots,grouping}` routes and `/evaluations/:id/documents/:documentId` | UI logic lives in a pure, testable core; the specs now target the served mount inside the fork — the `/e2e` deviation is closed |
 | Release model | alpha branches, `VERSION` sync | Pre-1.0; no alpha branches yet. Version bumps stated per build step | Not yet releasing |
 | Scope | `@rbrasier/*` | `@redline/*`, consuming `@rbrasier/*` read-only | This is an adapter, not the framework |
 
@@ -126,13 +126,18 @@ When a deviation stops making sense, add the corresponding Wayfinder
 convention and update this table. The Playwright specs now live in the forked
 Wayfinder (`services/wayfinder/apps/web/e2e/redline-*.spec.ts`, branch
 `redline-integration`) beside Wayfinder's own suite, running against the served
-`/evaluations` index, the `/evaluations/:id/{grouping,review,pivots}` routes and
-`/evaluations/:id/documents/:documentId`
+`/evaluations` index, `/evaluations/new`, the
+`/evaluations/:id/{grouping,review,pivots}` routes and
+`/evaluations/:id/documents/:documentId`.
 Every spec that needs a *populated* evaluation gates on
 `E2E_REDLINE_EVALUATION_ID` — a real redline evaluation, which lands with the
 live corpus run — and skips otherwise, matching the fork's other seed-gated phase
-specs. The index spec is the exception: it renders its own empty state, so its
-sidebar-and-route assertions always run. The mount is Next.js/React
+specs. Two specs carry ungated tests, because they render their own empty state:
+the index (its sidebar-and-route assertions always run) and create (reaching
+`/evaluations/new`, refusing an anonymous caller, and the submit-disabled rules).
+Create's *one* live test gates on `E2E_REDLINE_STAGED_CORPUS_ID` instead — it
+needs a staged corpus **no evaluation has claimed**, which
+`E2E_REDLINE_EVALUATION_ID` by definition does not name. The mount is Next.js/React
 inside Wayfinder's own `apps/web`, not a standalone shell and not Numbatch's
 unused SvelteKit stack. The vitest suite under `apps/redline-web/` stays the
 framework-free proof of the brains + view models the served DOM binds to.

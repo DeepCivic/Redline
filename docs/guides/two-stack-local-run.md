@@ -1,9 +1,9 @@
 # Running both stacks locally
 
-redline's UI is served by the **forked Wayfinder** (`services/wayfinder`,
-ADR-0019), not by a standalone shell. So a working local environment is two
-stacks side by side: redline's own services, and the fork's web app pointed at
-them. This is the runbook for that.
+redline's UI is served by the **forked Wayfinder** (`services/wayfinder`), not by
+a standalone shell. So a working local environment is two stacks side by side:
+redline's own services, and the fork's web app pointed at them. This is the
+runbook for that.
 
 The fork's `apps/web` runs **on the host** (`pnpm dev`), not in a container —
 its `docker-compose.yml` provides infrastructure only. That is why there is no
@@ -48,7 +48,7 @@ identifier-token pre-pass and the review grid both read through.
 ## 2. The fork's infrastructure
 
 The fork keeps its **own** Postgres, MinIO and Langfuse — redline never shares
-Wayfinder's database (ADR-0002):
+Wayfinder's database:
 
 ```bash
 cd services/wayfinder
@@ -169,7 +169,7 @@ from anything you can read off the corpus directory.
 
 A document belongs to exactly one group: the manifest parser rejects a document
 claimed by two, naming both. Rules are matched by specificity then declaration
-order (ADR-0011), so their order in the file is load-bearing.
+order, so their order in the file is load-bearing.
 
 ## What you can and cannot reach
 
@@ -203,7 +203,7 @@ need an account.
 - **`embed` genuinely needs a real key** (`kanon-2-embedder` is an API call).
 
 Chunks are what the cold-start classifier reads — `IChunkStore`'s row has no
-embedding field, and ADR-0018's addendum defers similarity search — so the
+embedding field, and similarity search is deferred — so the
 embeddings are inert for this path. The store-load path writes `embedding=None`
 without complaint.
 
