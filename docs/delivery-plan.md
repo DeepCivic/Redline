@@ -12,7 +12,7 @@
 > **Nothing here has been run against live services.** The wiring and the write
 > path typecheck and are unit-tested; no Postgres, sidecar or adjudicator has
 > ever been behind either. Expect config-level breakage on first boot, and treat
-> the corpus run (§2 item 3) as the first real proof rather than a formality.
+> the corpus run (§2 item 7) as the first real proof rather than a formality.
 >
 > **One open decision carried in the code.** `redline_topics.id` is a plain
 > primary key, so a topic belongs to exactly one lens and a second lens reusing
@@ -43,9 +43,16 @@
 
 ## 2. The lean vertical (current priority)
 
-**Goal: a real procurement corpus goes in, and the results come out on screen,
-delineated by topic and brand.** Nothing else. The comprehension-lens work and
-the trained-classifier overlay are **deferred** (§3).
+**Goal: a real procurement corpus goes in, and a specialist gets a report out —
+delineated by topic and brand, with provenance back to source.** The
+comprehension-lens work and the trained-classifier overlay are **deferred** (§3).
+
+**The report is the product, not the grid.** A corpus that is merely extracted,
+chunked and classified is womblex plus a classifier; almost none of that needs
+redline. What redline is for is the step after — assembling those addressable,
+provenance-tagged facts into something a procurement specialist hands to a
+delegate. Items 3, 4 and 5 are that step, and **UAT does not start until they
+work**. A demo that ends at the review grid demonstrates the dependencies.
 
 **Numbatch is not on this path.** Classification runs cold-start over womblex
 extraction: hard rules + LLM adjudication navigating the store's
@@ -65,12 +72,14 @@ own `evaluation:create` permission. See
 `AssignDocumentsToGroups`, the cold-start classifier and `BuildEvaluationTable`
 are all built and wired in `container-redline.ts`, but nothing served calls them
 — `apps/web/scripts/seed-redline-evaluation.ts` still drives the pipeline from a
-terminal. Item 1 closes that, and it is genuinely thin: one mutation and one
+terminal. Item 2 closes that, and it is genuinely thin: one mutation and one
 control in front of four use cases that already compose.
 
-**Items 1 and 2 are fork-side** — the router, the routes and the components all
-live in `services/wayfinder/apps/web`. Each is two commits under §1's contract:
-the work on `redline-integration`, then the gitlink and pin moved here in step.
+**Items 2, 4 and 6 are fork-side** — the router, the routes, the report assembly
+and the components all live in `services/wayfinder/apps/web`. Each is two commits
+under §1's contract: the work on `redline-integration`, then the gitlink and pin
+moved here in step. Items 3 and 5 are redline-side: an MCP server is addressed
+over a URL, and the workbook builder already lives in `apps/redline-web`.
 
 **Browser *upload* is deliberately not here.** Staging a corpus needs
 `ISAACUS_API_KEY`, compute and a cost decision, so it is an operator action
@@ -81,7 +90,41 @@ not trigger womblex itself — that is the sidecar's job"*). A new port, a new
 adapter and a sidecar trigger, to remove a step from a user who is not yet in the
 loop. Deferred to §3.
 
-### 1 — Run the pipeline from the browser
+### 1 — Prove the wiring on the in-repo fixtures
+
+Every seam typechecks and is unit-tested; none has had a live service behind it.
+This closes that for everything except the real womblex engine, and it costs
+nothing: `WOMBLEX_MODE` defaults to `stub`, whose extractor is deterministic and
+dependency-free, so **no `ISAACUS_API_KEY` is needed**. Compose profile `ingest`
+brings up MinIO and the sidecar; `redline-postgres` takes the real migrations.
+The seed script drives it, so this is not blocked on item 2.
+
+The one seam still wanting an endpoint is the **adjudicator** — the weakest
+connector in the stack, and the only one whose wire contract is asserted against
+an assumption rather than a recorded response. `REDLINE_ADJUDICATOR_BASE_URL` is
+just a URL, so point it at a local mock or a real model; either way this item is
+where that contract stops being a guess.
+
+**The manifest does not exist yet, and cannot be written in advance.** The seed
+script takes `<manifest.json>` carrying `evaluationId`, `evaluationName`, `lens`,
+`vendors` and `groups` — and `groups.documentIds` are womblex `source_hash`
+values, which exist only *after* the sidecar has ingested. So the order is: stage
+the fixture → `POST /ingest` → read the hashes back (`redline_chunks`, the same
+rows `DrizzleStagedCorpusReader` lists) → write the manifest → seed. Writing that
+fixture manifest is part of this item, and the chicken-and-egg is the reason
+item 2's picker exists.
+
+What it does **not** prove: the real womblex Parquet→JSON mapping, since the stub
+supplies the content. That waits for item 7.
+
+_Version bump: PATCH_ (a run, a fixture manifest and the runbook it produces;
+code fixes only if it breaks).
+_Exit: with no `ISAACUS_API_KEY` set, the seed script takes the in-repo fixture
+corpus to a populated grid at `/evaluations/:id/review`, served from a real
+Postgres and a real sidecar, and the sequence is written down as a runbook
+someone else can follow._
+
+### 2 — Run the pipeline from the browser
 
 `IngestDocuments` (the stage confirmation) → `AssignDocumentsToGroups` →
 cold-start classify → `BuildEvaluationTable` run only from the script. One
@@ -101,19 +144,109 @@ _Version bump: MINOR._
 _Exit: starting a run on an evaluation whose documents have been extracted
 produces a populated grid at `/evaluations/:id/review`._
 
-### 2 — Test the React bind layer
+### 3 — The report tool surface
+
+The domain already assigns work to a **"report-assembler LLM"** in five places
+(`chunk-store.ts`, `money-span-store.ts` ×2, `domain/index.ts`) — attaching money
+spans to requirements, copying chunk text verbatim into template slots,
+requirement alignment. It exists in no document, no plan item and no line of
+code. This item gives it hands.
+
+The tools already exist as port methods; what is missing is exposure. Seven of
+them: `IChunkStore.fetchChunks` / `fetchByStructure`, `IMoneySpanStore
+.fetchByDocument` / `fetchByStructure`, `IProcurementExtractionReader
+.readElements` / `readChunks` / `readTableCells`. Wrap them as an MCP server.
+
+**Build this rather than taking `postgres-mcp` off the shelf.** A generic SQL
+tool reaches the same rows and drops the contract the ports encode: stable
+ordering, so a report is reproducible; verbatim text, *"byte-identical — copied
+into report slots, never paraphrased"*. Most concretely, `redline_chunks
+.embedding` sits beside the text, and one `SELECT *` at ~90k chunks is a very
+expensive mistake — `DrizzleStagedCorpusReader` never selects the embedding or
+bulk text, and a generic tool has no such discipline. Provenance back to source
+is what redline sells; it should not route through a tool that cannot guarantee
+it. (`postgres-mcp` is still worth having for ad-hoc analysis, off this path.)
+
+**Transport is constrained, and it is not a free choice.** Wayfinder's MCP client
+speaks **SSE and streamable-HTTP only — no stdio** (`ai-sdk-mcp-client.ts`), and
+servers are URL-addressed. Anything stdio-only cannot be reached from the fork.
+
+**Where it lives.** A new `apps/redline-mcp`, wiring the existing adapters the way
+`apps/redline-web/lib/container.ts` does and serving streamable-HTTP — one
+package, and it keeps the architecture rule that only apps compose adapters. It
+gets its own compose service beside `womblex-ingest`, sharing
+`REDLINE_DATABASE_URL`. It must **not** go in `redline-adapters` (a library, not
+a process) nor in the fork (the fork consumes it over a URL, and putting it there
+would make redline's own store reachable only through Wayfinder).
+
+**This item must settle two things it inherits.** First, whether a tender-reading
+assembler asserts Wayfinder's `McpServer.communicatesExternally` — it reads
+commercial-in-confidence documents. Second, the ownership contradiction:
+`money-span-store.ts` says attaching a span to a requirement is the assembler's
+job, while `MoneySpanFinancialExtractor` already does it by highest-confidence
+classification. One of the two must stop claiming it.
+
+_Version bump: MINOR._
+_Exit: an MCP client lists the tools and calls them against a populated
+evaluation, getting back verbatim chunk text and money spans with provenance —
+identical results and identical ordering across two consecutive calls._
+
+### 4 — LLM report assembly
+
+The loop is not a build: `mcp-tool-prepass.ts` already drives an AI SDK `ToolSet`
+over MCP. It lives in `packages/adapters`, which redline does not vendor — but
+the fork's `apps/web` depends on `@rbrasier/adapters` directly (its
+`package.json`, verified), and that is where `container-redline.ts` already sits.
+**Build this fork-side and the vendoring seam never has to widen.**
+
+**This item must settle what a report actually is** — its sections, what the
+model chooses versus what is transferred verbatim, and what a specialist can
+change before it is exported. Nothing anywhere defines this. Settle it here and
+write it into `architecture.md`; the item cannot be tested otherwise, and item 5
+cannot start without it.
+
+The verbatim rule is the testable part and the reason to do this before the
+export: a transferred passage must be byte-identical to its stored chunk, because
+that is the provenance claim the product makes. Assert it directly.
+
+_Version bump: MINOR._
+_Exit: an LLM assembles a report over a populated evaluation, and every
+transferred passage is byte-identical to the chunk it came from — asserted
+against the store, not eyeballed._
+
+### 5 — The report sheet seam
+
+The export target exists and is deterministic: `buildEvaluationWorkbook` takes
+grid + pivots to sheet data and the browser writes xlsx through
+`write-excel-file`. What is missing is a seam where an assembled report becomes
+sheets. Split from item 4 because it is independently testable — a fixed report
+structure exports correctly whether a model or a fixture produced it — and
+because it is the half a specialist actually receives.
+
+**Prefer extending that builder over adopting an Excel MCP server**
+(`haris-musa/excel-mcp-server`, MIT, streamable-HTTP, is the credible one): it
+writes files server-side, which is a different delivery model to redline's
+browser download, and the existing builder is deterministic and unit-testable.
+Revisit only if the LLM needs to control formatting or charts.
+
+_Version bump: MINOR._
+_Exit: a fixed report structure renders to a workbook a specialist can open, with
+its provenance intact, proven by a test over the builder rather than by opening
+the file._
+
+### 6 — Test the React bind layer
 
 `review-table.test.tsx` and `pricing-pivots.test.tsx` are twelve lines each,
 asserting only that the export is a function and its `.name` matches — against a
 207-line grid and a 157-line pivot component. The cores under `apps/redline-web/`
 are covered; the core→DOM binding is not, and the Playwright specs that would
-cover it skip until item 3 has run.
+cover it skip until item 7 has run.
 
 _Version bump: PATCH._
 _Exit: both components render against fake query data in a test and assert the
 rows and columns they produce, failing if the binding to the core breaks._
 
-### 3 — Real corpus, end to end
+### 7 — Real corpus, end to end
 
 Run a real procurement corpus through: `womblex` profile ingests → the sidecar
 extracts, chunks and embeds → chunk rows and embeddings materialise into the
@@ -207,7 +340,10 @@ should shape it rather than be assumed. In dependency order:
    users); primary/secondary semantics (Numbatch returns score-sorted ≤3 topics
    with no primary/secondary distinction; owned by `BoundaryDecision` in §3);
    ambiguity thresholds (the signal register needs initial values, unmeasured
-   until the corpus runs).
+   until the corpus runs). **What a report is** was on this list by omission —
+   five source comments assigned work to a "report-assembler LLM" that appeared
+   in no document and no item. It is now items 3 and 4, and the definition is
+   theirs to settle.
 
 2. **A lens is declared at create time, not authored.** The create screen's
    fields become the lens's topics, so the manifest is gone — but the lens is
@@ -230,11 +366,23 @@ should shape it rather than be assumed. In dependency order:
 
 **The lean vertical runs to completion before the deferred work starts.**
 
-Item 1 finishes making the product operable by someone without a terminal —
-creating an evaluation already is. Item 2 makes the screens they now drive worth
-trusting. Item 3 is what all of it is for, and runs last so it proves the product
-rather than the script — though the script stays a deliberate fallback for
-de-risking the first live run on its own.
+Item 1 turns "the wiring is unproven" into a fact, cheaply and without an Isaacus
+key, and it is deliberately first: every later item debugs against known-good
+connectors instead of discovering them. Item 2 finishes making the product
+operable by someone without a terminal — creating an evaluation already is.
+
+Items 3, 4 and 5 are the product. Everything before them assembles inputs;
+everything after them is proof or polish.
+
+Item 6 makes the screens worth trusting. Item 7 is what all of it is for, and
+runs last so it proves the product rather than the script — though the script
+stays a deliberate fallback for de-risking the first live run on its own.
+
+**The UAT gate is item 5, not item 7.** A real corpus rendering in a grid is a
+demonstration of womblex and a classifier; a specialist cannot evaluate a tender
+from it, and asking them to would test the wrong thing. Item 7 on its own says
+the pipeline works. Items 3–5 are what make it redline. Do not schedule UAT
+against a date that only clears item 7.
 
 Then, and only then: §3 in dependency order, and finally workspace extraction and
 release.
@@ -254,3 +402,13 @@ release.
   `enrichment`/`linking`; producing and loading the graph is an explicit,
   Isaacus-costed opt-in.
 - **No workspace extraction.** Ship-shape is a later concern than see-shape.
+
+**Two of those bind the report work directly, and item 3 inherits both.** The
+source comments describe the report-assembler as *"traversing the graph and
+calling tools"* — the graph is off, so it must work without one. And with
+`findSimilar` deferred it cannot search for a relevant passage either. Both tools
+it gets are deterministic: exact fetch by key, structural fetch by provenance.
+That is a real constraint on what a report can claim, not an implementation
+detail — the assembler transfers facts it is pointed at, and the pointing is done
+by classification, not by the model roaming the corpus. Design items 3 and 4 for
+that, or reopen one of these two decisions deliberately.
