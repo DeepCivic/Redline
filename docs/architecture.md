@@ -541,9 +541,9 @@ redline/
 ├── docs/
 │   ├── architecture.md            ◄ THIS FILE — what redline IS (the design truth)
 │   ├── delivery-plan.md           what is LEFT TO DO (the tracking truth)
-│   ├── adr/                       architecture decision records (still authoritative)
 │   ├── design-principles.md       adopted principles + non-goals (durable, not tracking)
-│   └── guides/
+│   ├── guides/                    local dev, validation, two-stack run
+│   └── reviews/                   dated point-in-time reviews (historical record)
 ├── scripts/                       vendor-wayfinder, womblex-pod smoke, etc.
 ├── vendor/wayfinder/              materialised from wayfinder.pin (never committed)
 └── validate.sh                    the CI gate

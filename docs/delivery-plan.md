@@ -220,7 +220,7 @@ should shape it rather than be assumed. In dependency order:
 3. **Source comments still cite dead ADR numbers.** The documents no longer do
    (see `design-principles.md`), but comments across `packages/` and the fork do
    — e.g. `hard-rule-evaluation.ts:47` cites ADR-0011 for a precedence rule now
-   stated in `architecture.md` §5. Harmless where the comment states its own
+   stated in `architecture.md` §3. Harmless where the comment states its own
    substance, which is the common case; fix them opportunistically when touching
    the file rather than as a pass of its own.
 
