@@ -14,8 +14,9 @@
 > behind it. The one exception is the money-span write path, which was proven
 > against a real Postgres 16 with the shipped migrations applied — the Python
 > writer landing spans and `DrizzleMoneySpanStore` reading them back. Everything
-> else should still expect config-level breakage on first boot; treat the corpus
-> run (§2 item 5) as the first real proof rather than a formality.
+> else should still expect config-level breakage on first boot; whenever a real
+> corpus is first run (§4 item 3), treat that as the first real proof rather than
+> a formality.
 >
 > **Typechecking is not evidence a path exists.** The money-span table shipped
 > with a migration, a read adapter and a code comment naming a writer that was
@@ -63,7 +64,7 @@ chunked and classified is womblex plus a classifier; almost none of that needs
 redline. What redline is for is the step after — assembling those addressable,
 provenance-tagged facts into something a procurement specialist hands to a
 delegate. The report tool surface that gives an assembler hands is built
-(`apps/redline-mcp`, `architecture.md` §5 invariant 7); items 2 and 3 are what is
+(`apps/redline-mcp`, `architecture.md` §5 invariant 7); items 1 and 2 are what is
 left of that step, and **UAT does not start until they work**. A demo that ends at
 the review grid demonstrates the dependencies.
 
@@ -93,21 +94,24 @@ document route. **Creating** an evaluation is now a browser action too: the
 own `evaluation:create` permission. See
 [`architecture.md`](./architecture.md) §3/§4/§5/§6.
 
-**What is left of the write surface is the run.** `IngestDocuments`,
+**The run stays on the script, and that is now a scope decision.** `IngestDocuments`,
 `AssignDocumentsToGroups`, the cold-start classifier and `BuildEvaluationTable`
 are all built and wired in `container-redline.ts`, but nothing served calls them
-— `apps/web/scripts/seed-redline-evaluation.ts` still drives the pipeline from a
-terminal. Item 1 closes that.
+— `apps/web/scripts/seed-redline-evaluation.ts` drives the pipeline from a
+terminal and remains the only path that does. Driving it from a browser is **out
+of scope** (§4 item 2), so an operator with a terminal stages the corpus and
+starts the run; the specialist's browser surface begins at the populated
+evaluation.
 
-**Items 1, 2 and 4 are fork-side** — the router, the routes, the report assembly
-and the components all live in `services/wayfinder/apps/web`. Each is two commits
-under §1's contract: the work on `redline-integration`, then the gitlink and pin
-moved here in step. Item 3 is redline-side: the workbook builder already lives in
-`apps/redline-web`. So is the report tool surface item 2 calls, which is built and
-served over a URL the fork registers rather than imports.
+**Items 1 and 3 are fork-side** — the report assembly and the components live in
+`services/wayfinder/apps/web`. Each is two commits under §1's contract: the work
+on `redline-integration`, then the gitlink and pin moved here in step. Item 2 is
+redline-side: the workbook builder already lives in `apps/redline-web`. So is the
+report tool surface item 1 calls, which is built and served over a URL the fork
+registers rather than imports.
 
 **The report work is not gated on a pipeline run, and treating it as though it
-were is a planning error we have already made once.** Items 2 and 3 need *rows
+were is a planning error we have already made once.** Items 1 and 2 need *rows
 in the store* — chunks, spans, responses with provenance — not a live
 extract→classify→build sequence that produced them. Those rows can be seeded
 straight into Postgres, which is how `packages/redline-adapters`' own suite
@@ -115,72 +119,19 @@ already works (PGlite, seeded rows, no services). Build them against a seeded
 store and let the corpus run confirm them later; do not let the two block each
 other again.
 
-**A fixture run over the in-repo corpus is descoped, not scheduled.** It was
-first in an earlier revision of this plan on the reasoning that later items would
-debug against known-good connectors. That reasoning did not survive contact: the
-`WOMBLEX_MODE=stub` extractor never reads the corpus (it synthesises each
-document from the name it is given), so the run proves connectors, never content
-— the missing money-span writer was a gap it could not have detected either way.
-It returns when
-there is real data worth pointing at it, and the manifest it needs is already
-written (`services/womblex-ingest/tests/corpus/redline-manifest.json`, with the
-ordering constraint and the stub's limits recorded beside it).
+**The in-repo fixture corpus is what this plan builds against, and that is a
+settled scope decision.** Seeded rows plus the fixture corpus are sufficient to
+build and prove every item below; a real-corpus run is the owner's to call and is
+not scheduled here (§4 item 3). One limit to hold while reading any fixture
+result: the `WOMBLEX_MODE=stub` extractor never reads the corpus — it synthesises
+each document from the name it is given — so a fixture run exercises connectors
+and shapes, never document content. Claims about what redline *understands*
+belong in unit tests over seeded rows, which is where they already are. The
+manifest is written
+(`services/womblex-ingest/tests/corpus/redline-manifest.json`, with the ordering
+constraint and the stub's limits recorded beside it).
 
-### 1 — Choose a corpus and run it, from the browser
-
-`IngestDocuments` (the stage confirmation) → `AssignDocumentsToGroups` →
-cold-start classify → `BuildEvaluationTable` run only from the script. This is
-what makes the product operable by someone without a terminal.
-
-**It is more than a run button, and describing it as one has been misleading the
-estimate.** A specialist arrives at this screen in one of two states: they hold
-documents to upload, or a bucket is already connected and holds a collection —
-often far more than the tender in front of them. Both need the same thing before
-anything runs: a way to say *which* documents are in scope for this evaluation and
-which are not. That selection is the item's substance; the run is the easy half.
-So it carries, at minimum:
-
-- **Getting documents in.** Upload, or point at an already-connected bucket. The
-  connected-bucket case is the one that scales and the one a real deployment
-  starts from, so it is not the afterthought.
-- **Scoping the run.** Browse what is there, include and exclude, and see what is
-  selected before committing. A collection is not a corpus until someone has said
-  which part of it is.
-- **Running, visibly.** The four use cases behind one action, with enough run
-  state that the screen does not look frozen — extraction over a real corpus is
-  minutes, not seconds.
-
-**This absorbs what §3 called "browser upload + womblex trigger".** That was
-deferred on the grounds that staging is an operator action for a user not yet in
-the loop. The user is now in the loop, and the deferral was making a
-document-selection problem look like a plumbing problem. It stays honestly
-expensive — redline has no object-storage code in TypeScript, and
-`IngestDocuments` confirms extraction rather than performing it (its input is
-`documentIds`, and its comment reads *"It does not trigger womblex itself — that
-is the sidecar's job"*), so a port, an adapter and a sidecar trigger are real
-work. Wayfinder's `extraction.ts` / `/api/documents` drive Wayfinder's *own*
-pipeline into Wayfinder's *own* storage, so the upload widget may be reusable but
-the pipeline behind it is not.
-
-**Split this before building it.** Under §1's contract it is at least three build
-steps — the object-storage port + adapter, the selection surface, the run trigger
-and its state — and the exit test below is the whole item's, not one step's.
-Sequence them when the item is picked up, not now.
-
-**Settle what `AssignDocumentsToGroups` is for on this path.** `CreateEvaluation`
-now writes the vendors and response groups itself and leaves the evaluation at
-`documents_uploaded`, so on a browser-created evaluation that use case is
-re-persisting a composition it already agrees with and advancing the stage to
-`classifying`. Either call it for the stage advance and say so, or move the
-advance and stop calling it — do not leave two writers of the same rows
-unexplained. A script-seeded evaluation still needs it in full.
-
-_Version bump: MINOR._
-_Exit: a specialist picks a subset of a connected bucket's documents — leaving
-the rest out — starts a run from the browser, and gets a populated grid at
-`/evaluations/:id/review` covering exactly the documents they chose._
-
-### 2 — LLM report assembly
+### 1 — LLM report assembly
 
 The loop is not a build: `mcp-tool-prepass.ts` already drives an AI SDK `ToolSet`
 over MCP. It lives in `packages/adapters`, which redline does not vendor — but
@@ -197,7 +148,7 @@ unbuildable). What is unbuilt is the loop above them.
 **This item must settle what a report actually is** — its sections, what the
 model chooses versus what is transferred verbatim, and what a specialist can
 change before it is exported. Nothing anywhere defines this. Settle it here and
-write it into `architecture.md`; the item cannot be tested otherwise, and item 3
+write it into `architecture.md`; the item cannot be tested otherwise, and item 2
 cannot start without it.
 
 The verbatim rule is the testable part and the reason to do this before the
@@ -209,12 +160,12 @@ _Exit: an LLM assembles a report over a populated evaluation, and every
 transferred passage is byte-identical to the chunk it came from — asserted
 against the store, not eyeballed._
 
-### 3 — The report sheet seam
+### 2 — The report sheet seam
 
 The export target exists and is deterministic: `buildEvaluationWorkbook` takes
 grid + pivots to sheet data and the browser writes xlsx through
 `write-excel-file`. What is missing is a seam where an assembled report becomes
-sheets. Split from item 2 because it is independently testable — a fixed report
+sheets. Split from item 1 because it is independently testable — a fixed report
 structure exports correctly whether a model or a fixture produced it — and
 because it is the half a specialist actually receives.
 
@@ -229,89 +180,21 @@ _Exit: a fixed report structure renders to a workbook a specialist can open, wit
 its provenance intact, proven by a test over the builder rather than by opening
 the file._
 
-### 4 — Test the React bind layer
+### 3 — Test the React bind layer
 
 `review-table.test.tsx` and `pricing-pivots.test.tsx` are twelve lines each,
 asserting only that the export is a function and its `.name` matches — against a
 207-line grid and a 157-line pivot component. The cores under `apps/redline-web/`
 are covered; the core→DOM binding is not, and the Playwright specs that would
-cover it skip until item 5 has run.
+cover it skip until a real corpus has run (§4 item 3).
 
-This does **not** wait for item 5, and never did: the components render against
+This does **not** wait for a corpus run, and never did: the components render against
 fake query data in vitest, so the coverage lands now and the Playwright specs stay
 the later, separate confirmation.
 
 _Version bump: PATCH._
 _Exit: both components render against fake query data in a test and assert the
 rows and columns they produce, failing if the binding to the core breaks._
-
-### 5 — Real corpus, end to end
-
-**Owner-driven, not agent-driven.** This item needs `ISAACUS_API_KEY`, paid
-compute and a real tender nobody has staged yet; it is run by whoever holds those,
-and is out of scope for an agent picking up the plan. Everything below is the
-runbook that run follows, not work to be scheduled ahead of it.
-
-Run a real procurement corpus through: `womblex` profile ingests → the sidecar
-extracts, chunks and embeds → chunk rows and embeddings materialise into the
-`redline_` store → group by vendor → cold-start classify → render. Extraction
-provenance serves as JSON; bulk vectors are loaded as data but not ANN-indexed.
-Needs `ISAACUS_API_KEY` (both the chunk and embed stages are gated) and a corpus
-in the git-ignored `services/womblex-ingest/tests/corpus-local/`, which holds
-only a README today. The enrich graph is **off in redline's profile**
-(`enrichment.enabled: false`); enabling it is a config + Isaacus-cost decision,
-and would extend the store-load path to carry graph edges.
-
-Also owns one open measurement: **the three OCR-table gates** (paddleocr-only,
-deskew refusal, precision refusal), on the real corpus.
-
-**Staging is undocumented.** Every downstream step assumes the corpus is already
-in the bucket, but no guide says how it gets there — `two-stack-local-run.md`
-brings up MinIO and stops. The only written claim is §3's "`mc cp` stages the
-bucket today", which is a note to ourselves, not a runbook. Whoever drives this
-item writes that step down first; it is the one prerequisite with no instructions
-at all.
-
-> **Upstream-behaviour facts to bake into the runbook (not obvious from config).**
-> Line references verified against the pinned `services/womblex` @ `v0.3.0` on
-> 2026-08-09.
-> (a) `womblex run` writes `elements`/`table_cells`/`form_fields` but **does not
-> persist chunks** — `write_batch_parquet` passes only `(doc_id, path, extraction)`
-> to `write_results` (`src/womblex/operations/persist.py:18-27`), and chunks hang
-> off `result.chunks`. Chunking and embedding are separate per-stage commands
-> (`womblex chunk --shards` then `womblex embed --shards`) over the run's shard dir.
-> (b) But `run` still *computes* chunking when `chunking.enabled`
-> (`src/womblex/batch.py:63-64` — the top-level module, **not**
-> `operations/batch.py`, which does not exist) and then discards it, so a keyed
-> run does the work twice. Wasted CPU and wall
-> clock, **not** Isaacus spend — redline sets no `chunking_model`, so chunking is
-> local semchunk over the Kanon-2 tokeniser the engine vendors in-tree at
-> `src/womblex/_models/kanon-2-tokenizer/`. Setting `chunking.enabled: false` for
-> the `run` pass avoids it and is safe for the prescribed `chunk --shards` path,
-> which ignores that flag — but `womblex chunk --config` **refuses outright** when
-> it is false (`src/womblex/cli/pipeline.py:418-420`), so do not flip it if anyone
-> uses the `--config` composition. (c) The **chunk** stage is Isaacus-gated in
-> 0.3.0 and the gate is a **pre-flight policy refusal**, not a capability limit —
-> `cli/pipeline.py:152` computes `chunk_will_skip = config.chunking.enabled and
-> not isaacus_available()` before any tokeniser loads. Settled by reading the
-> engine, see `architecture.md` §7.1; plan around it rather than re-testing it.
-> (d) The **embed** stage is unambiguously Isaacus-gated
-> (`kanon-2-embedder`), and **`enrich`/`linking` are disabled** in redline's
-> profile (`infra/womblex/redline.yaml:72-75`, so no graph is produced unless
-> turned on).
-
-_Version bump: PATCH_ (a run plus the runbook and any doc corrections it
-produces; no shipped code).
-
-_Exit: a specialist opens the review grid for a real tender and sees each
-document delineated by topic and brand, with provenance back to source — with the
-five `E2E_REDLINE_EVALUATION_ID`-gated specs
-(`services/wayfinder/apps/web/e2e/redline-*.spec.ts`) green against that
-evaluation as the automatable half. The run also unblocks
-`redline-create-evaluation.spec.ts`, which gates on
-`E2E_REDLINE_STAGED_CORPUS_ID` and needs a staged corpus **no evaluation has
-claimed** — a second corpus, or one staged and left uncreated, since `create`
-refuses a claimed one with `ALREADY_EXISTS`._
 
 ---
 
@@ -346,9 +229,79 @@ should shape it rather than be assumed. In dependency order:
    until the corpus runs). **What a report is** was on this list by omission —
    five source comments assigned work to a "report-assembler LLM" that appeared
    in no document and no item. That assembler now has hands (`apps/redline-mcp`),
-   and the definition is item 2's to settle.
+   and the definition is item 1's to settle.
 
-2. **A lens is declared at create time, not authored.** The create screen's
+2. **Running a corpus from the browser is out of scope.** Choosing which
+   documents of a connected bucket are in scope for an evaluation, and starting
+   the pipeline over them, was §2 item 1 until it was descoped on 2026-08-09. It
+   is not deferred-and-scheduled: nothing in this file plans it, and the deferred
+   set in §3 does not carry it either. What that costs is stated plainly so it is
+   not rediscovered as a surprise — `IngestDocuments`,
+   `AssignDocumentsToGroups`, the cold-start classifier and
+   `BuildEvaluationTable` stay reachable only from
+   `apps/web/scripts/seed-redline-evaluation.ts`, so every evaluation begins with
+   an operator at a terminal, and the object-storage port and adapter redline
+   would need to upload or browse a bucket in TypeScript remain unwritten. The
+   `evaluation` router's `create` mutation is unaffected: an evaluation is still
+   created in the browser over an already-staged corpus. Two live consequences:
+   how a corpus reaches the bucket is written down nowhere and no item now owns
+   writing it (item 3 records the gap, but a run is not scheduled); and
+   `redline-create-evaluation.spec.ts` still needs an
+   `E2E_REDLINE_STAGED_CORPUS_ID` staged by hand.
+
+3. **A real-corpus run is called by the owner, not scheduled here.** The fixture
+   corpus is what the lean vertical is built and proven against (§2 preamble). A
+   run over a real tender happens when whoever holds `ISAACUS_API_KEY`, the
+   compute and the tender says it happens; this file does not sequence it and
+   nothing above is gated on it. It was a numbered §2 item until that decision on
+   2026-08-09. What such a run would do, recorded so it need not be rediscovered:
+   `womblex` profile ingests → the sidecar extracts, chunks and embeds → chunk
+   rows and embeddings materialise into the `redline_` store → group by vendor →
+   cold-start classify → render, over a corpus in the git-ignored
+   `services/womblex-ingest/tests/corpus-local/` (a README today). Extraction
+   provenance serves as JSON; bulk vectors load as data but are not ANN-indexed.
+   The enrich graph is off in redline's profile (`enrichment.enabled: false`);
+   turning it on is a config plus Isaacus-cost decision that would extend the
+   store-load path to carry graph edges. A run is also the only thing that would
+   settle **the three OCR-table gates** (paddleocr-only, deskew refusal,
+   precision refusal), and the only source of the `E2E_REDLINE_EVALUATION_ID` the
+   five seed-gated Playwright specs wait on — plus the
+   `E2E_REDLINE_STAGED_CORPUS_ID` that `redline-create-evaluation.spec.ts` needs,
+   which must name a corpus **no evaluation has claimed**, since `create` refuses
+   a claimed one with `ALREADY_EXISTS`. **Staging is written down nowhere** —
+   `two-stack-local-run.md` brings up MinIO and stops, and §3's "`mc cp` stages
+   the bucket today" is a note to ourselves, not a runbook; whoever drives a run
+   writes that step first.
+
+   > **Upstream-behaviour facts to bake into the runbook (not obvious from config).**
+   > Line references verified against the pinned `services/womblex` @ `v0.3.0` on
+   > 2026-08-09.
+   > (a) `womblex run` writes `elements`/`table_cells`/`form_fields` but **does not
+   > persist chunks** — `write_batch_parquet` passes only `(doc_id, path, extraction)`
+   > to `write_results` (`src/womblex/operations/persist.py:18-27`), and chunks hang
+   > off `result.chunks`. Chunking and embedding are separate per-stage commands
+   > (`womblex chunk --shards` then `womblex embed --shards`) over the run's shard dir.
+   > (b) But `run` still *computes* chunking when `chunking.enabled`
+   > (`src/womblex/batch.py:63-64` — the top-level module, **not**
+   > `operations/batch.py`, which does not exist) and then discards it, so a keyed
+   > run does the work twice. Wasted CPU and wall
+   > clock, **not** Isaacus spend — redline sets no `chunking_model`, so chunking is
+   > local semchunk over the Kanon-2 tokeniser the engine vendors in-tree at
+   > `src/womblex/_models/kanon-2-tokenizer/`. Setting `chunking.enabled: false` for
+   > the `run` pass avoids it and is safe for the prescribed `chunk --shards` path,
+   > which ignores that flag — but `womblex chunk --config` **refuses outright** when
+   > it is false (`src/womblex/cli/pipeline.py:418-420`), so do not flip it if anyone
+   > uses the `--config` composition. (c) The **chunk** stage is Isaacus-gated in
+   > 0.3.0 and the gate is a **pre-flight policy refusal**, not a capability limit —
+   > `cli/pipeline.py:152` computes `chunk_will_skip = config.chunking.enabled and
+   > not isaacus_available()` before any tokeniser loads. Settled by reading the
+   > engine, see `architecture.md` §7.1; plan around it rather than re-testing it.
+   > (d) The **embed** stage is unambiguously Isaacus-gated
+   > (`kanon-2-embedder`), and **`enrich`/`linking` are disabled** in redline's
+   > profile (`infra/womblex/redline.yaml:72-75`, so no graph is produced unless
+   > turned on).
+
+4. **A lens is declared at create time, not authored.** The create screen's
    fields become the lens's topics, so the manifest is gone — but the lens is
    written once, with **no hard rules** (none can honestly be written before
    anyone has seen how these fields land on this corpus, so every field goes to
@@ -356,7 +309,7 @@ should shape it rather than be assumed. In dependency order:
    or durable-asset lifecycle; that surface stays in §3. The seed script still
    writes rules from a manifest, and is now the only path that can.
 
-3. **A range inside a pricing *table* is still uncountable, and that is
+5. **A range inside a pricing *table* is still uncountable, and that is
    upstream's.** The grid's reading now counts a range once at its upper endpoint
    (`readDocumentMoney`), but it can only see a range womblex grouped — and
    `money_stage.py`'s `_cell_row` attaches no `range_group`/`range_role` to cell
@@ -365,7 +318,7 @@ should shape it rather than be assumed. In dependency order:
    properly is a womblex change, not a redline one; raise it upstream rather than
    inferring a grouping here from adjacency.
 
-4. **Source comments cite plan item numbers, which are guaranteed to rot.** Files
+6. **Source comments cite plan item numbers, which are guaranteed to rot.** Files
    across `packages/`, `apps/` and `services/womblex-ingest` carry
    `(delivery-plan §2 item 1)` / `(item 1a)` / `(item 1b)` referring to several
    different past items — this file renumbers whenever the outstanding set
@@ -375,7 +328,7 @@ should shape it rather than be assumed. In dependency order:
    count is one more thing that rots. `grep -rn 'delivery-plan.*item\|(item 1'`
    is the live answer.)
 
-5. **Source comments still cite dead ADR numbers.** The documents no longer do
+7. **Source comments still cite dead ADR numbers.** The documents no longer do
    (see `design-principles.md`), but comments across `packages/` and the fork do
    — e.g. `hard-rule-evaluation.ts:47` cites ADR-0011 for a precedence rule now
    stated in `architecture.md` §3. Harmless where the comment states its own
@@ -388,10 +341,10 @@ should shape it rather than be assumed. In dependency order:
 
 **The lean vertical runs to completion before the deferred work starts.**
 
-**Items 2 and 3 are the product, and nothing here may gate them on a run.**
+**Items 1 and 2 are the product, and nothing here may gate them on a run.**
 Everything before them assembles inputs; everything after them is proof or polish.
 They need rows in the store, which can be seeded (§2 preamble) — so they start
-now, in parallel with item 1, not behind it. An earlier revision of this plan
+now. An earlier revision of this plan
 sequenced a fixture run first on the reasoning that later items would then debug
 against known-good connectors; in practice that reasoning only deferred the
 product behind a proof of the plumbing, and the plumbing gap it was meant to catch
@@ -400,19 +353,18 @@ withdrawn.
 
 The report work's prerequisites are met: the money-span write path is built, so
 the spans reach the store, and the tool surface over them is built and served
-(`apps/redline-mcp`), so item 2 registers a URL rather than building one. Item 1
-makes the product operable by someone without a terminal, and is independent of
-the rest.
+(`apps/redline-mcp`), so item 1 registers a URL rather than building one. Nothing
+in the lean vertical now waits on another item to start.
 
-Item 4 makes the screens worth trusting and can land any time. Item 5 is what all
-of it is for, and is owner-driven — it confirms the product rather than
-scheduling it.
+Item 3 makes the screens worth trusting and can land any time. A real-corpus run
+is what all of it is for, and is the owner's call (§4 item 3) — it confirms the
+product rather than being scheduled against it.
 
-**The UAT gate is item 3, not item 5.** A real corpus rendering in a grid is a
-demonstration of womblex and a classifier; a specialist cannot evaluate a tender
-from it, and asking them to would test the wrong thing. Item 5 on its own says
-the pipeline works. Items 2–3 are what make it redline. Do not schedule UAT
-against a date that only clears item 5.
+**The UAT gate is item 2.** A real corpus rendering in a grid is a demonstration
+of womblex and a classifier; a specialist cannot evaluate a tender from it, and
+asking them to would test the wrong thing. A corpus run on its own says the
+pipeline works. Items 1–2 are what make it redline. Do not schedule UAT against a
+date that only clears a run.
 
 Then, and only then: §3 in dependency order, and finally workspace extraction and
 release.
@@ -440,5 +392,5 @@ graph and calling tools"* — the graph is off, so it must work without one. And
 by key, structural fetch by provenance. That is a real constraint on what a report
 can claim, not an implementation detail — the assembler transfers facts it is
 pointed at, and the pointing is done by classification, not by the model roaming
-the corpus. Design items 2 and 3 for that, or reopen one of these two decisions
+the corpus. Design items 1 and 2 for that, or reopen one of these two decisions
 deliberately and widen the tool surface with it.
