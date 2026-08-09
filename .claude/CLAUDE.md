@@ -140,7 +140,11 @@ needs a staged corpus **no evaluation has claimed**, which
 `E2E_REDLINE_EVALUATION_ID` by definition does not name. The mount is Next.js/React
 inside Wayfinder's own `apps/web`, not a standalone shell and not Numbatch's
 unused SvelteKit stack. The vitest suite under `apps/redline-web/` stays the
-framework-free proof of the brains + view models the served DOM binds to.
+framework-free proof of the brains + view models the served DOM binds to, and
+the fork's own vitest suite proves the binding itself — `review-table.test.tsx`
+and `pricing-pivots.test.tsx` mount the `"use client"` components under jsdom
+against a fake `trpc` query, so a broken core→DOM bind fails without a browser
+or a corpus.
 
 ---
 

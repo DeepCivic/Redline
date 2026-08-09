@@ -192,6 +192,15 @@ repository, extraction-reader, money `IFinancialExtractor`, `DrizzleChunkStore`,
 gates (`reviewProcedure`, `createProcedure`) and the served-fork Playwright specs
 are merged.
 
+**Three test layers, not two.** The brains and view models are proven
+framework-free under `apps/redline-web/`; the Playwright specs prove the served
+routes but skip until a real corpus has run (delivery-plan §4 item 3). Between
+them, the fork's own vitest suite mounts the `"use client"` components under
+jsdom against a fake `trpc` query and asserts the rows and columns they render,
+so a break in the core→DOM binding fails without a browser or a corpus. `jsdom`
+is a dev dependency of the fork's `apps/web` for exactly those two files; every
+other test there still runs under node.
+
 **Two keys, not one.** Reviewing and creating are separate permissions:
 `evaluation:review` opens the grid, the pivots and the export;
 `evaluation:create` starts a tender and, with it, discloses which corpora are
