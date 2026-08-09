@@ -9,51 +9,30 @@ import {
   type MoneySpanRow,
   type Result,
 } from "@redline/redline-domain";
+import { readDocumentMoney } from "./money-span-reading";
 
 // MoneySpanFinancialExtractor — the real IFinancialExtractor. It reads womblex's
 // addressable money spans (IMoneySpanStore, materialised from
 // `*.money_spans.parquet` — ADR-0017) and turns them into the (documentId,
 // requirementId) costing the review grid needs. This is where AUD reaches the grid.
 //
-// A span is an anchored financial expression — it has no requirement. The interim
-// attribution rule: a document's spans attach to the ONE requirement its
-// classification matched with the highest confidence, ties broken on the
-// lexicographically-least requirementId. A document's spans are summed once onto
-// that single row, so a document matching more than one requirement never
-// duplicates its money into the per-brand pivot totals.
+// A span is an anchored financial expression — it has no requirement, and nothing
+// below this seam attaches one. **This extractor owns that attribution for the
+// grid**, and says so rather than deferring to a report assembler that will make its
+// own, different reading over the same rows through the MCP tool surface. The rule:
+// a document's spans attach to the ONE requirement its classification matched with
+// the highest confidence, ties broken on the lexicographically-least requirementId.
+// A document's money lands once on that single row, so a document matching more than
+// one requirement never duplicates itself into the per-brand pivot totals.
 //
-// This summing is knowingly wrong for two of womblex's own constructs and is left
-// that way deliberately — correcting it is a separate behaviour with its own test.
-// A range writes two rows (lower and upper), so "$1M–$2M" contributes $3M; and
-// `modifier` ("up to", "approximately") is never folded into `value`, so a
-// qualified amount is summed as though it were exact. `rangeGroup`/`rangeRole` and
-// `modifier` now reach this code, which is what makes both detectable.
-//
-// Amounts are summed in fixed-point (scaled integers) not float: womblex writes
-// `decimal128(38,4)` precisely because summing many amounts accumulates float
-// error. The Number coercion for `estimateAud` happens once, at the boundary.
+// What each span *contributes* is `readDocumentMoney`'s decision, not this file's:
+// narrative amounts give way to a pricing table, a range counts once at its upper
+// endpoint, and a qualified amount is reported as a bound instead of an exact
+// figure. This class only picks the requirement and shapes the port's row.
 
 export interface MoneySpanFinancialExtractorDependencies {
   readonly moneySpanStore: IMoneySpanStore;
 }
-
-const DECIMAL_SCALE = 4n;
-const SCALE_FACTOR = 10n ** DECIMAL_SCALE;
-
-// Parse an exact decimal string ("1500.5000") to a scaled BigInt (15005000),
-// so a run of amounts sums without float drift. Negative and shorter/longer
-// fraction widths are tolerated; the value is rescaled to four places.
-const toScaledInteger = (value: string): bigint => {
-  const negative = value.startsWith("-");
-  const unsigned = negative ? value.slice(1) : value;
-  const [whole, fraction = ""] = unsigned.split(".");
-  const paddedFraction = (fraction + "0000").slice(0, 4);
-  const magnitude = BigInt(whole || "0") * SCALE_FACTOR + BigInt(paddedFraction || "0");
-  return negative ? -magnitude : magnitude;
-};
-
-// The scaled total back to a real number, once, at the port boundary.
-const scaledToNumber = (scaled: bigint): number => Number(scaled) / Number(SCALE_FACTOR);
 
 const bestRequirementFor = (
   documentId: string,
@@ -75,14 +54,6 @@ const bestRequirementFor = (
     }
   }
   return best === null ? null : best.requirementId;
-};
-
-const summariseSpans = (spans: readonly MoneySpanRow[], total: number): string => {
-  const currencies = new Set(
-    spans.map((span) => span.currency).filter((currency): currency is string => currency !== null),
-  );
-  const currencyLabel = currencies.size === 1 ? [...currencies][0] : "mixed currency";
-  return `${spans.length} priced rows totalling ${total} ${currencyLabel}`;
 };
 
 export class MoneySpanFinancialExtractor implements IFinancialExtractor {
@@ -116,17 +87,18 @@ export class MoneySpanFinancialExtractor implements IFinancialExtractor {
     requirementId: string,
     spans: readonly MoneySpanRow[],
   ): FinancialExtraction {
-    const scaledTotal = spans.reduce((sum, span) => sum + toScaledInteger(span.value), 0n);
-    const estimateAud = scaledToNumber(scaledTotal);
-    const [firstSpan] = spans;
+    const reading = readDocumentMoney(spans);
+    const [firstCountedSpan] = reading.countedSpans;
     return {
       documentId,
       requirementId,
-      // Only a cell span carries an element anchor; a narrative span is addressed
-      // by character offsets, so it has none to give the grid.
-      elementOrder: firstSpan!.parentElementOrder ?? firstSpan!.elementOrder ?? 0,
-      estimateAud,
-      description: summariseSpans(spans, estimateAud),
+      // The anchor comes from a span the figure actually counted, so the grid's
+      // source deep-link lands on money that is in the total. Only a cell span
+      // carries an element anchor; a narrative span is addressed by character
+      // offsets, so it has none to give the grid.
+      elementOrder: firstCountedSpan?.parentElementOrder ?? firstCountedSpan?.elementOrder ?? 0,
+      estimateAud: reading.estimateAud,
+      description: reading.description,
     };
   }
 }

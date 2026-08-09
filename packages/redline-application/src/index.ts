@@ -79,6 +79,14 @@ export type { ExtractFinancialsDependencies } from "./use-cases/extract-financia
 export { MoneySpanFinancialExtractor } from "./use-cases/money-span-financial-extractor";
 export type { MoneySpanFinancialExtractorDependencies } from "./use-cases/money-span-financial-extractor";
 
+// The grid's reading itself, exported beside the extractor so the one place that
+// turns spans into a figure is nameable: a table prices the document, a range counts
+// once at its upper endpoint, and a qualified amount is a bound rather than an exact
+// total. The report tool surface deliberately does NOT apply it — an assembler gets
+// the spans as womblex wrote them and makes its own reading.
+export { readDocumentMoney } from "./use-cases/money-span-reading";
+export type { DocumentMoneyReading } from "./use-cases/money-span-reading";
+
 export { BuildEvaluationTable } from "./use-cases/build-evaluation-table";
 export type {
   BuildEvaluationTableDependencies,

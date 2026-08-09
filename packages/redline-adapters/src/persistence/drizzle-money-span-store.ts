@@ -7,7 +7,7 @@
 //
 // It carries no requirement alignment, no currency conversion and no roll-up — a
 // span is an addressable financial expression, and attaching it to a requirement is
-// the report-assembler LLM's job over the graph (ADR-0017). The db handle is
+// a consumer's job above this seam, not this adapter's. The db handle is
 // injected as a drizzle instance; the concrete
 // driver (postgres-js in production, PGlite in tests) is the caller's choice.
 

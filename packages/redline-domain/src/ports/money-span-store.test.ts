@@ -8,8 +8,9 @@ import type {
 
 // The port's spec, proven implementable by an in-memory fake. A money span is an
 // addressable, provenance-tagged row — no requirementId, no alignment: attaching a
-// span to a requirement is the report-assembler LLM's job over the graph (ADR-0017),
-// not this seam's. The store only makes the spans queryable by their womblex
+// span to a requirement happens above this seam, in whichever consumer needs it (the
+// grid's extractor and the report assembler both do, differently). The store only
+// makes the spans queryable by their womblex
 // provenance. `value` crosses as an exact decimal string, never a float — womblex
 // writes `decimal128(38,4)` precisely because summing 48,997 amounts accumulates
 // float error, and that exactness must survive the seam.
