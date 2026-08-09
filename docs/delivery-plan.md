@@ -34,6 +34,10 @@
   lands on `redline-integration` there, then needs the gitlink *and*
   `wayfinder.pin`'s `ref` moved here in step. Letting those two drift is what
   left redline typechecking against a domain package the fork had moved past.
+  **The order is forced, not stylistic:** `validate.sh` #15 fails unless the
+  submodule sits on `redline-integration`'s commit, so a fork feature branch
+  cannot be pinned — it must merge there first. Plan the fork PR as part of the
+  step, or the second commit cannot be made.
 
 ---
 
@@ -124,25 +128,40 @@ and would extend the store-load path to carry graph edges.
 Also owns one open measurement: **the three OCR-table gates** (paddleocr-only,
 deskew refusal, precision refusal), on the real corpus.
 
+**Staging is undocumented.** Every downstream step assumes the corpus is already
+in the bucket, but no guide says how it gets there — `two-stack-local-run.md`
+brings up MinIO and stops. The only written claim is §3's "`mc cp` stages the
+bucket today", which is a note to ourselves, not a runbook. Whoever drives this
+item writes that step down first; it is the one prerequisite with no instructions
+at all.
+
 > **Upstream-behaviour facts to bake into the runbook (not obvious from config).**
+> Line references verified against the pinned `services/womblex` @ `v0.3.0` on
+> 2026-08-09.
 > (a) `womblex run` writes `elements`/`table_cells`/`form_fields` but **does not
 > persist chunks** — `write_batch_parquet` passes only `(doc_id, path, extraction)`
-> to `write_results` (`operations/persist.py:18-27`), and chunks hang off
-> `result.chunks`. Chunking and embedding are separate per-stage commands
+> to `write_results` (`src/womblex/operations/persist.py:18-27`), and chunks hang
+> off `result.chunks`. Chunking and embedding are separate per-stage commands
 > (`womblex chunk --shards` then `womblex embed --shards`) over the run's shard dir.
-> (b) But `run` still *computes* chunking when `chunking.enabled` (`batch.py:63-64`)
-> and then discards it, so a keyed run does the work twice. Wasted CPU and wall
+> (b) But `run` still *computes* chunking when `chunking.enabled`
+> (`src/womblex/batch.py:63-64` — the top-level module, **not**
+> `operations/batch.py`, which does not exist) and then discards it, so a keyed
+> run does the work twice. Wasted CPU and wall
 > clock, **not** Isaacus spend — redline sets no `chunking_model`, so chunking is
-> local semchunk over a vendored tokeniser. Setting `chunking.enabled: false` for
+> local semchunk over the Kanon-2 tokeniser the engine vendors in-tree at
+> `src/womblex/_models/kanon-2-tokenizer/`. Setting `chunking.enabled: false` for
 > the `run` pass avoids it and is safe for the prescribed `chunk --shards` path,
 > which ignores that flag — but `womblex chunk --config` **refuses outright** when
-> it is false (`cli/pipeline.py:417-419`), so do not flip it if anyone uses the
-> `--config` composition. (c) The **chunk** stage is Isaacus-gated in 0.3.0 and the
-> gate is a **pre-flight policy refusal**, not a capability limit — settled by
-> reading the engine, see `architecture.md` §7.1; plan around it rather than
-> re-testing it. (d) The **embed** stage is unambiguously Isaacus-gated
+> it is false (`src/womblex/cli/pipeline.py:418-420`), so do not flip it if anyone
+> uses the `--config` composition. (c) The **chunk** stage is Isaacus-gated in
+> 0.3.0 and the gate is a **pre-flight policy refusal**, not a capability limit —
+> `cli/pipeline.py:152` computes `chunk_will_skip = config.chunking.enabled and
+> not isaacus_available()` before any tokeniser loads. Settled by reading the
+> engine, see `architecture.md` §7.1; plan around it rather than re-testing it.
+> (d) The **embed** stage is unambiguously Isaacus-gated
 > (`kanon-2-embedder`), and **`enrich`/`linking` are disabled** in redline's
-> profile (so no graph is produced unless turned on).
+> profile (`infra/womblex/redline.yaml:72-75`, so no graph is produced unless
+> turned on).
 
 _Version bump: PATCH_ (a run plus the runbook and any doc corrections it
 produces; no shipped code).
@@ -198,16 +217,14 @@ should shape it rather than be assumed. In dependency order:
    or durable-asset lifecycle; that surface stays in §3. The seed script still
    writes rules from a manifest, and is now the only path that can.
 
-3. **D5 is contradicted by what shipped.** `design-principles.md` still lists
-   *"Retrieval is womblex's; redline builds no vector store of its own"* as
-   adopted, but the chunks **and their embeddings** are in `redline_chunks`, in
-   redline's own Postgres. Retire or reword it; as written the register is
-   unreliable.
-
-4. **The D-register has gaps.** `design-principles.md`'s table starts at **D4**,
-   yet D1 and D2 are cited as settled. Write D1–D3 in or retire the citations.
-   With the ADRs deleted, this register is the only remaining decision record —
-   decide whether it survives at all, or collapses into `architecture.md`.
+3. **`architecture.md` carries 53 ADR citations across 18 distinct numbers, for
+   documents that no longer exist.** `design-principles.md` now says how to read
+   them (git-history pointers, except where the number is plainly upstream's),
+   which stops them misleading — but it does not make them useful. Left
+   deliberately: sorting redline's own dead numbers from Wayfinder's, Numbatch's
+   and womblex's live ones is a mechanical pass over the whole document, worth
+   doing once when someone is already in there rather than as a build step of its
+   own.
 
 ---
 

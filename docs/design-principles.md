@@ -1,23 +1,32 @@
 # redline — Design principles & non-goals
 
 > **Status:** durable design rationale · companion to
-> [`architecture.md`](./architecture.md) (what redline *is*) and
-> adr/ (the decisions).
+> [`architecture.md`](./architecture.md) (what redline *is*).
 >
 > This file records the principles redline **adopted from its upstream engines**
 > and the **non-goals** it holds — the rationale that is not tied to a single
-> decision and so does not live in one ADR. It tracks nothing; outstanding work
-> is in [`delivery-plan.md`](./delivery-plan.md).
+> decision. It tracks nothing; outstanding work is in
+> [`delivery-plan.md`](./delivery-plan.md).
 >
-> These were originally the D4–D10 register and §8 non-goals of the retired
-> `dev-iteration-2.md` (the comprehension-lens design). The D1–D3, D11–D13
-> decisions from that document became ADRs
-> (0007–0009,
-> 0010,
-> 0011,
-> 0014);
-> the principles below did not, because they are adopted-and-recorded rather than
-> debated, and each governs many threads rather than one.
+> **This register survives, and it is the only decision record redline keeps.**
+> The ADRs were deleted deliberately (`.claude/CLAUDE.md`, "Deliberate deviations
+> from Wayfinder") — decisions are now made and recorded in the commit that acts
+> on them, and a decision durable enough to govern many commits is written here
+> instead. It did not collapse into `architecture.md` because that document says
+> what redline *is*; this one says what redline *decided*, which is what a reader
+> needs when they are about to contradict it.
+>
+> The register began as D4–D10 in the retired `dev-iteration-2.md`, which is why
+> it once started at D4. **D1 and D2 are written in below** — both were cited as
+> settled across the tree while being absent here, and D2 is load-bearing in six
+> source files. **D3 and everything above D10 are retired**: they named ADRs that
+> no longer exist, nothing in the tree cites them, and their content is not
+> recoverable from it — so the numbers are left as gaps rather than reused, which
+> would make an old citation resolve to the wrong decision. Numbering therefore
+> runs D1, D2, D4–D10. Where a comment still reads `ADR-00xx`, treat it
+> as a pointer into git history, not a live document — except where the number is
+> plainly upstream's (Wayfinder's, Numbatch's or womblex's own registers, which
+> do still exist).
 
 ---
 
@@ -70,15 +79,36 @@ pipeline by design.
 
 ### The adopted principles, as a register
 
-| # | Principle | Adopted from |
+| # | Principle | Adopted from / settled |
 |---|---|---|
+| D1 | Procurement is the purpose; the comprehension lens is the means. Generalising the lens beyond procurement is a non-goal | Settled 2026-07-24 |
+| D2 | The classification paths interchange at the port: a consumer cannot tell whether hard rules, adjudication or a trained overlay produced a row | Settled with the cold-start path |
 | D4 | Operations are independent functions over joinable sidecars; no orchestrator | womblex composable design |
-| D5 | Retrieval is womblex's; redline builds no vector store of its own | womblex embed stage (`*.embeddings.parquet`) |
+| D5 | Embedding is womblex's; redline computes no vectors and ranks none — but it **does** store them | womblex embed stage (`*.embeddings.parquet`) |
 | D6 | Boundary decisions are content-addressed | womblex `source_hash` addressing |
 | D7 | The base is verbatim; resolutions are additive overlays | womblex sidecar model |
 | D8 | Corpus classifications are ephemeral; the lens is durable | Numbatch two-tier model |
-| D9 | Boundary decisions are corrections-as-sample-membership | Numbatch ADR-0020 |
+| D9 | Boundary decisions are corrections-as-sample-membership | Numbatch's corrections register |
 | D10 | Preconditions ride the type boundary; only misuse errors | womblex enforcement posture |
+
+**On D2 — where it bites.** It is cited in `cold-start-classifier.ts`,
+`classify-with-hard-rules.ts`, `adjudicate-unclear.ts`,
+`classification-lens-reader.ts`, `adjudicator.ts` and `container.ts`: every path
+emits the same `RequirementClassification` shape, so the review grid, the pivots
+and the document map never branch on provenance. Breaking it means every
+downstream consumer learns which engine ran.
+
+**On D5 — what it used to say, and why it changed.** It read *"Retrieval is
+womblex's; redline builds no vector store of its own"*, and what shipped
+contradicts it: `redline_chunks` carries `embedding jsonb` + `embedding_model`
+in redline's own Postgres. The part that survived is the part that mattered —
+redline never *computes* an embedding (womblex's `embed` stage does, via Isaacus
+`kanon-2-embedder`) and never *ranks* by one: `IChunkStore.findSimilar` is
+declared and refuses, because the `pgvector`/ANN index is deferred. So redline
+holds the vectors without being a vector store in the sense the principle was
+guarding against. Restate it again if `findSimilar` is ever implemented — at that
+point redline *is* doing retrieval, and D5 becomes a different decision rather
+than a narrower one.
 
 ---
 
@@ -91,9 +121,9 @@ Recorded so they do not creep back thread by thread:
 - **No graph visualisations.** Unnecessary for the target use cases.
 - **No confidence scores in the UI.** Replaced by Clear/Ambiguous buckets.
 - **No lens orchestrator.** Explicitly rejected — womblex deleted theirs.
-- **Air-gap / offline operation.** Retrieval requires Isaacus; a deployment that
-  cannot reach it cannot retrieve. (See ADR-0008,
-  amended, and `architecture.md` §2.)
+- **Air-gap / offline operation.** Both the `chunk` and `embed` stages require
+  Isaacus; a deployment that cannot reach it cannot build a corpus to read.
+  (See `architecture.md` §2 and §7.1.)
 
 Re-entry condition for the first five: revisit after a lens has accumulated 20+
 boundary decisions in real use.
