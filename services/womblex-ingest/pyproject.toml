@@ -15,6 +15,12 @@ dependencies = [
     # wherever pyarrow resolves, engine or no engine — that is why the engine
     # itself stays in `[womblex]` while its decoder does not.
     "pyarrow>=16,<25",
+    # The driver behind both writers into redline's own Postgres — the chunk store
+    # and the money-span store. A base dependency, not an extra: the `sidecar`
+    # image installs the base package alone and its `/ingest` route projects
+    # chunks whenever REDLINE_DATABASE_URL is set, so an extra would ship an image
+    # that fails on import the moment a DSN is configured.
+    "psycopg[binary]>=3.1,<4.0",
 ]
 
 [project.optional-dependencies]

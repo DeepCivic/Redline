@@ -9,16 +9,21 @@
 > git history, not here. Item numbers are local to this file and are renumbered
 > whenever the outstanding set changes.
 >
-> **Nothing here has been run against live services.** The wiring and the write
-> path typecheck and are unit-tested; no Postgres, sidecar or adjudicator has
-> ever been behind either. Expect config-level breakage on first boot, and treat
-> the corpus run (§2 item 7) as the first real proof rather than a formality.
+> **Almost nothing here has been run against live services.** The wiring
+> typechecks and is unit-tested; no sidecar and no adjudicator has ever been
+> behind it. The one exception is the money-span write path, which was proven
+> against a real Postgres 16 with the shipped migrations applied — the Python
+> writer landing spans and `DrizzleMoneySpanStore` reading them back. Everything
+> else should still expect config-level breakage on first boot; treat the corpus
+> run (§2 item 6) as the first real proof rather than a formality.
 >
-> **Typechecking is not evidence a path exists.** §2 item 1 is a table with a
-> migration, a read adapter and a code comment naming a writer that was never
-> built — and every consumer degrades quietly rather than failing, so nothing went
-> red. Assume there are more: when an item claims a seam is "built", check for the
-> producer, not just the type.
+> **Typechecking is not evidence a path exists.** The money-span table shipped
+> with a migration, a read adapter and a code comment naming a writer that was
+> never built — and every consumer degraded quietly rather than failing, so
+> nothing went red. It is written now, but assume there are more: when an item
+> claims a seam is "built", check for the producer, not just the type. The
+> `psycopg` driver both Postgres writers import was likewise declared in no
+> `pyproject.toml` until that writer was built.
 >
 > **One open decision carried in the code.** `redline_topics.id` is a plain
 > primary key, so a topic belongs to exactly one lens and a second lens reusing
@@ -57,7 +62,7 @@ comprehension-lens work and the trained-classifier overlay are **deferred** (§3
 chunked and classified is womblex plus a classifier; almost none of that needs
 redline. What redline is for is the step after — assembling those addressable,
 provenance-tagged facts into something a procurement specialist hands to a
-delegate. Items 3, 4 and 5 are that step, and **UAT does not start until they
+delegate. Items 2, 3 and 4 are that step, and **UAT does not start until they
 work**. A demo that ends at the review grid demonstrates the dependencies.
 
 **Numbatch is not on this path.** Classification runs cold-start over womblex
@@ -73,9 +78,10 @@ a magnitude and provenance. A price is one reading of one of those. The store an
 the ports underneath must carry the general thing; interpretation (which
 requirement it belongs to, what it rolls up to, whether it is a price at all) is a
 consumer's job and belongs above them. The alternative — a bespoke path per
-financial-data type — is a build with no end. Item 1 is written against that rule,
-and `MoneySpanFinancialExtractor`'s current contract (one AUD figure per
-(document, requirement)) is exactly the narrowing to hold at arm's length rather
+financial-data type — is a build with no end. The money-span store is built
+against that rule (`architecture.md` §4 step 2'), and
+`MoneySpanFinancialExtractor`'s contract (one AUD figure per (document,
+requirement)) is one reading above it — a narrowing to hold at arm's length rather
 than entrench.
 
 The read path is built and merged end to end — store-backed classifier, money
@@ -89,17 +95,16 @@ own `evaluation:create` permission. See
 `AssignDocumentsToGroups`, the cold-start classifier and `BuildEvaluationTable`
 are all built and wired in `container-redline.ts`, but nothing served calls them
 — `apps/web/scripts/seed-redline-evaluation.ts` still drives the pipeline from a
-terminal. Item 2 closes that.
+terminal. Item 1 closes that.
 
-**Items 2, 4 and 6 are fork-side** — the router, the routes, the report assembly
+**Items 1, 3 and 5 are fork-side** — the router, the routes, the report assembly
 and the components all live in `services/wayfinder/apps/web`. Each is two commits
 under §1's contract: the work on `redline-integration`, then the gitlink and pin
-moved here in step. Items 1, 3 and 5 are redline-side: the span writer is the
-sidecar's, an MCP server is addressed over a URL, and the workbook builder already
-lives in `apps/redline-web`.
+moved here in step. Items 2 and 4 are redline-side: an MCP server is addressed over
+a URL, and the workbook builder already lives in `apps/redline-web`.
 
 **The report work is not gated on a pipeline run, and treating it as though it
-were is a planning error we have already made once.** Items 3, 4 and 5 need *rows
+were is a planning error we have already made once.** Items 2, 3 and 4 need *rows
 in the store* — chunks, spans, responses with provenance — not a live
 extract→classify→build sequence that produced them. Those rows can be seeded
 straight into Postgres, which is how `packages/redline-adapters`' own suite
@@ -111,89 +116,14 @@ other again.
 first in an earlier revision of this plan on the reasoning that later items would
 debug against known-good connectors. That reasoning did not survive contact: the
 `WOMBLEX_MODE=stub` extractor never reads the corpus (it synthesises each
-document from the name it is given), so the run proves connectors, never content,
-and item 1 below is a gap it could not have detected either way. It returns when
+document from the name it is given), so the run proves connectors, never content
+— the missing money-span writer was a gap it could not have detected either way.
+It returns when
 there is real data worth pointing at it, and the manifest it needs is already
 written (`services/womblex-ingest/tests/corpus/redline-manifest.json`, with the
 ordering constraint and the stub's limits recorded beside it).
 
-### 1 — Land womblex's financial expressions in the store
-
-**`redline_money_spans` has no writer.** It has a migration, a table, and a
-read adapter (`DrizzleMoneySpanStore`) whose own header comment asserts that "the
-sidecar's ingest load path … writes `redline_money_spans` from
-`*.money_spans.parquet`". Nothing does. `money_stage.py` publishes the two
-sidecars back to **object storage** and never touches Postgres;
-`chunk_store.load_extraction` has no financial path at all (`grep money` over
-`womblex_ingest/` outside `money_stage.py` returns one unrelated hit). So
-`MoneySpanFinancialExtractor` reads an empty table, degrades quietly
-(`spans.data.length === 0 → continue`), and every grid row lands
-`estimateAud: null` / `"no costing extracted yet"`. The financial half of the
-product is not merely unproven — on every path we have, stub or real, it cannot
-run. Nothing downstream fails loudly, which is why this survived review: the code
-comment described the writer, so nobody looked for it.
-
-**The table cannot hold what womblex writes, so widening it is part of this
-item.** `MONEY_SPANS_SCHEMA` (`services/womblex/src/womblex/store/money_output.py`,
-read at `v0.3.0`) is **24 columns across three loci**; `redline_money_spans` keeps
-**nine, and one locus** — `MoneySpanRow.locus` is literally typed
-`"table_cell"`, a union of one. Three of those drops change behaviour, not
-fidelity:
-
-- **The missing loci.** `narrative` (character offsets into the reassembled
-  narrative) and `sheet_cell` (sheet/row/col) are dropped. Tenders arrive
-  predominantly as PDFs with some Word, so `narrative` is where prose amounts
-  live — *"the total contract value is $2.4 million"* — and dropping it is
-  dropping a large share of the money outright. `sheet_cell` matters less today
-  but costs nothing once `locus` discriminates.
-- **`modifier`** — *approximately*, *up to*. womblex deliberately never folds it
-  into `value`, so without it "up to $2M" persists as exactly $2M.
-- **`range_group` / `range_role`** — a range writes two rows, a lower and an
-  upper. Dropped, nothing downstream can tell them apart.
-
-Two things do **not** need fixing: `value` arrives with the magnitude suffix and
-the sign already applied (`process/money.py:362-371`), so `multiplier` and
-`negative` are audit trail rather than arithmetic. No stored magnitude is wrong
-today — there simply are no stored magnitudes.
-
-**Land the full span, uninterpreted.** These are womblex's own columns copied
-across, not a redline invention. The writer must not decide what a span means,
-which requirement it belongs to, or what it converts to; the moment it does, a
-second financial-data type needs a second writer, and that is a build with no
-end. Concretely:
-
-- `locus` becomes a real discriminator, and the anchor columns become nullable —
-  exactly one anchor group is non-null per row, which is womblex's own invariant.
-- The primary-key derivation and the structural index change with them, since
-  `(document, parent_elem_order, row, col)` no longer identifies every row.
-- `MoneySpanRow` in `redline-domain` widens to match. It is a DTO in a
-  zero-dependency package, so this is a type change, not a dependency one.
-
-**Attribution and roll-up stay above the store.**
-`MoneySpanFinancialExtractor`'s one-AUD-figure-per-(document, requirement)
-contract is a consumer's simplification and is **not** to be pushed down here;
-the same spans must stay readable by the report tools (item 3) without going
-through it. Its summing defect is real and is recorded in §4 — out of scope for
-this item deliberately, because fixing it is a second independently-testable
-behaviour.
-
-**Risks.** Three packages move (domain DTO, adapters mapping, sidecar writer),
-which stretches the one-package guideline; it stays one build step because the
-exit test is single. The nullable-anchor migration changes an existing table, so
-it is a schema change, not an additive one. `DrizzleMoneySpanStore
-.fetchByStructure` filters on `parentElementOrder` and will correctly match
-nothing for narrative spans — intended, but assert it rather than discover it.
-
-Redline-side and testable without services: the load path has a pytest suite, and
-`DrizzleMoneySpanStore` is proven against PGlite today.
-
-_Version bump: MINOR_ (a schema change plus a new write path).
-_Exit: an ingest whose evaluation has `*.money_spans.parquet` published lands
-every span in `redline_money_spans` — all three loci, qualifiers and range
-grouping included — and `DrizzleMoneySpanStore` reads back, per row, exactly what
-womblex wrote. Asserted field-by-field against the shard, not against a total._
-
-### 2 — Choose a corpus and run it, from the browser
+### 1 — Choose a corpus and run it, from the browser
 
 `IngestDocuments` (the stage confirmation) → `AssignDocumentsToGroups` →
 cold-start classify → `BuildEvaluationTable` run only from the script. This is
@@ -247,7 +177,7 @@ _Exit: a specialist picks a subset of a connected bucket's documents — leaving
 the rest out — starts a run from the browser, and gets a populated grid at
 `/evaluations/:id/review` covering exactly the documents they chose._
 
-### 3 — The report tool surface
+### 2 — The report tool surface
 
 The domain already assigns work to a **"report-assembler LLM"** in five places
 (`chunk-store.ts`, `money-span-store.ts` ×2, `domain/index.ts`) — attaching money
@@ -289,8 +219,9 @@ commercial-in-confidence documents. Second, the ownership contradiction:
 job, while `MoneySpanFinancialExtractor` already does it by highest-confidence
 classification. One of the two must stop claiming it.
 
-**The tools expose spans as womblex wrote them.** Item 1 lands them uninterpreted,
-and this surface keeps them that way: a financial expression reaches the assembler
+**The tools expose spans as womblex wrote them.** The store holds them
+uninterpreted, and this surface keeps them that way: a financial expression reaches
+the assembler
 with its magnitude, currency, value type and provenance, not as a converted total.
 Whatever `MoneySpanFinancialExtractor` does for the grid is a separate reading of
 the same rows, and must not become the shape these tools serve.
@@ -301,7 +232,7 @@ evaluation — seeded rows are sufficient; a pipeline run is not required — ge
 back verbatim chunk text and financial spans with provenance, identical results
 and identical ordering across two consecutive calls._
 
-### 4 — LLM report assembly
+### 3 — LLM report assembly
 
 The loop is not a build: `mcp-tool-prepass.ts` already drives an AI SDK `ToolSet`
 over MCP. It lives in `packages/adapters`, which redline does not vendor — but
@@ -312,7 +243,7 @@ the fork's `apps/web` depends on `@rbrasier/adapters` directly (its
 **This item must settle what a report actually is** — its sections, what the
 model chooses versus what is transferred verbatim, and what a specialist can
 change before it is exported. Nothing anywhere defines this. Settle it here and
-write it into `architecture.md`; the item cannot be tested otherwise, and item 5
+write it into `architecture.md`; the item cannot be tested otherwise, and item 4
 cannot start without it.
 
 The verbatim rule is the testable part and the reason to do this before the
@@ -324,12 +255,12 @@ _Exit: an LLM assembles a report over a populated evaluation, and every
 transferred passage is byte-identical to the chunk it came from — asserted
 against the store, not eyeballed._
 
-### 5 — The report sheet seam
+### 4 — The report sheet seam
 
 The export target exists and is deterministic: `buildEvaluationWorkbook` takes
 grid + pivots to sheet data and the browser writes xlsx through
 `write-excel-file`. What is missing is a seam where an assembled report becomes
-sheets. Split from item 4 because it is independently testable — a fixed report
+sheets. Split from item 3 because it is independently testable — a fixed report
 structure exports correctly whether a model or a fixture produced it — and
 because it is the half a specialist actually receives.
 
@@ -344,15 +275,15 @@ _Exit: a fixed report structure renders to a workbook a specialist can open, wit
 its provenance intact, proven by a test over the builder rather than by opening
 the file._
 
-### 6 — Test the React bind layer
+### 5 — Test the React bind layer
 
 `review-table.test.tsx` and `pricing-pivots.test.tsx` are twelve lines each,
 asserting only that the export is a function and its `.name` matches — against a
 207-line grid and a 157-line pivot component. The cores under `apps/redline-web/`
 are covered; the core→DOM binding is not, and the Playwright specs that would
-cover it skip until item 7 has run.
+cover it skip until item 6 has run.
 
-This does **not** wait for item 7, and never did: the components render against
+This does **not** wait for item 6, and never did: the components render against
 fake query data in vitest, so the coverage lands now and the Playwright specs stay
 the later, separate confirmation.
 
@@ -360,7 +291,7 @@ _Version bump: PATCH._
 _Exit: both components render against fake query data in a test and assert the
 rows and columns they produce, failing if the binding to the core breaks._
 
-### 7 — Real corpus, end to end
+### 6 — Real corpus, end to end
 
 **Owner-driven, not agent-driven.** This item needs `ISAACUS_API_KEY`, paid
 compute and a real tender nobody has staged yet; it is run by whoever holds those,
@@ -460,7 +391,7 @@ should shape it rather than be assumed. In dependency order:
    ambiguity thresholds (the signal register needs initial values, unmeasured
    until the corpus runs). **What a report is** was on this list by omission —
    five source comments assigned work to a "report-assembler LLM" that appeared
-   in no document and no item. It is now items 3 and 4, and the definition is
+   in no document and no item. It is now items 2 and 3, and the definition is
    theirs to settle.
 
 2. **A lens is declared at create time, not authored.** The create screen's
@@ -471,16 +402,17 @@ should shape it rather than be assumed. In dependency order:
    or durable-asset lifecycle; that surface stays in §3. The seed script still
    writes rules from a manifest, and is now the only path that can.
 
-3. **`MoneySpanFinancialExtractor` will over-count once spans exist.** It sums
-   *every* span a document carries into one figure. Two of womblex's own
-   constructs break that, and both are invisible today only because the table is
-   empty: a **range** writes two rows (lower and upper), so a tender quoting
-   "$1M–$2M" contributes $3M; and a **modifier** (*up to*, *approximately*) is
-   never folded into `value`, so a qualified amount is summed as though it were
-   exact. §2 item 1 lands the fields that make both detectable — `range_group` /
-   `range_role` and `modifier` — but deliberately does not change the summing;
-   that is a second behaviour and its own build step. Schedule it before anyone
-   reads a total off the grid.
+3. **`MoneySpanFinancialExtractor` over-counts, and the spans it over-counts now
+   exist.** It sums *every* span a document carries into one figure. Two of
+   womblex's own constructs break that: a **range** writes two rows (lower and
+   upper), so a tender quoting "$1M–$2M" contributes $3M; and a **modifier**
+   (*up to*, *approximately*) is never folded into `value`, so a qualified amount
+   is summed as though it were exact. The write path landed the fields that make
+   both detectable — `range_group` / `range_role` and `modifier` — and
+   deliberately did not change the summing; that is a second behaviour and its own
+   build step. It now also sums `narrative` spans alongside cell spans, so a prose
+   "total contract value" is added to the table it summarises. Schedule this
+   before anyone reads a total off the grid.
 
 4. **Source comments cite plan item numbers, which are guaranteed to rot.** Eleven
    files across `packages/` carry `(delivery-plan §2 item 1)` referring to at
@@ -502,29 +434,29 @@ should shape it rather than be assumed. In dependency order:
 
 **The lean vertical runs to completion before the deferred work starts.**
 
-**Items 3, 4 and 5 are the product, and nothing here may gate them on a run.**
+**Items 2, 3 and 4 are the product, and nothing here may gate them on a run.**
 Everything before them assembles inputs; everything after them is proof or polish.
 They need rows in the store, which can be seeded (§2 preamble) — so they start
-now, in parallel with 1 and 2, not behind them. An earlier revision of this plan
+now, in parallel with item 1, not behind it. An earlier revision of this plan
 sequenced a fixture run first on the reasoning that later items would then debug
 against known-good connectors; in practice that reasoning only deferred the
 product behind a proof of the plumbing, and the plumbing gap it was meant to catch
-(item 1) is one it could not have caught. That ordering is withdrawn.
+— the absent money-span writer — is one it could not have caught. That ordering is
+withdrawn.
 
-Item 1 is the one prerequisite the report work genuinely has: the report tools
-(item 3) expose financial spans, and there are none in the store until it lands.
-It is small and redline-side. Item 2 makes the product operable by someone without
-a terminal, and is independent of both.
+The report work's one genuine prerequisite is met: the money-span write path is
+built, so the spans item 2's tools expose can reach the store. Item 1 makes the
+product operable by someone without a terminal, and is independent of the rest.
 
-Item 6 makes the screens worth trusting and can land any time. Item 7 is what all
+Item 5 makes the screens worth trusting and can land any time. Item 6 is what all
 of it is for, and is owner-driven — it confirms the product rather than
 scheduling it.
 
-**The UAT gate is item 5, not item 7.** A real corpus rendering in a grid is a
+**The UAT gate is item 4, not item 6.** A real corpus rendering in a grid is a
 demonstration of womblex and a classifier; a specialist cannot evaluate a tender
-from it, and asking them to would test the wrong thing. Item 7 on its own says
-the pipeline works. Items 3–5 are what make it redline. Do not schedule UAT
-against a date that only clears item 7.
+from it, and asking them to would test the wrong thing. Item 6 on its own says
+the pipeline works. Items 2–4 are what make it redline. Do not schedule UAT
+against a date that only clears item 6.
 
 Then, and only then: §3 in dependency order, and finally workspace extraction and
 release.
@@ -544,12 +476,12 @@ release.
   Isaacus-costed opt-in.
 - **No workspace extraction.** Ship-shape is a later concern than see-shape.
 
-**Two of those bind the report work directly, and item 3 inherits both.** The
+**Two of those bind the report work directly, and item 2 inherits both.** The
 source comments describe the report-assembler as *"traversing the graph and
 calling tools"* — the graph is off, so it must work without one. And with
 `findSimilar` deferred it cannot search for a relevant passage either. Both tools
 it gets are deterministic: exact fetch by key, structural fetch by provenance.
 That is a real constraint on what a report can claim, not an implementation
 detail — the assembler transfers facts it is pointed at, and the pointing is done
-by classification, not by the model roaming the corpus. Design items 3 and 4 for
+by classification, not by the model roaming the corpus. Design items 2 and 3 for
 that, or reopen one of these two decisions deliberately.
