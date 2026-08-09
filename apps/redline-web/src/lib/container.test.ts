@@ -11,12 +11,14 @@ import type {
   IAdjudicator,
   IChunkStore,
   IClassificationLensReader,
+  IClassificationLensWriter,
   IEvaluationRepository,
   IFinancialExtractor,
   ILanguageModel,
   IMoneySpanStore,
   IProcurementClassifier,
   IProcurementExtractionReader,
+  IStagedCorpusReader,
   MoneySpanFilter,
   MoneySpanRow,
   ProcurementResponse,
@@ -130,6 +132,29 @@ const languageModel: ILanguageModel = {
   },
 };
 
+// The create half's two ports. The reader stands in for the rows the sidecar's
+// load path writes, which is the only thing that makes a corpus selectable.
+const stagedCorpusReader: IStagedCorpusReader = {
+  async listCorpora() {
+    return ok([{ corpusId: "tender-2026", documentCount: 2 }]);
+  },
+  async listDocuments(corpusId: string) {
+    if (corpusId !== "tender-2026") {
+      return err(domainError("NOT_FOUND", `no corpus staged under ${corpusId}`));
+    }
+    return ok([
+      { documentId: "doc-1", chunkCount: 3, preview: "Response of Acme" },
+      { documentId: "doc-2", chunkCount: 5, preview: "Response of Beta" },
+    ]);
+  },
+};
+
+const lensWriter: IClassificationLensWriter = {
+  async saveLens() {
+    return ok(undefined);
+  },
+};
+
 const controllerAt = (stage: Parameters<typeof makeEvaluation>[0]["stage"]) => {
   const repository = new InMemoryRepository();
   const evaluation = makeEvaluation({ id: "eval-1", name: "Tender 2026", stage });
@@ -141,6 +166,8 @@ const controllerAt = (stage: Parameters<typeof makeEvaluation>[0]["stage"]) => {
     financialExtractor,
     extractionReader,
     languageModel,
+    stagedCorpusReader,
+    lensWriter,
     productName: "Platform",
   });
   return { repository, controller };
@@ -265,6 +292,8 @@ describe("WorkflowController — the way in", () => {
       financialExtractor,
       extractionReader,
       languageModel,
+      stagedCorpusReader,
+      lensWriter,
       productName: "Platform",
     });
 
@@ -413,6 +442,8 @@ describe("WorkflowController — document provenance", () => {
       financialExtractor,
       extractionReader: reader,
       languageModel,
+      stagedCorpusReader,
+      lensWriter,
       productName: "Platform",
     });
   };
@@ -555,6 +586,8 @@ describe("container — cold-start classifier wiring (item 1b)", () => {
       financialExtractor,
       extractionReader,
       languageModel,
+      stagedCorpusReader,
+      lensWriter,
       productName: "Platform",
     });
     expect(isOk(container)).toBe(true);
@@ -688,6 +721,8 @@ describe("container — money-span financial extractor wiring (item 1)", () => {
       financialExtractor: realExtractor,
       extractionReader,
       languageModel,
+      stagedCorpusReader,
+      lensWriter,
       productName: "Platform",
     });
     expect(isOk(container)).toBe(true);
@@ -715,5 +750,70 @@ describe("container — money-span financial extractor wiring (item 1)", () => {
     const perBrand = pivot.data.compute({ axis: "brand", measure: "sum" });
     expect(perBrand.rows[0].key).toBe("Acme");
     expect(perBrand.grandTotal.value).toBe(2000);
+  });
+});
+
+describe("WorkflowController — creating an evaluation from a staged corpus", () => {
+  const emptyController = () =>
+    new WorkflowController({
+      repository: new InMemoryRepository(),
+      classifier,
+      financialExtractor,
+      extractionReader,
+      languageModel,
+      stagedCorpusReader,
+      lensWriter,
+      productName: "Platform",
+    });
+
+  it("offers the staged corpora the create screen picks from", async () => {
+    const corpora = await emptyController().listStagedCorpora();
+
+    expect(isOk(corpora)).toBe(true);
+    if (!isOk(corpora)) return;
+    expect(corpora.data).toEqual([{ corpusId: "tender-2026", documentCount: 2 }]);
+  });
+
+  it("offers a corpus's documents with previews, so opaque hashes are choosable", async () => {
+    const documents = await emptyController().listStagedDocuments({ corpusId: "tender-2026" });
+
+    expect(isOk(documents)).toBe(true);
+    if (!isOk(documents)) return;
+    expect(documents.data.map((document) => document.preview)).toEqual([
+      "Response of Acme",
+      "Response of Beta",
+    ]);
+  });
+
+  it("creates the evaluation under the corpus's own id and lists it", async () => {
+    const controller = emptyController();
+
+    const created = await controller.createEvaluation({
+      corpusId: "tender-2026",
+      name: "Panel 2026",
+      documents: [{ documentId: "doc-1", brand: "Acme" }],
+      fields: [{ name: "Warranty", definition: "The warranty offered." }],
+    });
+
+    expect(isOk(created)).toBe(true);
+    if (!isOk(created)) return;
+    expect(created.data.id).toBe("tender-2026");
+
+    const listed = await controller.listEvaluations();
+    if (!isOk(listed)) throw new Error("list failed");
+    expect(listed.data.map((evaluation) => evaluation.id)).toEqual(["tender-2026"]);
+  });
+
+  it("refuses a corpus nothing has staged", async () => {
+    const created = await emptyController().createEvaluation({
+      corpusId: "never-staged",
+      name: "Panel 2026",
+      documents: [{ documentId: "doc-1", brand: "Acme" }],
+      fields: [{ name: "Warranty", definition: "The warranty offered." }],
+    });
+
+    expect(isErr(created)).toBe(true);
+    if (!isErr(created)) return;
+    expect(created.error.code).toBe("NOT_FOUND");
   });
 });

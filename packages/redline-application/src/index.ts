@@ -11,6 +11,14 @@ export type {
   IngestDocumentsInput,
 } from "./use-cases/ingest-documents";
 
+export { CreateEvaluation } from "./use-cases/create-evaluation";
+export type {
+  CreateEvaluationDependencies,
+  CreateEvaluationInput,
+  EvaluationDocumentInput,
+  EvaluationFieldInput,
+} from "./use-cases/create-evaluation";
+
 export { AssignDocumentsToGroups } from "./use-cases/assign-documents-to-groups";
 export type {
   AssignDocumentsToGroupsDependencies,
