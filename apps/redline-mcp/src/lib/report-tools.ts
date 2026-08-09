@@ -173,10 +173,12 @@ const moneySpanTools = (dependencies: ReportToolDependencies): readonly ReportTo
     description:
       "Every money span womblex found in one document, across all three loci (narrative, table " +
       "cell, sheet cell), in a stable order. A span is an anchored financial expression, not a " +
-      "price: `value` is an exact decimal string, `currency` may be unresolved, and `modifier` " +
-      '("up to", "approximately"), `multiplier`, `negative` and the `rangeGroup`/`rangeRole` ' +
-      "pair that links a range's two endpoints are carried unfolded. Nothing is totalled, " +
-      "converted or attached to a requirement — that reading is yours to make.",
+      "price: `value` is an exact decimal string that already carries its magnitude suffix and " +
+      "its sign, so `multiplier` and `negative` record how it was read and must never be " +
+      're-applied to it. `currency` may be unresolved. `modifier` ("up to", "approximately") ' +
+      "is the one qualifier left unfolded, and the `rangeGroup`/`rangeRole` pair links a range's " +
+      "two endpoints — two rows for one amount. Nothing is totalled, converted or attached to a " +
+      "requirement — that reading is yours to make.",
     inputShape: { evaluationId: EVALUATION_ID, documentId: DOCUMENT_ID },
     run: async (args) => {
       const rows = await dependencies.moneySpanStore.fetchByDocument(

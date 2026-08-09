@@ -41,15 +41,9 @@ importers:
       '@redline/redline-adapters':
         specifier: workspace:*
         version: link:../../packages/redline-adapters
-      '@redline/redline-application':
-        specifier: workspace:*
-        version: link:../../packages/redline-application
       '@redline/redline-domain':
         specifier: workspace:*
         version: link:../../packages/redline-domain
-      '@redline/redline-shared':
-        specifier: workspace:*
-        version: link:../../packages/redline-shared
       zod:
         specifier: ^3.25.0
         version: 3.25.76

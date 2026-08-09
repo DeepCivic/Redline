@@ -37,10 +37,13 @@ const SERVER_INSTRUCTIONS = [
   "Chunk text is verbatim and safe to transfer into a report slot unchanged — that",
   "byte-identity is the provenance claim the report makes, so never paraphrase a",
   "passage you are quoting. Money spans arrive as womblex wrote them: an exact",
-  "decimal `value`, a possibly-unresolved `currency`, and the qualifiers it refuses",
-  "to fold in (`modifier`, `multiplier`, `negative`, `rangeGroup`/`rangeRole`).",
-  "Nothing here totals or converts them; a range is two rows, and a bounded amount",
-  "is not an exact one.",
+  "decimal `value` that ALREADY carries its magnitude suffix and its sign, so",
+  '`multiplier` ("million") and `negative` are an audit trail of how it was read —',
+  "never arithmetic to redo. Do not multiply a value by its multiplier or re-apply",
+  "its sign. `currency` may be unresolved. The one qualifier womblex refuses to fold",
+  'in is `modifier` ("up to", "approximately"), so a bounded amount is not an exact',
+  "one; and `rangeGroup`/`rangeRole` link a range's two endpoints, which are two",
+  "rows for one amount. Nothing here totals or converts them.",
   "",
   "There is no similarity search on this surface and no graph to traverse. Every",
   "tool is exact fetch by key or structural fetch by provenance, so work from ids",
@@ -154,7 +157,19 @@ export const startReportMcpHttpServer = async (
     return undefined;
   });
 
-  await new Promise<void>((resolve) => httpServer.listen(options.port, host, resolve));
+  // `listen` reports failure by emitting 'error', which with no listener attached is
+  // an uncaught exception that kills the process before the caller can name the
+  // cause. Binding is the one startup step that fails routinely — a port already
+  // taken — so it rejects instead, and the listener comes off once bound so runtime
+  // faults keep their existing path.
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(options.port, host, () => {
+      httpServer.removeListener("error", reject);
+      resolve();
+    });
+  });
+
   const address = httpServer.address();
   const boundPort = typeof address === "object" && address !== null ? address.port : options.port;
 

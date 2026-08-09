@@ -12,7 +12,7 @@ import {
   type HttpResponse,
 } from "@redline/redline-adapters";
 import { startReportMcpHttpServer, type RunningReportMcpHttpServer } from "./mcp-server";
-import { MAX_TOOL_ROWS } from "./report-tools";
+import { MAX_TOOL_ROWS, type ReportToolDependencies } from "./report-tools";
 
 // The item's exit test, end to end: a real MCP client lists the tools and calls
 // them over streamable HTTP against a populated evaluation, and gets back verbatim
@@ -33,6 +33,7 @@ const DOCUMENT_ID = "hashA";
 const VERBATIM_TEXT = "  The Contractor shall provide\tsupport 24/7 — including public holidays.  ";
 
 let postgres: PGlite;
+let dependencies: ReportToolDependencies;
 let server: RunningReportMcpHttpServer;
 
 const extractionPayload = {
@@ -202,18 +203,16 @@ beforeAll(async () => {
   await seedChunks(database);
   await seedMoneySpans(database);
 
-  server = await startReportMcpHttpServer({
-    port: 0,
-    host: "127.0.0.1",
-    dependencies: {
-      chunkStore: new DrizzleChunkStore(database),
-      moneySpanStore: new DrizzleMoneySpanStore(database),
-      extractionReader: new WomblexExtractionReader({
-        baseUrl: "http://womblex-ingest.invalid",
-        httpClient: extractionHttpClient,
-      }),
-    },
-  });
+  dependencies = {
+    chunkStore: new DrizzleChunkStore(database),
+    moneySpanStore: new DrizzleMoneySpanStore(database),
+    extractionReader: new WomblexExtractionReader({
+      baseUrl: "http://womblex-ingest.invalid",
+      httpClient: extractionHttpClient,
+    }),
+  };
+
+  server = await startReportMcpHttpServer({ port: 0, host: "127.0.0.1", dependencies });
 });
 
 afterAll(async () => {
@@ -414,5 +413,16 @@ describe("an MCP client over streamable HTTP", () => {
 
     expect(health.status).toBe(200);
     expect(await health.json()).toMatchObject({ status: "ok" });
+  });
+
+  // A bound port is how this service actually fails to start under compose, and an
+  // unhandled 'error' event would take the process down before main.ts could name
+  // the cause. The start must reject so the failure is legible.
+  it("rejects when its port is already bound, instead of failing as an uncaught error", async () => {
+    const takenPort = Number(new URL(server.url).port);
+
+    await expect(
+      startReportMcpHttpServer({ dependencies, port: takenPort, host: "127.0.0.1" }),
+    ).rejects.toMatchObject({ code: "EADDRINUSE" });
   });
 });
