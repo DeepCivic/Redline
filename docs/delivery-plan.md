@@ -103,8 +103,8 @@ of scope** (§4 item 2), so an operator with a terminal stages the corpus and
 starts the run; the specialist's browser surface begins at the populated
 evaluation.
 
-**Items 1 and 3 are fork-side** — the report assembly and the components live in
-`services/wayfinder/apps/web`. Each is two commits under §1's contract: the work
+**Item 1 is fork-side** — the report assembly lives in
+`services/wayfinder/apps/web`, so it is two commits under §1's contract: the work
 on `redline-integration`, then the gitlink and pin moved here in step. Item 2 is
 redline-side: the workbook builder already lives in `apps/redline-web`. So is the
 report tool surface item 1 calls, which is built and served over a URL the fork
@@ -179,22 +179,6 @@ _Version bump: MINOR._
 _Exit: a fixed report structure renders to a workbook a specialist can open, with
 its provenance intact, proven by a test over the builder rather than by opening
 the file._
-
-### 3 — Test the React bind layer
-
-`review-table.test.tsx` and `pricing-pivots.test.tsx` are twelve lines each,
-asserting only that the export is a function and its `.name` matches — against a
-207-line grid and a 157-line pivot component. The cores under `apps/redline-web/`
-are covered; the core→DOM binding is not, and the Playwright specs that would
-cover it skip until a real corpus has run (§4 item 3).
-
-This does **not** wait for a corpus run, and never did: the components render against
-fake query data in vitest, so the coverage lands now and the Playwright specs stay
-the later, separate confirmation.
-
-_Version bump: PATCH._
-_Exit: both components render against fake query data in a test and assert the
-rows and columns they produce, failing if the binding to the core breaks._
 
 ---
 
