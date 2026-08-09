@@ -14,10 +14,17 @@ import type { Result } from "../result";
 // them, and the reading belongs above this seam: the row below is womblex's own
 // span copied across, uninterpreted. This surface deliberately carries NO
 // requirementId and does no alignment, no currency conversion and no roll-up.
-// Attaching a span to a requirement is the report-assembler LLM's job, traversing
-// the graph and calling tools to locate the right source rows (ADR-0017); this port
-// only makes the spans addressable for those tools. It is a sibling of
-// `IChunkStore`: the same exact / structural addressing, over money instead of text.
+//
+// Attaching a span to a requirement therefore happens *above* this port — and this
+// port names no single owner of it, because there is more than one. There are two
+// consumers with two legitimate readings of the same rows: the review grid's
+// `MoneySpanFinancialExtractor`, which attributes a document's money to its
+// highest-confidence classification deterministically, and the report-assembler LLM,
+// which reaches these rows through the MCP report tool surface and aligns them
+// itself. This comment previously assigned the job to the assembler alone while the
+// extractor was already doing it; the extractor owns the grid's reading, the
+// assembler owns the report's, and neither is this port's business. It is a sibling
+// of `IChunkStore`: the same exact / structural addressing, over money instead of text.
 
 // womblex writes three loci into one file and discriminates them with this column.
 // Narrative is where prose amounts live — "the total contract value is $2.4

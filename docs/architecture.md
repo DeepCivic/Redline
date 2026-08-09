@@ -99,10 +99,12 @@ flowchart TB
     subgraph rl["redline (this repo) — TypeScript"]
         direction TB
         web["apps/redline-web<br/>framework-free brains + pure view models"]
+        mcp["apps/redline-mcp<br/>the report tool surface (MCP, streamable HTTP)"]
         app["packages/redline-application<br/>use-cases (orchestration)"]
         dom["packages/redline-domain<br/>entities + PORTS · Result pattern · zero deps"]
         adp["packages/redline-adapters<br/>port implementations —<br/>the ONLY code at the seams"]
         web --> app --> dom --> adp
+        mcp --> dom
     end
 
     adp -->|HTTP+JSON| sidecar["services/womblex-ingest<br/>FastAPI read sidecar (Python)<br/>WOMBLEX_MODE = stub or real"]
@@ -115,8 +117,12 @@ flowchart TB
     engine -->|writes shards| minio
     engine -->|embed stage only| isaacus(["Isaacus API<br/>ISAACUS_API_KEY"])
 
+    mcp -->|Drizzle, read-only| pg
+    mcp -->|HTTP+JSON| sidecar
+
     fork["services/wayfinder — SUBMODULE<br/>the Wayfinder FORK, branch redline-integration<br/>its apps/web SERVES the redline-web brains"]
     fork -.->|mounts + serves| web
+    fork -.->|MCP over streamable HTTP, by URL| mcp
     fork --> pg
 
     classDef ext fill:#eee,stroke:#999,color:#333
@@ -128,6 +134,13 @@ flowchart TB
 - **`apps/redline-web`** — the control surface: workflow, review grid, pricing
   pivots, Excel export. Served by the forked Wayfinder; **no Wayfinder imports
   leak back** into these packages.
+- **`apps/redline-mcp`** — the **report tool surface**: the same read ports, served
+  as an MCP server so a report-assembler LLM can call them. See §5 invariant 7 for
+  what it does and does not expose. It is a *process with a URL*, not a library —
+  Wayfinder's MCP client speaks SSE and streamable HTTP only (no stdio) and
+  addresses servers by URL, so it cannot live in `redline-adapters` (a library) and
+  must not live in the fork (which would make redline's own store reachable only
+  through Wayfinder).
 - **`packages/redline-application`** — `IngestDocuments`, `ColdStartClassifier`,
   `ClassifyWithHardRules`, `AdjudicateUnclear`, `ClassifyResponseGroup`,
   `MoneySpanFinancialExtractor`, `BuildEvaluationTable`, `DocumentMap`, pivots.
@@ -419,23 +432,47 @@ Same port, same output shape — consumers cannot tell.
 
 **(7) Financial extraction — `MoneySpanFinancialExtractor`.** The real
 `IFinancialExtractor` reads a document's money spans over `IMoneySpanStore`
-(materialised from `*.money_spans.parquet`) and sums them into one AUD figure per
+(materialised from `*.money_spans.parquet`) and turns them into one AUD figure per
 (document, requirement). **This is one reading of the spans, not the shape they are
-stored in** — it is a consumer of step (2'), and the report tools read the same
-rows without going through it. Its summing is knowingly wrong for two of womblex's
-own constructs and is left that way deliberately: a range contributes both
-endpoints, and a `modifier` ("up to") is summed as though the amount were exact.
-A span carries no
-requirement, so attribution is the extractor's job: a document's spans attach to
-the **one** requirement its classification matched with the highest confidence
-(ties → lexicographically-least `requirementId`), summed once onto that single row
-so a document matching more than one requirement never double-counts its priced
-total in the per-brand pivot. Amounts sum in fixed-point (scaled integers), not
-float, so the `decimal128(38,4)` exactness the store carries survives aggregation.
-Wired behind the port in `lib/container.ts`
-(`buildMoneySpanFinancialExtractor`). The Numbatch financial extension remains the
-better long-term roll-up (§7 item 4); it satisfies the same port and would swap in
-at the same seam.
+stored in** — it is a consumer of step (2'), and the report tools (§5 invariant 7)
+read the same rows without going through it.
+
+A span carries no requirement, so attribution happens above the store — and it has
+**more than one owner**, which is the contradiction this settles. The extractor owns
+the *grid's* attribution and says so: a document's spans attach to the **one**
+requirement its classification matched with the highest confidence (ties →
+lexicographically-least `requirementId`), landing once on that single row so a
+document matching more than one requirement never double-counts its priced total in
+the per-brand pivot. The report assembler owns the *report's*, over the same rows
+through the tools. Neither is the port's business, and the port no longer names an
+owner.
+
+What each span *contributes* is `readDocumentMoney` (redline-application), the one
+place that reduces spans to a figure. Three rules, each closing a way the earlier
+straight sum counted the same money twice or read a bound as exact:
+
+1. **A table prices the document.** When a document carries cell spans its
+   narrative spans are excluded — a prose "total contract value" restates the
+   schedule it summarises. A document that prices only in prose falls back to
+   narrative spans, so a PDF-only tender is not silently free.
+2. **A range is one amount**, counted at its upper endpoint rather than as two rows.
+   Range groups are keyed by locus and text source as well as by number, because
+   womblex restarts the counter per scanned text. Cell spans carry no
+   `range_group` at all (`money_stage.py` `_cell_row`), so a range inside a pricing
+   table is not detectable here — an upstream limit, recorded rather than papered
+   over.
+3. **A qualified amount is a bound.** womblex never folds `modifier` into `value`,
+   and there is no honest factor to multiply by — inventing one would be quality
+   scoring. So a bounded amount still contributes its stated value once (taking a
+   ceiling at face value is the same choice as taking a range's upper endpoint), and
+   the extraction's `description` states how many amounts are ceilings, floors or
+   approximations. The figure is never presented as exact when it is not.
+
+Amounts sum in fixed-point (scaled integers), not float, so the `decimal128(38,4)`
+exactness the store carries survives aggregation. Wired behind the port in
+`lib/container.ts` (`buildMoneySpanFinancialExtractor`). The Numbatch financial
+extension remains the better long-term roll-up (§7 item 4); it satisfies the same
+port and would swap in at the same seam.
 
 **(8) Review model.** `BuildEvaluationTable` joins classifications + financials +
 provenance into `ProcurementResponse[]`. `PricingPivot` rolls `estimateAud` per
@@ -520,6 +557,41 @@ carried as provenance, not as part of the join key (see §7).
    config-driven, never a hardcoded Wayfinder endpoint. Wayfinder is consumed
    read-only and materialised from a pin.
 
+7. **The report tools expose ports, and expose them uninterpreted.**
+   `apps/redline-mcp` serves exactly seven read port methods —
+   `IChunkStore.fetchChunks`/`fetchByStructure`,
+   `IMoneySpanStore.fetchByDocument`/`fetchByStructure`, and
+   `IProcurementExtractionReader.readElements`/`readChunks`/`readTableCells` — over
+   **streamable HTTP**, because Wayfinder's MCP client speaks SSE and
+   streamable-HTTP only (no stdio) and addresses servers by URL.
+
+   It is hand-built rather than `postgres-mcp` because the ports encode a contract
+   a `SELECT` does not: **stable ordering**, so a report assembled twice is the same
+   report; **verbatim text**, byte-identical, because that byte-identity *is* the
+   provenance claim; and a projection that is exactly the domain row, so
+   `redline_chunks.embedding` is never selected (one `SELECT *` at ~90k chunks
+   drags every vector across). Each payload reports `returned`/`available`/
+   `truncated`, so the row cap protecting the assembler's context is visible rather
+   than looking like the whole answer. `postgres-mcp` is still worth having for
+   ad-hoc analysis, off this path.
+
+   Two absences are deliberate and bind what a report can claim. There is **no
+   similarity search** (`findSimilar` is deferred) and **no graph** (redline's
+   womblex profile disables enrichment), so both tools an assembler gets are
+   deterministic — exact fetch by key, structural fetch by provenance. It transfers
+   facts it is *pointed at*; the pointing is done by classification, not by the
+   model roaming the corpus. And **money crosses uninterpreted**: an exact decimal
+   `value`, a possibly-unresolved `currency`, and the qualifiers womblex refuses to
+   fold in. Step (7)'s reading is not the shape these tools serve.
+
+   In Wayfinder it registers with **`communicatesExternally: false`**. The flag
+   classifies whether a server talks *outside* Wayfinder; this one reads redline's
+   own Postgres inside the same deployment and sends nothing anywhere. That it reads
+   commercial-in-confidence documents is a concern about the data, not about egress,
+   and it is what the `false` branch governs — an internal utility under the
+   document human-review gate. `true` would register the server but make it **not
+   selectable in flows**, which would make the assembler unbuildable.
+
 ---
 
 ## 6. Repository layout
@@ -527,6 +599,9 @@ carried as provenance, not as part of the join key (see §7).
 ```
 redline/
 ├── apps/redline-web/              control surface (TypeScript)
+├── apps/redline-mcp/              the report tool surface — seven read ports served
+│                                  as an MCP server over streamable HTTP, plus its
+│                                  Dockerfile (compose profile `report`)
 ├── packages/
 │   ├── redline-domain/            entities + ports (zero deps, Result pattern)
 │   ├── redline-application/       use-cases (orchestration)
@@ -562,7 +637,8 @@ redline/
 │                                  Live getContainer() wiring is built:
 │                                  resolveRedlineModule + redline-language-model.
 ├── infra/
-│   ├── docker-compose.yml         profiles: ingest | womblex | numbatch | redline
+│   ├── docker-compose.yml         profiles: ingest | money | womblex | numbatch |
+│   │                              redline | report
 │   └── womblex/redline.yaml       redline's pipeline config for the engine
 ├── docs/
 │   ├── architecture.md            ◄ THIS FILE — what redline IS (the design truth)

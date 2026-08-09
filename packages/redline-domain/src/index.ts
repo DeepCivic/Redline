@@ -48,8 +48,9 @@ export * from "./ports/evaluation-repository";
 export * from "./ports/financial-extractor";
 export * from "./ports/language-model";
 // Money spans — the store-side query surface over womblex's `money` sidecar
-// (ADR-0017/0018). Addressable, provenance-tagged pricing facts; requirement
-// alignment is the report-assembler LLM's job over the graph, not this seam's.
+// (ADR-0017/0018). Addressable, provenance-tagged financial expressions; requirement
+// alignment happens above this seam, and has more than one owner — the grid's
+// extractor and the report assembler each read the same rows their own way.
 export * from "./ports/money-span-store";
 export * from "./ports/procurement-classifier";
 export * from "./ports/procurement-extraction-reader";
