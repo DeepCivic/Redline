@@ -345,8 +345,28 @@ and publishes `*.money_spans.parquet` + `*.money_columns.parquet` back under
 `proc/{evaluationId}/documents/`. Runnable via the `money` compose profile
 (`compose --profile money run --rm money --evaluation-id <id>`), which builds the
 sidecar Dockerfile's `womblex` target (the read seam keeps the light `sidecar`
-target). The spans are materialised into `redline_money_spans` and read through
-`IMoneySpanStore` — the seam step (7) sums over.
+target).
+
+Publishing is not the last step: `run_money_stage` then **loads** the spans into
+`redline_money_spans` off the same scratch dir
+(`money_span_store.py` → `money_span_store_postgres.py`, wired when
+`REDLINE_DATABASE_URL` is set), which is what makes them readable through
+`IMoneySpanStore`. **The span lands uninterpreted** — womblex's
+`MONEY_SPANS_SCHEMA` copied across column for column, all **three loci**
+(`narrative` character offsets, `table_cell` and `sheet_cell` anchors, exactly one
+anchor group non-null per row and `locus` discriminating), the qualifiers womblex
+refuses to fold into `value` (`modifier`, `multiplier`, `negative`) and the
+`range_group`/`range_role` pairing of a range's endpoints. These are *financial
+expressions*, not prices: which requirement a span belongs to, what it rolls up to
+and whether it is a price at all are readings, and every reading belongs above the
+store. A writer that decided any of them would need a second writer for the next
+financial-data type. No span id is stable across a re-annotation, so a load
+**replaces** the evaluation's spans rather than upserting them — at evaluation
+scope, not per document, because a document can re-annotate to *zero* spans (add a
+veto term and a column stops being money) and a per-document replace would never
+visit it, leaving a costing in the grid that no longer exists. An evaluation with
+no sidecars at all is left untouched: that is "the stage never ran here", not
+"it found nothing".
 
 **(3) Read seam — the sidecar (`WOMBLEX_MODE=real`).**
 
@@ -398,9 +418,14 @@ is trained and activated and subsequent runs use it via `IProcurementClassifier`
 Same port, same output shape — consumers cannot tell.
 
 **(7) Financial extraction — `MoneySpanFinancialExtractor`.** The real
-`IFinancialExtractor` reads a document's table-cell money spans over
-`IMoneySpanStore` (materialised from `*.money_spans.parquet`) and sums
-them into one AUD figure per (document, requirement). A span carries no
+`IFinancialExtractor` reads a document's money spans over `IMoneySpanStore`
+(materialised from `*.money_spans.parquet`) and sums them into one AUD figure per
+(document, requirement). **This is one reading of the spans, not the shape they are
+stored in** — it is a consumer of step (2'), and the report tools read the same
+rows without going through it. Its summing is knowingly wrong for two of womblex's
+own constructs and is left that way deliberately: a range contributes both
+endpoints, and a `modifier` ("up to") is summed as though the amount were exact.
+A span carries no
 requirement, so attribution is the extractor's job: a document's spans attach to
 the **one** requirement its classification matched with the highest confidence
 (ties → lexicographically-least `requirementId`), summed once onto that single row
@@ -512,7 +537,8 @@ redline/
 │   ├── womblex-ingest/            FastAPI read sidecar (reads MinIO Parquet → JSON)
 │   │   ├── src/womblex_ingest/    stub + real extractor, records (wire shape),
 │   │   │                          shard_reader (schema map), storage, embedding,
-│   │   │                          money_stage (the `money` op invocation)
+│   │   │                          money_stage (the `money` op invocation) +
+│   │   │                          money_span_store[_postgres] (the span load)
 │   │   └── Dockerfile             `sidecar` (light) + `womblex` (money) targets
 │   ├── numbatch/                  ◄ SUBMODULE: the Numbatch fork @ 72bcead
 │   ├── numbatch-extension/        redline's additive overlay (financial_extension

@@ -15,8 +15,9 @@
 #               an ingest lands the MinIO shards AND projects chunks + embeddings
 #               into the redline_ chunk store — item 1a, ADR-0017/0018)
 #   money     — the money annotation step (run on demand after a womblex run):
-#               stages an evaluation's shards down, runs `womblex money`, and
-#               publishes the *.money_spans/*.money_columns siblings back
+#               stages an evaluation's shards down, runs `womblex money`,
+#               publishes the *.money_spans/*.money_columns siblings back and
+#               loads the spans into redline_money_spans
 #               (`compose --profile money run --rm money --evaluation-id <id>`).
 #               Needs the `[womblex]` extra, so it builds its own image target.
 #   womblex   — the real womblex engine, built from the ../services/womblex
@@ -116,14 +117,15 @@ services:
     ports:
       - "8000:8000"
 
-  # ── money annotation step (item 1) ────────────────────────────────────────
+  # ── money annotation step ─────────────────────────────────────────────────
   # Not part of `womblex run`/`worker`: the money op is offline, API-free and has
   # no ordering dependency on the pipeline, so it runs ON DEMAND once the fleet
   # has drained — the same lifecycle as `womblex finalize`. It stages an
   # evaluation's `*.elements`/`*.table_cells` shards down from object storage,
-  # runs womblex's own `money_shards()`, and publishes the two sidecars back
-  # beside them. Unlike the read-seam sidecar above, this needs `womblex`
-  # installed, so it builds the `[womblex]` image target.
+  # runs womblex's own `money_shards()`, publishes the two sidecars back beside
+  # them, and lands the spans in `redline_money_spans`. Unlike the read-seam
+  # sidecar above, this needs `womblex` installed, so it builds the `[womblex]`
+  # image target.
   #
   #   podman compose -f infra/docker-compose.yml --profile money \
   #     run --rm money --evaluation-id <evaluationId>
@@ -136,6 +138,8 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+      redline-postgres:
+        condition: service_healthy
     environment:
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
@@ -145,6 +149,12 @@ services:
       # the same config the womblex worker runs with, so redline never restates
       # the engine's tuning.
       WOMBLEX_CONFIG: /app/redline-config/redline.yaml
+      # Where the annotated spans land. `redline_money_spans` is created by
+      # redline-adapters' migrations, so this expects a migrated database. Unset
+      # it to publish the sidecars and skip the load — but note the load only
+      # happens as part of this stage, so picking those sidecars up afterwards
+      # means running the stage again (offline and API-free, so cheap).
+      REDLINE_DATABASE_URL: ${REDLINE_DATABASE_URL:-postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}}
     volumes:
       - ./womblex:/app/redline-config:ro
     entrypoint: ["python", "-m", "womblex_ingest.money_stage"]
@@ -350,7 +360,7 @@ services:
   # DATABASE_URL; the seam stays plain Postgres so a deployment can repoint it.
   redline-postgres:
     image: docker.io/library/postgres:16
-    profiles: ["ingest", "redline"]
+    profiles: ["ingest", "money", "redline"]
     environment:
       POSTGRES_USER: ${REDLINE_DB_USER:-redline}
       POSTGRES_PASSWORD: ${REDLINE_DB_PASSWORD:-redline-dev}

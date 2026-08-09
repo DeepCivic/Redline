@@ -646,12 +646,12 @@ describe("container — cold-start classifier wiring (item 1b)", () => {
   });
 });
 
-// The delivery-plan §2 item 1 seam: buildMoneySpanFinancialExtractor composes the
-// real IFinancialExtractor (womblex money spans → summed AUD per matched
-// requirement) behind the same port the Numbatch one satisfies. This proves the
-// money-span path is wired *behind the port* — the controller, once built with it,
-// puts real currency in the review grid, and the per-brand pivot totals it.
-describe("container — money-span financial extractor wiring (item 1)", () => {
+// buildMoneySpanFinancialExtractor composes the real IFinancialExtractor (womblex
+// money spans → summed AUD per matched requirement) behind the same port the
+// Numbatch one satisfies. This proves the money-span path is wired *behind the
+// port* — the controller, once built with it, puts real currency in the review
+// grid, and the per-brand pivot totals it.
+describe("container — money-span financial extractor wiring", () => {
   class FakeMoneySpanStore implements IMoneySpanStore {
     constructor(private readonly rows: readonly MoneySpanRow[]) {}
     async fetchByDocument(
@@ -677,12 +677,28 @@ describe("container — money-span financial extractor wiring (item 1)", () => {
   const money = (over: Partial<MoneySpanRow> = {}): MoneySpanRow => ({
     documentId: "doc-1",
     locus: "table_cell",
+    textSource: null,
+    startChar: null,
+    endChar: null,
+    page: null,
+    elementOrder: null,
     parentElementOrder: 4,
+    sheet: null,
     rowIndex: 1,
     columnIndex: 0,
     text: "1200",
     value: "1200.0000",
     currency: "AUD",
+    currencySource: "column_header",
+    evidence: "header+numeric",
+    modifier: null,
+    multiplier: null,
+    negative: false,
+    confidence: 0.92,
+    rangeGroup: null,
+    rangeRole: null,
+    columnId: "elem4:col0",
+    context: null,
     ...over,
   });
 

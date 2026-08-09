@@ -17,6 +17,7 @@ import {
   numeric,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -93,14 +94,17 @@ export type NewResponseGroupRow = typeof redlineResponseGroups.$inferInsert;
 export type ResponseRow = typeof redlineResponses.$inferSelect;
 export type NewResponseRow = typeof redlineResponses.$inferInsert;
 
-// One `locus='table_cell'` money span, materialised from womblex's
-// `*.money_spans.parquet` (ADR-0017 — bulk columnar data lives in redline's own
-// store, queried in place). Keyed on the womblex provenance the span was
-// annotated against: (evaluation, source_hash, parent_elem_order, row, col).
-// `value` is `numeric(38, 4)` — the exact `Decimal` womblex writes, never a
-// float, so summing amounts and reconciling for equality stay exact. `currency`
-// is nullable: a span can be money-marked with its currency unresolved. The
-// sidecar (the one reader of womblex's Parquet schema) loads this table; the
+// One money span, materialised from womblex's `*.money_spans.parquet` (ADR-0017 —
+// bulk columnar data lives in redline's own store, queried in place). This mirrors
+// womblex's `MONEY_SPANS_SCHEMA` column for column, uninterpreted: three loci
+// discriminated by `locus`, with **exactly one anchor group non-null per row**
+// (narrative → start_char/end_char; table_cell → parent_element_order/row/column;
+// sheet_cell → sheet/row/column + element_order), which is why every anchor is
+// nullable. `value` is `numeric(38, 4)` — the exact `Decimal` womblex writes, never
+// a float, so summing amounts and reconciling for equality stay exact, and it
+// arrives with the magnitude suffix and sign already applied. `currency` is
+// nullable: a span can be money-marked with its currency unresolved. The sidecar
+// (the one reader of womblex's Parquet schema) loads this table; the
 // DrizzleMoneySpanStore only reads it.
 export const redlineMoneySpans = pgTable("redline_money_spans", {
   id: text("id").primaryKey(),
@@ -108,12 +112,33 @@ export const redlineMoneySpans = pgTable("redline_money_spans", {
     .notNull()
     .references(() => redlineEvaluations.id, { onDelete: "cascade" }),
   documentId: text("document_id").notNull(),
-  parentElementOrder: integer("parent_element_order").notNull(),
-  rowIndex: integer("row_index").notNull(),
-  columnIndex: integer("column_index").notNull(),
-  cellText: text("cell_text").notNull(),
+  locus: text("locus").notNull(),
+  textSource: text("text_source"),
+  startChar: integer("start_char"),
+  endChar: integer("end_char"),
+  page: integer("page"),
+  elementOrder: integer("element_order"),
+  parentElementOrder: integer("parent_element_order"),
+  sheet: text("sheet"),
+  rowIndex: integer("row_index"),
+  columnIndex: integer("column_index"),
+  text: text("text").notNull(),
   value: numeric("value", { precision: 38, scale: 4 }).notNull(),
   currency: text("currency"),
+  currencySource: text("currency_source"),
+  evidence: text("evidence"),
+  modifier: text("modifier"),
+  multiplier: text("multiplier"),
+  negative: boolean("negative").notNull(),
+  // `real`, not `doublePrecision`: womblex's column is float32, so this holds its
+  // bits exactly. The decimal spelling differs either side of the seam (Python
+  // widens the bits to print 0.8999999761581421; Postgres renders the shortest
+  // round-trip form, 0.9) — same value, so compare confidences at float32.
+  confidence: real("confidence").notNull(),
+  rangeGroup: integer("range_group"),
+  rangeRole: text("range_role"),
+  columnId: text("column_id"),
+  context: text("context"),
   ...timestamps,
 });
 

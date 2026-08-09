@@ -15,12 +15,19 @@ import {
 // `*.money_spans.parquet` — ADR-0017) and turns them into the (documentId,
 // requirementId) costing the review grid needs. This is where AUD reaches the grid.
 //
-// A span is (document, table, row, col) — it has no requirement. The interim
-// attribution rule (delivery-plan §2 item 1): a document's spans attach to the
-// ONE requirement its classification matched with the highest confidence, ties
-// broken on the lexicographically-least requirementId. A document's spans are
-// summed once onto that single row, so a document matching more than one
-// requirement never duplicates its money into the per-brand pivot totals.
+// A span is an anchored financial expression — it has no requirement. The interim
+// attribution rule: a document's spans attach to the ONE requirement its
+// classification matched with the highest confidence, ties broken on the
+// lexicographically-least requirementId. A document's spans are summed once onto
+// that single row, so a document matching more than one requirement never
+// duplicates its money into the per-brand pivot totals.
+//
+// This summing is knowingly wrong for two of womblex's own constructs and is left
+// that way deliberately — correcting it is a separate behaviour with its own test.
+// A range writes two rows (lower and upper), so "$1M–$2M" contributes $3M; and
+// `modifier` ("up to", "approximately") is never folded into `value`, so a
+// qualified amount is summed as though it were exact. `rangeGroup`/`rangeRole` and
+// `modifier` now reach this code, which is what makes both detectable.
 //
 // Amounts are summed in fixed-point (scaled integers) not float: womblex writes
 // `decimal128(38,4)` precisely because summing many amounts accumulates float
@@ -115,7 +122,9 @@ export class MoneySpanFinancialExtractor implements IFinancialExtractor {
     return {
       documentId,
       requirementId,
-      elementOrder: firstSpan!.parentElementOrder,
+      // Only a cell span carries an element anchor; a narrative span is addressed
+      // by character offsets, so it has none to give the grid.
+      elementOrder: firstSpan!.parentElementOrder ?? firstSpan!.elementOrder ?? 0,
       estimateAud,
       description: summariseSpans(spans, estimateAud),
     };

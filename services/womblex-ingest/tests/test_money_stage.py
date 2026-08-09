@@ -31,7 +31,7 @@ pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")
 pytest.importorskip("womblex")
 
-from tests.conftest import FakeObjectStorage  # noqa: E402
+from tests.conftest import FakeObjectStorage, RecordingMoneySpanStore  # noqa: E402
 from womblex.store.output import (  # noqa: E402
     ELEMENT_SCHEMA,
     MANIFEST_SCHEMA,
@@ -126,6 +126,8 @@ def _spans_from(storage: FakeObjectStorage) -> list[dict]:
 
 
 def test_publishes_both_sidecars_beside_the_shards() -> None:
+    # No `span_store`: the no-DSN lane, where the annotation still runs and the
+    # sidecars are still durable in object storage.
     storage = FakeObjectStorage()
     _seed_real_shards(storage)
 
@@ -176,17 +178,60 @@ def test_no_elements_shard_under_the_prefix_fails_loudly() -> None:
         run_money_stage(storage, evaluation_id=EVAL)
 
 
+def test_loads_the_published_spans_into_the_store_field_by_field() -> None:
+    """The whole point of annotating: the spans reach `redline_money_spans`.
+
+    Publishing a sidecar nothing reads is what left the financial half of the
+    product unable to run on any lane. Asserted against the shard the real engine
+    just wrote, column by column — not against a total, which would pass on a
+    writer that dropped every qualifier.
+    """
+    storage = FakeObjectStorage()
+    _seed_real_shards(storage)
+    store = RecordingMoneySpanStore()
+
+    run_money_stage(storage, evaluation_id=EVAL, span_store=store)
+
+    published = _spans_from(storage)
+    landed = store.for_document(EVAL, DOC)
+    assert len(landed) == len(published) == len(_priced_amounts())
+    for shard_row, stored in zip(published, landed):
+        assert stored.document_id == shard_row["source_hash"]
+        assert stored.locus == shard_row["locus"]
+        assert stored.text == shard_row["text"]
+        assert stored.value == format(shard_row["value"], "f")
+        assert stored.currency == shard_row["currency"]
+        assert stored.currency_source == shard_row["currency_source"]
+        assert stored.evidence == shard_row["evidence"]
+        assert stored.confidence == shard_row["confidence"]
+        assert stored.negative == shard_row["negative"]
+        assert stored.parent_element_order == shard_row["parent_elem_order"]
+        assert stored.row_index == shard_row["row"]
+        assert stored.column_index == shard_row["col"]
+        assert stored.column_id == shard_row["column_id"]
+        assert stored.modifier == shard_row["modifier"]
+        assert stored.multiplier == shard_row["multiplier"]
+        assert stored.range_group == shard_row["range_group"]
+        assert stored.range_role == shard_row["range_role"]
+
+
 # --- CLI entrypoint (the runnable step, mirrors `womblex finalize`) ----------
 
 
 def test_cli_runs_the_real_stage_for_the_given_evaluation() -> None:
     storage = FakeObjectStorage()
     _seed_real_shards(storage)
+    store = RecordingMoneySpanStore()
 
-    exit_code = main(["--evaluation-id", EVAL], build_storage=lambda: storage)
+    exit_code = main(
+        ["--evaluation-id", EVAL],
+        build_storage=lambda: storage,
+        build_span_store=lambda: store,
+    )
 
     assert exit_code == 0
     assert f"{PREFIX}batch-0000.money_spans.parquet" in storage.keys_under(PREFIX)
+    assert len(store.for_document(EVAL, DOC)) == len(_priced_amounts())
 
 
 def test_cli_requires_an_evaluation_id() -> None:
