@@ -33,6 +33,10 @@ export * from "./ports/adjudicator";
 // fetch by provenance ships now; vector similarity (findSimilar) is declared
 // but deferred (ADR-0018 addendum). No vector ever crosses this seam.
 export * from "./ports/chunk-store";
+// What an evaluation can be created over: the corpora the sidecar has already
+// staged, and the documents behind each. Read before an evaluation exists, so
+// the operator picks a corpus id rather than retyping the one the store keys on.
+export * from "./ports/staged-corpus-reader";
 // The evaluation-scoped lens context, read per call so one classifier instance
 // serves every evaluation in a process (the fork's getContainer() is a
 // process-wide singleton).

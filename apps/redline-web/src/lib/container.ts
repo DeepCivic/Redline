@@ -9,22 +9,28 @@ import {
   type IAdjudicator,
   type IChunkStore,
   type IClassificationLensReader,
+  type IClassificationLensWriter,
   type IEvaluationRepository,
   type IFinancialExtractor,
   type ILanguageModel,
   type IMoneySpanStore,
   type IProcurementClassifier,
   type IProcurementExtractionReader,
+  type IStagedCorpusReader,
   type ProcurementResponse,
   type RequirementClassification,
   type Result,
+  type StagedCorpus,
+  type StagedDocument,
 } from "@redline/redline-domain";
 import {
   AssignDocumentsToGroups,
   BuildEvaluationTable,
   ClassifyResponseGroup,
   ColdStartClassifier,
+  CreateEvaluation,
   MoneySpanFinancialExtractor,
+  type CreateEvaluationInput,
 } from "@redline/redline-application";
 import { WorkflowManager } from "./workflow-manager";
 import { ReviewGrid } from "./review-grid";
@@ -47,6 +53,11 @@ export interface WorkflowContainer {
   readonly financialExtractor: IFinancialExtractor;
   readonly extractionReader: IProcurementExtractionReader;
   readonly languageModel: ILanguageModel;
+  // The create half. Until an evaluation could be created from the browser the
+  // served container carried no write capability at all — an evaluation existed
+  // only if a terminal script had made one.
+  readonly stagedCorpusReader: IStagedCorpusReader;
+  readonly lensWriter: IClassificationLensWriter;
   readonly productName: string;
 }
 
@@ -59,8 +70,14 @@ export class WorkflowController {
   private readonly assignDocumentsToGroups: AssignDocumentsToGroups;
   private readonly classifyResponseGroup: ClassifyResponseGroup;
   private readonly buildEvaluationTable: BuildEvaluationTable;
+  private readonly createEvaluationUseCase: CreateEvaluation;
 
   constructor(private readonly container: WorkflowContainer) {
+    this.createEvaluationUseCase = new CreateEvaluation({
+      repository: container.repository,
+      stagedCorpusReader: container.stagedCorpusReader,
+      lensWriter: container.lensWriter,
+    });
     this.assignDocumentsToGroups = new AssignDocumentsToGroups({
       repository: container.repository,
     });
@@ -73,6 +90,20 @@ export class WorkflowController {
       languageModel: container.languageModel,
       productName: container.productName,
     });
+  }
+
+  // The three calls the create screen makes. They are the only write path the
+  // served container exposes: everything else here reads.
+  listStagedCorpora(): Promise<Result<readonly StagedCorpus[]>> {
+    return this.container.stagedCorpusReader.listCorpora();
+  }
+
+  listStagedDocuments(input: { corpusId: string }): Promise<Result<readonly StagedDocument[]>> {
+    return this.container.stagedCorpusReader.listDocuments(input.corpusId);
+  }
+
+  createEvaluation(input: CreateEvaluationInput): Promise<Result<Evaluation>> {
+    return this.createEvaluationUseCase.execute(input);
   }
 
   async openWorkflow(input: OpenWorkflowInput): Promise<Result<WorkflowManager>> {
@@ -177,6 +208,8 @@ export interface ProductionContainerParts {
   readonly financialExtractor: IFinancialExtractor;
   readonly extractionReader: IProcurementExtractionReader;
   readonly languageModel: ILanguageModel;
+  readonly stagedCorpusReader: IStagedCorpusReader;
+  readonly lensWriter: IClassificationLensWriter;
   readonly productName: string;
 }
 

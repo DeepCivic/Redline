@@ -44,6 +44,7 @@ export {
 // ChunkRow carries no vector (ADR-0017), and findSimilar refuses with
 // NOT_IMPLEMENTED until the pgvector/ANN index lands (ADR-0018 addendum).
 export { DrizzleChunkStore } from "./persistence/drizzle-chunk-store";
+export { DrizzleStagedCorpusReader } from "./persistence/drizzle-staged-corpus-reader";
 // The persisted lens (delivery-plan §2 item 1, ADR-0009/ADR-0020): the reader
 // behind IClassificationLensReader, over redline_lenses / redline_topics /
 // redline_hard_rules / redline_lens_bindings. Topics and rules are read from the
