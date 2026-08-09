@@ -23,10 +23,16 @@
 > no longer exist, nothing in the tree cites them, and their content is not
 > recoverable from it — so the numbers are left as gaps rather than reused, which
 > would make an old citation resolve to the wrong decision. Numbering therefore
-> runs D1, D2, D4–D10. Where a comment still reads `ADR-00xx`, treat it
-> as a pointer into git history, not a live document — except where the number is
-> plainly upstream's (Wayfinder's, Numbatch's or womblex's own registers, which
-> do still exist).
+> runs D1, D2, D4–D10.
+>
+> **The docs no longer cite ADR numbers at all.** `architecture.md` carried 53 of
+> them across 18 dead numbers; each has been deleted, and where the citation
+> carried something the prose did not — a supersession, an amendment date — that
+> substance was written into the prose instead. Numbering collided badly enough to
+> be worth stating: redline's `ADR-0001` and Wayfinder's live `001` were different
+> documents sharing a number. Source comments still carry `ADR-00xx`; read those
+> as pointers into git history, except where the number is plainly upstream's
+> (Wayfinder's, Numbatch's and womblex's own registers do still exist).
 
 ---
 
@@ -53,7 +59,7 @@ lessons and how each lands here:
   reuses `enrich`'s sidecar when present and self-enriches when absent. → The
   trained Numbatch adapter is an **optional overlay**, not a required stage; the
   cold-start path (hard rules → retrieval → adjudication) runs without it. (This
-  is the mechanism behind ADR-0008.)
+  is the mechanism behind D2 — the port the two paths interchange at.)
 
 - **Content-addressed identity makes reuse a cache hit by construction.**
   `source_hash = sha256(record_id + text)` — re-ingesting an unchanged record

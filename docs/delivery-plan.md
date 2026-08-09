@@ -217,14 +217,12 @@ should shape it rather than be assumed. In dependency order:
    or durable-asset lifecycle; that surface stays in §3. The seed script still
    writes rules from a manifest, and is now the only path that can.
 
-3. **`architecture.md` carries 53 ADR citations across 18 distinct numbers, for
-   documents that no longer exist.** `design-principles.md` now says how to read
-   them (git-history pointers, except where the number is plainly upstream's),
-   which stops them misleading — but it does not make them useful. Left
-   deliberately: sorting redline's own dead numbers from Wayfinder's, Numbatch's
-   and womblex's live ones is a mechanical pass over the whole document, worth
-   doing once when someone is already in there rather than as a build step of its
-   own.
+3. **Source comments still cite dead ADR numbers.** The documents no longer do
+   (see `design-principles.md`), but comments across `packages/` and the fork do
+   — e.g. `hard-rule-evaluation.ts:47` cites ADR-0011 for a precedence rule now
+   stated in `architecture.md` §5. Harmless where the comment states its own
+   substance, which is the common case; fix them opportunistically when touching
+   the file rather than as a pass of its own.
 
 ---
 
