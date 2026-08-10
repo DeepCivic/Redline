@@ -308,13 +308,18 @@ const extractionTools = (dependencies: ReportToolDependencies): readonly ReportT
 // disambiguates the two so a tool can report `graphAvailable: false` for the
 // runtime-absent case rather than letting the assembler mistake it for "nothing
 // matched". Only consulted when the direct result is empty — a non-empty result
-// already proves the graph is there.
+// already proves the graph is there — and asked through `hasEntities`, which the
+// store answers bounded; the question is existence, and reading the evaluation's
+// entity rows to count them is exactly the unbounded read MAX_TOOL_ROWS caps.
+//
+// A failed probe reports unavailable rather than failing the call: the traversal
+// itself already succeeded, so only the availability claim is lost.
 const probeGraphAvailable = async (
   graphStore: IGraphStore,
   evaluationId: string,
 ): Promise<boolean> => {
-  const any = await graphStore.fetchEntities(evaluationId, {});
-  return !isErr(any) && any.data.length > 0;
+  const loaded = await graphStore.hasEntities(evaluationId);
+  return !isErr(loaded) && loaded.data;
 };
 
 const buildGraphPayload = async (

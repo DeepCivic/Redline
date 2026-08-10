@@ -78,6 +78,10 @@ class InMemoryGraphStore implements IGraphStore {
   ): Promise<Result<readonly GraphEdgeRow[]>> {
     return ok(this.scoped(this.edges, evaluationId).filter((row) => row.targetId === entityId));
   }
+
+  async hasEntities(evaluationId: string): Promise<Result<boolean>> {
+    return ok(this.scoped(this.entities, evaluationId).length > 0);
+  }
 }
 
 describe("IGraphStore", () => {
@@ -139,6 +143,30 @@ describe("IGraphStore", () => {
     if (!isOk(entities) || !isOk(edges)) return;
     expect(entities.data).toEqual([]);
     expect(edges.data).toEqual([]);
+  });
+
+  it("answers the availability probe without handing back the rows", async () => {
+    const loaded = new InMemoryGraphStore([entity()], []);
+    const absent = new InMemoryGraphStore([], []);
+
+    const whenLoaded = await loaded.hasEntities("eval-1");
+    const whenAbsent = await absent.hasEntities("eval-1");
+
+    expect(isOk(whenLoaded)).toBe(true);
+    expect(isOk(whenAbsent)).toBe(true);
+    if (!isOk(whenLoaded) || !isOk(whenAbsent)) return;
+    expect(whenLoaded.data).toBe(true);
+    expect(whenAbsent.data).toBe(false);
+  });
+
+  it("scopes the availability probe to one evaluation", async () => {
+    const store = new InMemoryGraphStore([entity()], []);
+
+    const result = await store.hasEntities("eval-2");
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data).toBe(false);
   });
 
   it("never leaks another evaluation's rows", async () => {

@@ -160,6 +160,7 @@ const graphEdge = (over: Partial<GraphEdgeRow> = {}): GraphEdgeRow => ({
 
 class InMemoryGraphStore implements IGraphStore {
   readonly seenEntityFilters: EntityFilter[] = [];
+  probeCount = 0;
 
   constructor(
     private readonly entities: readonly GraphEntityRow[],
@@ -197,6 +198,12 @@ class InMemoryGraphStore implements IGraphStore {
     void evaluationId;
     return ok(this.edges.filter((row) => row.targetId === entityId));
   }
+
+  async hasEntities(evaluationId: string): Promise<Result<boolean>> {
+    void evaluationId;
+    this.probeCount += 1;
+    return ok(this.entities.length > 0);
+  }
 }
 
 class InMemoryExtractionReader implements IProcurementExtractionReader {
@@ -230,6 +237,16 @@ class FailingExtractionReader implements IProcurementExtractionReader {
 
   async readTableCells(): Promise<Result<readonly ExtractionTableCell[]>> {
     return err(domainError("INFRA_FAILURE", "sidecar unreachable"));
+  }
+}
+
+class FailingProbeGraphStore extends InMemoryGraphStore {
+  constructor() {
+    super([], []);
+  }
+
+  override async hasEntities(): Promise<Result<boolean>> {
+    return err(domainError("INFRA_FAILURE", "graph store unreachable"));
   }
 }
 
@@ -626,6 +643,48 @@ describe("graph traversal — the assembler's navigation mechanic, built to full
     // on the surface and returns an explicit unavailable, per the availability rule.
     expect(result.data.graphAvailable).toBe(false);
     expect(result.data.entities).toEqual([]);
+  });
+
+  it("probes availability instead of re-reading every entity row", async () => {
+    const store = new InMemoryGraphStore([graphEntity()], []);
+    const tool = toolNamed("graph_find_entities", { graphStore: store });
+
+    const result = await tool.call({ evaluationId: "eval-1", documentId: "other-doc" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.graphAvailable).toBe(true);
+    // The empty match must cost one bounded probe, not a second unfiltered read of
+    // the whole entity table — at corpus scale that read is the mistake the row cap
+    // exists to prevent.
+    expect(store.probeCount).toBe(1);
+    expect(store.seenEntityFilters).toEqual([{ documentId: "other-doc" }]);
+  });
+
+  it("does not probe at all when the traversal already found rows", async () => {
+    const store = new InMemoryGraphStore([graphEntity()], []);
+    const tool = toolNamed("graph_find_entities", { graphStore: store });
+
+    const result = await tool.call({ evaluationId: "eval-1", documentId: "hashA" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.graphAvailable).toBe(true);
+    expect(store.probeCount).toBe(0);
+  });
+
+  it("reports the graph as unavailable when the probe itself fails", async () => {
+    const store = new FailingProbeGraphStore();
+    const tool = toolNamed("graph_edges_from", { graphStore: store });
+
+    const result = await tool.call({ evaluationId: "eval-1", entityId: "hashA:per:0" });
+
+    // A traversal that succeeded is still worth returning; only the availability
+    // claim is lost, and an unprovable graph is reported as unavailable rather than
+    // failing the whole call.
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.graphAvailable).toBe(false);
   });
 
   it("follows edges out of an entity toward the chunk it names", async () => {

@@ -608,7 +608,11 @@ carried as provenance, not as part of the join key (see §7).
    a *runtime* condition, not a build-time one: a graph tool whose evaluation has no
    graph loaded returns an explicit `graphAvailable: false` — it is never dropped
    from the surface, and an empty match over a *loaded* graph is distinguished from
-   an absent one so the assembler cannot mistake the two. An assembler that cannot
+   an absent one so the assembler cannot mistake the two. That distinction is drawn
+   by `IGraphStore.hasEntities`, a bounded existence probe (`LIMIT 1`, unordered)
+   consulted only when a traversal came back empty: the answer is a boolean, and
+   reading an evaluation's entity rows to count them would be the same unbounded
+   read the row cap above exists to prevent. An assembler that cannot
    ground a section in retrievable data reports what it could not reach rather than
    writing the section anyway. Deriving the tool surface from a config flag is how
    an earlier revision of this section came to assert "no graph" while
