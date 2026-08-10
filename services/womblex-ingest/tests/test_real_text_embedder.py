@@ -129,3 +129,24 @@ def test_an_empty_engine_response_is_refused() -> None:
     # surface as an unranked topic, not as the engine call that silently failed.
     with pytest.raises(ValueError):
         build_embedder(RecordingEmbedTexts([])).embed("x")
+
+
+def test_construction_does_not_import_womblex(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The read seam is a womblex-FREE image by design (architecture.md §1), but
+    # `build_text_embedder("real")` runs at app start-up. Resolving the engine
+    # binding in __init__ therefore made an unrelated capability — query
+    # embedding, whose similarity search ADR-0018's addendum defers — fatal to
+    # boot: the sidecar exited with ModuleNotFoundError before serving a single
+    # extraction read. Construction must stay inert.
+    def explode(*_args: Any, **_kwargs: Any) -> QueryEmbedStage:
+        raise ModuleNotFoundError("No module named 'womblex'")
+
+    monkeypatch.setattr(
+        "womblex_ingest.real_extractor.load_womblex_query_embed_stage", explode
+    )
+
+    embedder = RealWomblexTextEmbedder()
+
+    # Only asking for a vector may reach for the engine.
+    with pytest.raises(ModuleNotFoundError):
+        embedder.embed("x")

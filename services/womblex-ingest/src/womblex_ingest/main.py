@@ -41,6 +41,10 @@ def embeddings_key(evaluation_id: str, document_id: str) -> str:
 class IngestRequest(BaseModel):
     evaluationId: str
     documentNames: List[str]
+    # Optional: which womblex run to read. Omitted reads the latest run under the
+    # evaluation's prefix, so every existing caller keeps working; an explicit id
+    # pins a specific run (the real extractor selects it — the stub ignores it).
+    runId: Optional[str] = None
 
 
 class QueryEmbeddingRequest(BaseModel):
@@ -108,7 +112,9 @@ def build_app(
         prefix = f"proc/{evaluation_id}/"
 
         try:
-            result = extractor.extract(evaluation_id, request.documentNames)
+            result = extractor.extract(
+                evaluation_id, request.documentNames, request.runId
+            )
         except Exception as extraction_error:  # womblex failure is a runtime seam error
             registry.mark_failed(run.run_id, str(extraction_error))
             return _error(502, "EXTRACTION_FAILED", str(extraction_error), run_id=run.run_id)
@@ -139,9 +145,9 @@ def build_app(
                 "application/json",
             )
 
-        # Project chunks + embeddings into redline's own store (item 1a,
-        # ADR-0017/0018) alongside the durable MinIO shards, so the cold-start
-        # classifier (item 1b) can fetch them by provenance. The store is present
+        # Project chunks + embeddings into redline's own store (ADR-0017/0018)
+        # alongside the durable MinIO shards, so the cold-start
+        # classifier can fetch them by provenance. The store is present
         # only when a deployment wired a DSN; the stub / air-gapped lane skips it
         # and serves purely from the shards + JSON seam. A store write failure
         # fails the run loudly rather than leaving the store silently behind the

@@ -132,9 +132,13 @@ the spans into `redline_money_spans` off the same scratch dir. Run it on demand
 once a run has drained:
 
 ```sh
-podman compose -f ../../infra/docker-compose.yml --profile money \
-  run --rm money --evaluation-id <evaluationId>
+podman compose -f ../../infra/docker-compose.yml --profile stage \
+  run --rm stage --stage money --run-id <runId>
 ```
+
+This sidecar package previously carried its own `money_stage.py` for that bridge.
+Upstream generalised the shape across every stage (ADR-0021), so the redline copy
+was deleted rather than kept in parallel.
 
 The `money:` section (vocabulary, vetoes, currency default) is read from the same
 `infra/womblex/redline.yaml` the worker runs with (`WOMBLEX_CONFIG`), so the

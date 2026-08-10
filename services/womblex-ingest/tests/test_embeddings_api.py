@@ -106,8 +106,8 @@ def test_embeddings_are_absent_independently_of_the_extraction(
     """
 
     class ExtractorWithoutEmbedStage(StubExtractor):
-        def extract(self, evaluation_id, document_names):  # type: ignore[override]
-            result = super().extract(evaluation_id, document_names)
+        def extract(self, evaluation_id, document_names, run_id=None):  # type: ignore[override]
+            result = super().extract(evaluation_id, document_names, run_id)
             return ExtractionResult(
                 document_count=result.document_count,
                 shards=result.shards,

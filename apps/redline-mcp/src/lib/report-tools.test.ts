@@ -2,10 +2,14 @@ import { describe, it, expect } from "vitest";
 import { domainError, err, isErr, isOk, ok } from "@redline/redline-domain";
 import type {
   ChunkRow,
+  EntityFilter,
   ExtractionChunk,
   ExtractionElement,
   ExtractionTableCell,
+  GraphEdgeRow,
+  GraphEntityRow,
   IChunkStore,
+  IGraphStore,
   IMoneySpanStore,
   IProcurementExtractionReader,
   MoneySpanFilter,
@@ -131,6 +135,70 @@ class InMemoryMoneySpanStore implements IMoneySpanStore {
   }
 }
 
+const graphEntity = (over: Partial<GraphEntityRow> = {}): GraphEntityRow => ({
+  documentId: "hashA",
+  entityId: "hashA:per:0",
+  entityLabel: "person",
+  name: "Jane Doe",
+  entityType: "natural",
+  role: "seller",
+  mentionStart: 10,
+  mentionEnd: 18,
+  chunkIndex: 3,
+  ...over,
+});
+
+const graphEdge = (over: Partial<GraphEdgeRow> = {}): GraphEdgeRow => ({
+  documentId: "hashA",
+  sourceId: "hashA:per:0",
+  targetId: "hashA:chunk:3",
+  relation: "mentioned_in",
+  propKey: "start",
+  propValue: "10",
+  ...over,
+});
+
+class InMemoryGraphStore implements IGraphStore {
+  readonly seenEntityFilters: EntityFilter[] = [];
+
+  constructor(
+    private readonly entities: readonly GraphEntityRow[],
+    private readonly edges: readonly GraphEdgeRow[],
+  ) {}
+
+  async fetchEntities(
+    evaluationId: string,
+    filter: EntityFilter,
+  ): Promise<Result<readonly GraphEntityRow[]>> {
+    void evaluationId;
+    this.seenEntityFilters.push(filter);
+    return ok(
+      this.entities.filter(
+        (row) =>
+          (filter.documentId === undefined || row.documentId === filter.documentId) &&
+          (filter.entityLabel === undefined || row.entityLabel === filter.entityLabel) &&
+          (filter.chunkIndex === undefined || row.chunkIndex === filter.chunkIndex),
+      ),
+    );
+  }
+
+  async fetchEdgesFrom(
+    evaluationId: string,
+    entityId: string,
+  ): Promise<Result<readonly GraphEdgeRow[]>> {
+    void evaluationId;
+    return ok(this.edges.filter((row) => row.sourceId === entityId));
+  }
+
+  async fetchEdgesTo(
+    evaluationId: string,
+    entityId: string,
+  ): Promise<Result<readonly GraphEdgeRow[]>> {
+    void evaluationId;
+    return ok(this.edges.filter((row) => row.targetId === entityId));
+  }
+}
+
 class InMemoryExtractionReader implements IProcurementExtractionReader {
   constructor(
     private readonly elements: readonly ExtractionElement[],
@@ -169,6 +237,7 @@ const dependencies = (over: Partial<ReportToolDependencies> = {}): ReportToolDep
   chunkStore: new InMemoryChunkStore([chunk()]),
   moneySpanStore: new InMemoryMoneySpanStore([span()]),
   extractionReader: new InMemoryExtractionReader([], [], []),
+  graphStore: new InMemoryGraphStore([graphEntity()], [graphEdge()]),
   ...over,
 });
 
@@ -179,7 +248,7 @@ const toolNamed = (name: string, over: Partial<ReportToolDependencies> = {}) => 
 };
 
 describe("buildReportTools — the surface itself", () => {
-  it("exposes exactly the seven read port methods, each with a description", () => {
+  it("exposes the read port methods plus graph traversal, each with a description", () => {
     const tools = buildReportTools(dependencies());
 
     expect(tools.map((tool) => tool.name)).toEqual([
@@ -190,6 +259,9 @@ describe("buildReportTools — the surface itself", () => {
       "read_extraction_elements",
       "read_extraction_chunks",
       "read_extraction_table_cells",
+      "graph_find_entities",
+      "graph_edges_from",
+      "graph_edges_to",
     ]);
     expect(tools.every((tool) => tool.description.length > 0)).toBe(true);
     expect(tools.every((tool) => tool.title.length > 0)).toBe(true);
@@ -500,6 +572,107 @@ describe("the extraction-reader tools", () => {
     expect(isErr(result)).toBe(true);
     if (!isErr(result)) return;
     expect(result.error.code).toBe("INFRA_FAILURE");
+  });
+});
+
+describe("graph traversal — the assembler's navigation mechanic, built to full shape", () => {
+  it("finds entities filtered field by field, ordered stably", async () => {
+    const store = new InMemoryGraphStore(
+      [
+        graphEntity({ entityId: "p0", entityLabel: "person", chunkIndex: 3 }),
+        graphEntity({ entityId: "l0", entityLabel: "location", chunkIndex: 3 }),
+      ],
+      [],
+    );
+    const tool = toolNamed("graph_find_entities", { graphStore: store });
+
+    const result = await tool.call({
+      evaluationId: "eval-1",
+      documentId: "hashA",
+      entityLabel: "person",
+    });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(store.seenEntityFilters.at(-1)).toEqual({ documentId: "hashA", entityLabel: "person" });
+    expect((result.data.entities as GraphEntityRow[]).map((row) => row.entityId)).toEqual(["p0"]);
+  });
+
+  it("reports the graph as available when the evaluation holds any entity", async () => {
+    const tool = toolNamed("graph_find_entities", {
+      graphStore: new InMemoryGraphStore([graphEntity()], []),
+    });
+
+    const result = await tool.call({ evaluationId: "eval-1", documentId: "other-doc" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    // No entity matches this document, but the graph IS loaded — an empty match is
+    // not the same as an absent graph, and the assembler must be able to tell.
+    expect(result.data.graphAvailable).toBe(true);
+    expect(result.data.available).toBe(0);
+  });
+
+  it("reports the graph as unavailable when no enrich run has loaded one", async () => {
+    const tool = toolNamed("graph_find_entities", {
+      graphStore: new InMemoryGraphStore([], []),
+    });
+
+    const result = await tool.call({ evaluationId: "eval-1", documentId: "hashA" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    // The runtime-absent case, surfaced rather than silently thin: the tool stays
+    // on the surface and returns an explicit unavailable, per the availability rule.
+    expect(result.data.graphAvailable).toBe(false);
+    expect(result.data.entities).toEqual([]);
+  });
+
+  it("follows edges out of an entity toward the chunk it names", async () => {
+    const store = new InMemoryGraphStore(
+      [graphEntity()],
+      [
+        graphEdge({ sourceId: "hashA:per:0", targetId: "hashA:chunk:3" }),
+        graphEdge({ sourceId: "other", targetId: "hashA:chunk:9" }),
+      ],
+    );
+    const tool = toolNamed("graph_edges_from", { graphStore: store });
+
+    const result = await tool.call({ evaluationId: "eval-1", entityId: "hashA:per:0" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect((result.data.edges as GraphEdgeRow[]).map((row) => row.targetId)).toEqual([
+      "hashA:chunk:3",
+    ]);
+    expect(result.data.graphAvailable).toBe(true);
+  });
+
+  it("follows edges into an entity", async () => {
+    const store = new InMemoryGraphStore(
+      [graphEntity()],
+      [graphEdge({ sourceId: "a", targetId: "t" }), graphEdge({ sourceId: "b", targetId: "t" })],
+    );
+    const tool = toolNamed("graph_edges_to", { graphStore: store });
+
+    const result = await tool.call({ evaluationId: "eval-1", entityId: "t" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect((result.data.edges as GraphEdgeRow[]).map((row) => row.sourceId)).toEqual(["a", "b"]);
+  });
+
+  it("reports edge traversal unavailable when no graph is loaded", async () => {
+    const tool = toolNamed("graph_edges_from", {
+      graphStore: new InMemoryGraphStore([], []),
+    });
+
+    const result = await tool.call({ evaluationId: "eval-1", entityId: "hashA:per:0" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.graphAvailable).toBe(false);
+    expect(result.data.edges).toEqual([]);
   });
 });
 

@@ -69,6 +69,8 @@ export class ClassifyWithHardRules {
           requirementId: outcome.topicId,
           confidence: RULE_MATCH_CONFIDENCE,
           sourceChunkId: null,
+          sourceElementOrder: null,
+          unclassified: null,
         });
       } else {
         unclaimedDocumentIds.push(outcome.documentId);

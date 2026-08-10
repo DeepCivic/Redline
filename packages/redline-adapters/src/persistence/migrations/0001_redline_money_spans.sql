@@ -1,4 +1,4 @@
--- redline_ schema — money spans (delivery-plan §2 item 1, ADR-0017/0018).
+-- redline_ schema — money spans (ADR-0017/0018).
 -- One row per `locus='table_cell'` money span, materialised from womblex's
 -- `*.money_spans.parquet` into redline's own store so bulk columnar pricing data
 -- is queried in place rather than parsed in TypeScript. Hand-authored to mirror

@@ -269,3 +269,14 @@ def test_load_extraction_rejects_a_chunk_id_without_a_numeric_ordinal() -> None:
 
     with pytest.raises(ValueError):
         load_extraction(store, EVAL, broken, embeddings=None)
+
+
+def test_postgres_chunk_store_runtime_dependency_is_declared() -> None:
+    # The store's driver is imported inside __init__, so an undeclared dependency
+    # is invisible to every test that uses a fake — and only surfaces when a built
+    # image boots with REDLINE_DATABASE_URL set, as ModuleNotFoundError before the
+    # app serves anything. Importing it here binds the declaration to the suite.
+    # A bad DSN must fail as a CONNECTION error, never as a missing module.
+    import psycopg
+
+    assert hasattr(psycopg, "connect")

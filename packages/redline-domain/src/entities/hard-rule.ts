@@ -9,6 +9,32 @@ const WILDCARD = "*";
 
 const literalLength = (pattern: string): number => pattern.split(WILDCARD).join("").length;
 
+// The characters a subject can carry, mirroring the candidate deriver: a
+// subject is a separator-free token of letters, digits, hyphens and
+// underscores. Any literal character outside this set can never appear in a
+// subject, so a pattern that pins it is unmatchable.
+const EMITTABLE_LITERAL = /^[\p{L}\p{N}_-]*$/u;
+const HAS_LETTER = /\p{L}/u;
+const HAS_DIGIT = /\p{N}/u;
+
+const hasWildcard = (pattern: string): boolean => pattern.includes(WILDCARD);
+
+const literalCharacters = (pattern: string): string => pattern.split(WILDCARD).join("");
+
+// True when some subject the deriver can emit could match the pattern. Every
+// literal character must be one a subject can carry; and a wildcard-free
+// pattern must itself be a valid identifier, because with no wildcard it has to
+// equal a whole subject exactly — which means a letter and a digit, and no
+// leading or trailing separator. `SEC-*` passes with no digit because the
+// wildcard supplies one.
+const isMatchable = (pattern: string): boolean => {
+  if (!EMITTABLE_LITERAL.test(literalCharacters(pattern))) return false;
+  if (hasWildcard(pattern)) return true;
+
+  if (!HAS_LETTER.test(pattern) || !HAS_DIGIT.test(pattern)) return false;
+  return !/^[-_]/.test(pattern) && !/[-_]$/.test(pattern);
+};
+
 const escapeRegExp = (literal: string): string => literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const patternToRegExp = (pattern: string): RegExp =>
@@ -55,6 +81,19 @@ export const makeHardRule = (input: MakeHardRuleInput): Result<HardRule> => {
   if (literalLength(pattern) === 0) {
     return err(
       domainError("VALIDATION_FAILED", "hard rule pattern must pin at least one character"),
+    );
+  }
+
+  // A hard rule matches an identifier token, never prose — the candidate
+  // deriver only ever offers separator-free tokens carrying a letter and a
+  // digit. A pattern no such token can satisfy would silently never fire and
+  // fall through to the model, so it is an authoring error caught here.
+  if (!isMatchable(pattern)) {
+    return err(
+      domainError(
+        "VALIDATION_FAILED",
+        `hard rule ${id} pattern "${pattern}" can match no identifier: a subject is a separator-free token carrying a letter and a digit`,
+      ),
     );
   }
 

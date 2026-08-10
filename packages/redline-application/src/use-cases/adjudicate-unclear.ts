@@ -3,7 +3,9 @@ import {
   ok,
   err,
   domainError,
+  type AdjudicatedTopic,
   type AdjudicationCandidate,
+  type AdjudicationPassage,
   type AdjudicationRequest,
   type ClassificationRequest,
   type IAdjudicator,
@@ -14,9 +16,13 @@ import {
 // AdjudicateUnclear — the third leg of the lens's first-pass classification
 // (design doc §3, "LLM adjudication → clear match + one-sentence rationale").
 // It runs *only* on what retrieval left genuinely unclear: for each
-// such document it asks the IAdjudicator port to choose among the contending
-// topics and to say, in one sentence, why. What retrieval settled cleanly, and
-// what a hard rule already claimed, never reach the model.
+// such document it asks the IAdjudicator port which of the contending topics the
+// document addresses, and to say, in one sentence, why. What retrieval settled
+// cleanly, and what a hard rule already claimed, never reach the model.
+//
+// A document addressing more than one topic yields one row per topic, each
+// sourced from the chunk the model cited as placing it. A document addressing
+// none yields no rows.
 //
 // This is one independent leg of §3, composed by the caller, not chained to the
 // hard-rule pre-pass or retrieval (no orchestrator, D4). The caller decides what
@@ -36,14 +42,13 @@ export interface AdjudicatedClassification extends RequirementClassification {
 }
 
 // One document retrieval could not cleanly separate, together with the passages
-// the model should read and the topics in contention. `sourceChunkId` is the
-// chunk that surfaced the ambiguity (retrieval's strongest chunk), preserved so
-// the adjudicated row still names its provenance.
+// the model should read and the topics in contention. Each passage carries the
+// chunk it came from, so the verdict can cite the chunk that placed a topic and
+// each emitted row names its own provenance.
 export interface UnclearDocument {
   readonly documentId: string;
-  readonly passages: readonly string[];
+  readonly passages: readonly AdjudicationPassage[];
   readonly candidates: readonly AdjudicationCandidate[];
-  readonly sourceChunkId: string | null;
 }
 
 export interface AdjudicateUnclearDependencies {
@@ -88,34 +93,59 @@ export class AdjudicateUnclear {
       const verdict = await this.dependencies.adjudicator.adjudicate(adjudicationRequest);
       if (isErr(verdict)) return err(verdict.error);
 
-      // The model must choose one of the topics it was offered — never invent
-      // one. The port promises this; the use-case enforces it at the boundary.
-      const chosen = document.candidates.find(
-        (candidate) => candidate.topicId === verdict.data.chosenTopicId,
-      );
-      if (!chosen) {
-        return err(
-          domainError(
-            "VALIDATION_FAILED",
-            `adjudicator chose topic '${verdict.data.chosenTopicId}', which was not offered for document '${document.documentId}'`,
-          ),
-        );
-      }
-
-      // The chosen topic's id is the requirement's id it projects to (ADR-0010),
-      // so it is written straight into `requirementId` — no mapping table, the
-      // same move the hard-rule and retrieval paths make.
-      rows.push({
-        documentId: document.documentId,
-        requirementId: chosen.topicId,
-        // Adjudication is a decision, not a ranked score — a settled unclear
-        // case is treated as certain (like a hard-rule claim, confidence 1).
-        confidence: 1,
-        sourceChunkId: document.sourceChunkId,
-        rationale: verdict.data.rationale,
-      });
+      const emitted = emitRows(document, verdict.data.topics);
+      if (isErr(emitted)) return err(emitted.error);
+      rows.push(...emitted.data);
     }
 
     return ok(rows);
   }
 }
+
+// One row per topic the document addresses. A topic's id is the requirement's id
+// it projects to (ADR-0010), so it is written straight into `requirementId` — no
+// mapping table, the same move the hard-rule and retrieval paths make.
+const emitRows = (
+  document: UnclearDocument,
+  topics: readonly AdjudicatedTopic[],
+): Result<readonly AdjudicatedClassification[]> => {
+  const offeredTopicIds = new Set(document.candidates.map((candidate) => candidate.topicId));
+  const rows: AdjudicatedClassification[] = [];
+
+  for (const topic of topics) {
+    // The model must name a topic it was offered — never invent one. The port
+    // promises this; the use-case enforces it at the boundary.
+    if (!offeredTopicIds.has(topic.topicId)) {
+      return err(
+        domainError(
+          "VALIDATION_FAILED",
+          `adjudicator returned topic '${topic.topicId}', which was not offered for document '${document.documentId}'`,
+        ),
+      );
+    }
+
+    const [evidenceChunkId] = topic.evidenceChunkIds;
+    if (evidenceChunkId === undefined) {
+      return err(
+        domainError(
+          "VALIDATION_FAILED",
+          `adjudicator returned topic '${topic.topicId}' with no evidence for document '${document.documentId}'`,
+        ),
+      );
+    }
+
+    rows.push({
+      documentId: document.documentId,
+      requirementId: topic.topicId,
+      // Adjudication is a decision, not a ranked score — a settled unclear case
+      // is treated as certain (like a hard-rule claim, confidence 1).
+      confidence: 1,
+      sourceChunkId: evidenceChunkId,
+      sourceElementOrder: null,
+      unclassified: null,
+      rationale: topic.rationale,
+    });
+  }
+
+  return ok(rows);
+};

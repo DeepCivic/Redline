@@ -1,4 +1,4 @@
--- redline_ schema — chunk store (delivery-plan §2 item 1, ADR-0017/0018).
+-- redline_ schema — chunk store (ADR-0017/0018).
 -- womblex's chunks + embeddings materialised into redline's own Postgres,
 -- addressed by provenance and returned byte-identical, so the classifier reads
 -- passages in place rather than being shipped bulk JSON vectors (ADR-0014's

@@ -44,22 +44,3 @@ HEALTHCHECK --interval=10s --timeout=5s --retries=6 \
   CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=4).status==200 else 1)"]
 
 CMD ["uvicorn", "womblex_ingest.asgi:app", "--host", "0.0.0.0", "--port", "8000"]
-
-# ── money target ─────────────────────────────────────────────────────────────
-# The money annotation step (item 1) runs womblex's own `money_shards()`, so
-# unlike the read-seam sidecar above it needs the engine installed. This target
-# adds the `[womblex]` extra (womblex + pyarrow) on top of the base image; the
-# `money` compose service builds it and runs `python -m womblex_ingest.money_stage`.
-# The read seam stays the default (womblex-free) image.
-FROM python:3.12-slim AS womblex
-
-WORKDIR /app
-COPY pyproject.toml ./
-COPY src ./src
-
-RUN pip install --no-cache-dir '.[womblex]'
-
-ENV S3_ENDPOINT=http://minio:9000 \
-    S3_ACCESS_KEY=minioadmin \
-    S3_SECRET_KEY=minioadmin \
-    REDLINE_BUCKET=redline

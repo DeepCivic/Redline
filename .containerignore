@@ -1,0 +1,25 @@
+# Keeps the web-app build context lean and reproducible. Paths are relative to
+# the repo root (the build context). node_modules and build output are excluded
+# so the container installs and builds fresh rather than copying host artefacts
+# that were built for a different platform.
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/coverage
+**/.venv
+**/.ruff_cache
+.git
+vendor/wayfinder
+**/.env
+**/.env.*
+.redline-scratch
+
+# The Python submodules are not in either pnpm workspace — neither the root
+# (apps/*, packages/*, vendor/wayfinder/packages/*) nor the fork's globs reach
+# them, and the web image never reads them. They build from their OWN contexts
+# in infra/docker-compose.yml. Together with the stale .venv above these are
+# ~680MB of the ~709MB context, so excluding them is most of the build's setup
+# cost.
+services/womblex
+services/numbatch

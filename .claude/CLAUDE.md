@@ -37,6 +37,12 @@ step including its test, one commit, one package where possible, an explicit
 joins two independently-testable behaviours, spans two languages, or introduces a
 new entity *and* port *and* adapter at once.
 
+**The review step between planning and building stays.** It has paid for itself:
+the 2026-08-09 scope decisions reached `/doc-review` carrying two false claims —
+a descope record implying a staging runbook the plan says does not exist, and an
+assertion that nothing served calls the run use cases — and both were corrected
+rather than shipped. Wording is not what it catches; claims are.
+
 ---
 
 ## Project Identity
@@ -57,8 +63,10 @@ design, and its item numbers are local to that file and renumbered whenever the
 outstanding set changes.
 
 Both upstream Python engines are **git submodules** consumed for their existing
-capabilities, not reimplemented: `services/womblex` (`v0.3.0`) and
-`services/numbatch` (`72bcead`). A submodule holds upstream source only — redline's
+capabilities, not reimplemented: `services/womblex` (`f283969` — an untagged
+`main` commit ahead of `v0.3.0`, taken for `womblex run-stage`; it returns to a
+tag at the next release) and `services/numbatch` (`72bcead`). A submodule holds
+upstream source only — redline's
 own code sits beside it (`services/womblex-ingest`, `services/numbatch-extension`).
 Run `git submodule update --init` on a fresh clone. Wayfinder is also vendored
 from a build-time pin (`wayfinder.pin`, johntooth/wayfinder) because vendoring

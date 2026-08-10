@@ -22,7 +22,7 @@ describe("ClassifyResponseGroup", () => {
       async classifyResponseGroup(request) {
         seen = request;
         return ok([
-          { documentId: "doc-a", requirementId: "req-1", confidence: 0.9, sourceChunkId: null },
+          { documentId: "doc-a", requirementId: "req-1", confidence: 0.9, sourceChunkId: null, sourceElementOrder: null, unclassified: null },
         ]);
       },
     };

@@ -115,6 +115,34 @@ Both environment variables are load-bearing, and neither is the script's default
 The default (`smoke-<timestamp>`, torn down at exit) is right for proving the
 engine works and wrong for every real corpus.
 
+### What that one command actually runs
+
+`womblex run`/`worker` persists **extraction only**. It computes chunking when
+`chunking.enabled` and then throws it away — `write_batch_parquet` hands
+`write_results` just `(doc_id, path, extraction)`, and chunks hang off
+`result.chunks`. Every downstream layer is a separate pass, which is what the
+script's `run-stage` loop does:
+
+```
+worker → chunk → embed → enrich → money
+```
+
+Four things about that order are not obvious from the config:
+
+- **Chunk before embed, and chunk before enrich.** Ordering between stages is
+  the caller's; nothing enforces it.
+- **Enrich after chunk is load-bearing but silent.** Chunks are a *non-strict*
+  input to enrich, so enrich-first still succeeds — and lands every entity with
+  `chunk_index = -1`, a graph that cannot be joined to chunk text.
+- **Money is independent.** It reads the *element* shards, not enrich's, so it
+  needs no config change and no predecessor beyond the worker.
+- **The `run` pass does chunking twice unless you turn it off.** Setting
+  `chunking.enabled: false` avoids the wasted work and is safe for `run-stage`,
+  which ignores the flag — but `womblex chunk --config` **refuses outright**
+  when it is false, so do not flip it if anyone uses that composition. The waste
+  is CPU and wall clock, not Isaacus spend: redline sets no `chunking_model`, so
+  chunking is local semchunk over a vendored tokeniser.
+
 Then seed an evaluation from a manifest. Pass an **absolute** path: `pnpm
 --filter` runs the script with the package directory as its working directory,
 so a relative path resolves against `apps/web` rather than where you typed it.
@@ -153,7 +181,7 @@ from anything you can read off the corpus directory.
       { "id": "support", "name": "Support", "definition": "Service levels, response times and escalation." }
     ],
     "rules": [
-      { "id": "rule-sla", "pattern": "service level", "topicId": "support" }
+      { "id": "rule-sla", "pattern": "A-03", "topicId": "support" }
     ]
   },
   "vendors": [
@@ -171,6 +199,13 @@ A document belongs to exactly one group: the manifest parser rejects a document
 claimed by two, naming both. Rules are matched by specificity then declaration
 order, so their order in the file is load-bearing.
 
+**A rule's `pattern` matches an identifier token, never prose.** The pre-pass
+splits element text into separator-free tokens and keeps only those carrying a
+letter *and* a digit (`A-03`, `ISO27001`, `C-C14`); `*` is the only wildcard.
+So `"service level"` matches nothing — it has a space no token can — and
+`"price"` matches nothing either — no digit. `makeHardRule` now rejects such a
+pattern outright, naming the rule, rather than letting it silently never fire.
+
 ## What you can and cannot reach
 
 Once both stacks are up, the `/evaluations` index is linked from the sidebar and
@@ -185,8 +220,8 @@ lens still comes from the hand-written manifest. The grouping page is read-only.
 
 ## Isaacus
 
-The two stages are gated differently, and the difference decides whether you
-need an account.
+The three gated stages differ, and the difference decides whether you need an
+account.
 
 - **`chunk` is gated by policy, not capability.** `chunk_shards` returns early
   when `isaacus_available()` is false — a network-free check for **both** the
@@ -200,12 +235,26 @@ need an account.
   `EXTRAS: cloud,isaacus`. The engine's own Dockerfile defaults to `EXTRAS=cloud`,
   which omits the SDK — and an engine without it skips chunking silently, landing
   extraction shards and nothing else regardless of the key.
+  Under `run-stage` the policy gate **fails the stage loudly** rather than
+  skipping silently — the behaviour the untagged womblex pin was taken for.
 - **`embed` genuinely needs a real key** (`kanon-2-embedder` is an API call).
+- **`enrich` genuinely needs a real key too** (`kanon-2-enricher`), and it is on
+  by default as of 2026-08-06: `enrichment.enabled: true` in
+  `infra/womblex/redline.yaml`, because the pilot-report items read the graph.
+  This is the first real Isaacus spend beyond embeddings.
 
 Chunks are what the cold-start classifier reads — `IChunkStore`'s row has no
 embedding field, and similarity search is deferred — so the
 embeddings are inert for this path. The store-load path writes `embedding=None`
 without complaint.
 
-**A UAT run therefore needs no Isaacus account.** A pilot that wants
-nearest-neighbour placement does.
+**A UAT run now needs a real Isaacus key**, because the script drives `embed`
+and `enrich`. To run without an account, set `ISAACUS_API_KEY=uat-local` and
+`enrichment.enabled: false`, and expect the script to fail at `embed` — you get
+extraction and chunks, which is enough for the cold-start classifier and not
+enough for the graph.
+
+`linking.enabled` stays **false**, and is not the same thing as enrichment. The
+graph comes from `enrich`; `link` writes `*.entity_links.parquet`, which nothing
+in redline reads, and its preflight hard-fails without a `linking.reference`
+register — a tender corpus has none to point at.

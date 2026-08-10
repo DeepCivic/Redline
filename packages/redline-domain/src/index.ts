@@ -26,10 +26,11 @@ export * from "./entities/ambiguity-signal";
 export * from "./entities/ambiguity-derivation";
 
 // Ports
-// Adjudication — the lens's LLM seam; picks among contending topics
-// for what retrieval left unclear and returns a one-sentence rationale.
+// Adjudication — the lens's LLM seam. One call per document returns every topic
+// the document addresses, each with the chunks that placed it, plus the call's
+// token cost and, for a document that addresses nothing, an exception.
 export * from "./ports/adjudicator";
-// Retrieval store — the ADR-0018 store-side query surface (item 1a/1b). Exact
+// Retrieval store — the ADR-0018 store-side query surface. Exact
 // fetch by provenance ships now; vector similarity (findSimilar) is declared
 // but deferred (ADR-0018 addendum). No vector ever crosses this seam.
 export * from "./ports/chunk-store";
@@ -52,5 +53,10 @@ export * from "./ports/language-model";
 // alignment happens above this seam, and has more than one owner — the grid's
 // extractor and the report assembler each read the same rows their own way.
 export * from "./ports/money-span-store";
+// Enrichment graph — the store-side view of womblex's `enrich` output (entities +
+// directed edges), materialised into the redline_ store (ADR-0017/0018). The
+// report assembler's navigation mechanic: entity → mentioned_in edge → chunk →
+// verbatim text. No graph loaded is an empty read, never an error.
+export * from "./ports/graph-store";
 export * from "./ports/procurement-classifier";
 export * from "./ports/procurement-extraction-reader";

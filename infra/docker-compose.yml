@@ -20,14 +20,22 @@
 #               loads the spans into redline_money_spans
 #               (`compose --profile money run --rm money --evaluation-id <id>`).
 #               Needs the `[womblex]` extra, so it builds its own image target.
+#   stage     — one downstream shard stage (chunk / embed / enrich / …), run on
+#               demand after a womblex run has drained: lists the run's shard
+#               prefix, stages a unit down, runs the engine's own `*_shards()`
+#               and publishes the declared siblings back
+#               (`compose --profile stage run --rm stage --stage chunk
+#                 --run-id <runId>`). Ordering between stages is the caller's.
+#               Publishes to object storage only — the money store load is the
+#               `money` profile's job.
 #   womblex   — the real womblex engine, built from the ../services/womblex
 #               submodule using ITS OWN Dockerfile and run through ITS OWN cloud
 #               runner (Postgres job queue + scalable `worker`), sharing MinIO.
 #               womblex is a REQUIRED subsystem (Finding 2 / D5) with a heavy
 #               OCR/tokeniser/model runtime, so it stays out of the API sidecar's
-#               image. It extracts + chunks (+ embeds when ISAACUS_API_KEY is set)
-#               an enqueued corpus and publishes the shards under
-#               proc/{evaluationId}/. Scale with `up --scale womblex=4 womblex`.
+#               image. It publishes EXTRACTION shards under proc/{evaluationId}/;
+#               chunk and embed are separate passes via the `stage` profile.
+#               Scale with `up --scale womblex=4 womblex`.
 #   numbatch  — the Numbatch stack, all-but-frontend: postgres + redis + minio +
 #               backend API + Arq worker + inference service + one-shot migrate
 #               (ADR-0004/ADR-0005 — the SvelteKit frontend is excluded,
@@ -74,7 +82,7 @@ services:
     image: docker.io/minio/minio:latest
     # Every profile whose services depend_on minio must list it, or compose
     # rejects the project outright ("depends on undefined service").
-    profiles: ["ingest", "numbatch", "womblex", "womblex-cli", "money"]
+    profiles: ["ingest", "numbatch", "womblex", "womblex-cli", "stage"]
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
@@ -133,6 +141,10 @@ services:
   # sidecar above, this needs `womblex` installed, so it builds the `[womblex]`
   # image target.
   #
+  # The `stage` service below cannot replace this one: `run-stage` publishes
+  # sidecars to object storage and stops, so the load into `redline_money_spans`
+  # has no upstream equivalent. Compute is shared; the store write is redline's.
+  #
   #   podman compose -f infra/docker-compose.yml --profile money \
   #     run --rm money --evaluation-id <evaluationId>
   money:
@@ -162,8 +174,45 @@ services:
       # means running the stage again (offline and API-free, so cheap).
       REDLINE_DATABASE_URL: ${REDLINE_DATABASE_URL:-postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}}
     volumes:
-      - ./womblex:/app/redline-config:ro
+      # `:z` relabels for SELinux. Lowercase deliberately — three services mount
+      # this same directory, and `:Z` stamps private MCS categories that lock the
+      # other two out.
+      - ./womblex:/app/redline-config:z
     entrypoint: ["python", "-m", "womblex_ingest.money_stage"]
+
+  # ── downstream shard stages (chunk / embed / enrich / …) ──────────────────
+  # `womblex run`/`worker` persists EXTRACTION shards only — it computes chunking
+  # and then discards it (`operations/persist.py` hands `write_results` just the
+  # extraction). Every downstream stage is a separate pass over the run's shard
+  # prefix, and the engine's own `run-stage` is that pass: it lists one sidecar
+  # class under the prefix, stages a unit down, calls the unchanged `*_shards()`
+  # function, and publishes the declared outputs back — all of them or none.
+  #
+  # Ordering is the caller's: chunk before embed, both after the fleet drains.
+  #   podman compose -f infra/docker-compose.yml --profile stage \
+  #     run --rm stage --stage chunk --run-id <runId>
+  stage:
+    build:
+      context: ../services/womblex
+      # Same reason as the engine services below: `isaacus` gates the chunk and
+      # embed contracts. Without the SDK, run-stage refuses outright rather than
+      # publishing nothing — which is why the extra is not optional here either.
+      args:
+        EXTRAS: cloud,isaacus
+    profiles: ["stage"]
+    depends_on:
+      minio:
+        condition: service_healthy
+      redline-postgres:
+        condition: service_healthy
+    environment:
+      <<: *womblex-env
+    volumes:
+      # `:z` relabels for SELinux. Lowercase deliberately — three services mount
+      # this same directory, and `:Z` stamps private MCS categories that lock the
+      # other two out.
+      - ./womblex:/app/redline-config:z
+    entrypoint: ["womblex", "run-stage"]
 
   # ── the report tool surface (MCP) ─────────────────────────────────────────
   # redline's seven read ports served as an MCP server over streamable HTTP, for a
@@ -229,7 +278,11 @@ services:
       test: ["CMD-SHELL", "pg_isready -U womblex"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      # 5 minutes, not 50s: first-run `initdb` on slow storage overruns a short
+      # budget and compose fails the whole `up` with "dependency failed to
+      # start … is unhealthy", which points at everything except the cause. A
+      # genuinely broken database still fails, just later.
+      retries: 60
 
   # One-shot: create the queue schema (`womblex jobs --create-schema`).
   womblex-init:
@@ -267,7 +320,7 @@ services:
         condition: service_healthy
     environment: *womblex-env
     volumes:
-      - ./womblex:/app/redline-config:ro
+      - ./womblex:/app/redline-config:z
 
   # The engine itself. Scale horizontally: `up --scale womblex=4 womblex`.
   womblex:
@@ -287,7 +340,7 @@ services:
         condition: service_healthy
     environment: *womblex-env
     volumes:
-      - ./womblex:/app/redline-config:ro
+      - ./womblex:/app/redline-config:z
     command: ["worker", "--config", "/app/redline-config/redline.yaml",
               "--poll-interval", "5", "--stale-timeout", "900"]
 
@@ -415,7 +468,9 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${REDLINE_DB_USER:-redline} -d ${REDLINE_DB_NAME:-redline}"]
       interval: 5s
       timeout: 5s
-      retries: 12
+      # See womblex-queue: 5 minutes so first-run `initdb` on slow storage does
+      # not fail the `up` before the database has finished initialising.
+      retries: 60
 
 volumes:
   minio-data:

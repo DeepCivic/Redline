@@ -12,7 +12,7 @@
 >
 > It is written against the *actual* behaviour of
 > the upstream engines (womblex is vendored as a submodule at `services/womblex`,
-> pinned to `v0.3.0`; Numbatch is a submodule at `services/numbatch`), not against
+> pinned to `f283969`; Numbatch is a submodule at `services/numbatch`), not against
 > aspiration. Where an earlier assumption proved false, the correction is stated
 > plainly under **Corrections to earlier assumptions**.
 
@@ -113,7 +113,7 @@ flowchart TB
 
     sidecar -->|reads Parquet| minio[("MinIO — redline-owned bucket<br/>proc/evaluationId/*.parquet")]
     sidecar -->|loads chunk rows + embeddings| pg
-    engine["services/womblex — SUBMODULE @ v0.3.0<br/>the real engine: extract → chunk → embed"]
+    engine["services/womblex — SUBMODULE @ f283969<br/>the real engine: extract, then run-stage for chunk → embed"]
     engine -->|writes shards| minio
     engine -->|embed stage only| isaacus(["Isaacus API<br/>ISAACUS_API_KEY"])
 
@@ -160,9 +160,9 @@ flowchart TB
 - **`services/womblex`** is built from its **own** Dockerfile and run through its
   **own** cloud runner (Postgres job queue, scalable worker, native S3 staging).
   Only its `embed` stage reaches Isaacus.
-- **`services/womblex-ingest` also runs the `money` op on demand**
-  (`money_stage.py` / the `money` compose profile): it stages an evaluation's
-  shards down, runs womblex's `money_shards()`, and publishes `*.money_spans` /
+- **The `money` op runs on demand like any other stage** (`run-stage --stage
+  money`, the `stage` compose profile): it stages an evaluation's shards down,
+  runs womblex's `money_shards()`, and publishes `*.money_spans` /
   `*.money_columns` back — offline, no Isaacus. See §4 step (2').
 
 **The fork (`services/wayfinder`).** Its `apps/web` serves the
@@ -194,7 +194,8 @@ are merged.
 
 **Three test layers, not two.** The brains and view models are proven
 framework-free under `apps/redline-web/`; the Playwright specs prove the served
-routes but skip until a real corpus has run (delivery-plan §4 item 3). Between
+routes but skip until they are given a populated evaluation to point at, from a
+run or from seeded rows — the corpus is the input, not the milestone. Between
 them, the fork's own vitest suite mounts the `"use client"` components under
 jsdom against a fake `trpc` query and asserts the rows and columns they render,
 so a break in the core→DOM binding fails without a browser or a corpus. `jsdom`
@@ -271,8 +272,9 @@ delineates by brand, and a document may be claimed by only one group, since
 `assignDocument` moves rather than copies. The lens is written **last**: its
 binding row references the evaluation, so the evaluation must exist first, and
 the lens must exist before classification or the reader resolves `NOT_FOUND`. It
-carries **no hard rules** — none can honestly be written before anyone has seen
-how these fields land on this corpus — so every field goes to adjudication.
+carries **no hard rules** — a specialist typing field names supplies topics, not
+patterns, so there is nothing to author a rule from — and every field goes to
+adjudication.
 
 The create half (`stagedCorpusReader`, `lensWriter`) is therefore **on**
 `RedlineModule`, reversing the earlier decision to keep every write part off it.
@@ -281,7 +283,7 @@ reads a corpus manifest and drives `IngestDocuments` → `saveLens` →
 `AssignDocumentsToGroups` → `BuildEvaluationTable`, printing the evaluation id
 that opens the review grid and feeds `E2E_REDLINE_EVALUATION_ID`. It stays the
 only path that can write a lens *with* hard rules, and the deliberate fallback
-for de-risking a live run without a browser (delivery-plan §2 item 1).
+for de-risking a live run without a browser.
 
 ### Why womblex is split into a pod + a sidecar
 
@@ -349,11 +351,17 @@ flowchart TB
 | `womblex chunk` | `*.chunks.parquet` | Isaacus-gated (a policy refusal — §7.1) |
 | `womblex embed` | `*.embeddings.parquet` | only with `ISAACUS_API_KEY` |
 
-NB (v0.3.0): `womblex run` persists only extract shards; `chunk` and `embed` are
-separate per-stage commands (`womblex chunk --shards`, `womblex embed --shards`)
-over the run's shard dir. All shards land under `proc/{evaluationId}/`
-(`batch-NNNN.<role>.parquet`). `source_hash` (SHA-256 of the source bytes) is the
-document identity throughout.
+NB: `womblex run`/`worker` persists **extraction shards only** — it computes
+chunking when `chunking.enabled` and then discards it, because
+`operations/persist.py` hands `write_results` just the extraction. Every
+downstream pass is therefore a separate one over the run's shard prefix, and
+`womblex run-stage` (`f283969`) is that pass: it lists one sidecar class, stages a
+unit down, calls the unchanged `*_shards()` and publishes the declared outputs
+back — all of them or none. It covers normalise, spellfix, chunk, money, enrich,
+embed, link, pii, graph-refresh and quality; ordering between them is the
+caller's. Run it through the `stage` compose profile. All shards land under
+`proc/{evaluationId}/` (`batch-NNNN.<role>.parquet`). `source_hash` (SHA-256 of
+the source bytes) is the document identity throughout.
 
 **(2') Money annotation — the sidecar, on demand (v0.3.0).** Not part of `womblex
 run`/`worker` (offline, API-free, no ordering dependency), so it runs after a run
@@ -427,11 +435,13 @@ advances the stage: `documents_uploaded → grouping`.
 NB: the nearest-neighbour **placing** step is deferred — it is
 the only leg needing vector similarity search (`findSimilar`), not built this
 release. So the cold-start path runs hard rules + adjudication over
-exact/structural fetch, **without** a similarity ranking; the store's stable order
-stands in for provenance (the first fetched chunk is the `sourceChunkId`). Output
-is `RequirementClassification { documentId, requirementId, confidence,
-sourceChunkId }` — identical shape whichever path produced it. Composed as
-`ColdStartClassifier` (redline-application), wired behind the port in
+exact/structural fetch, **without** a similarity ranking; the `sourceChunkId` is
+the chunk the model cited as placing the topic and `sourceElementOrder` is the
+element that chunk came from. Output is
+`RequirementClassification { documentId, requirementId, confidence, sourceChunkId,
+sourceElementOrder, unclassified }` — identical shape whichever path produced it,
+with `requirementId` null and `unclassified` set exactly on the no-match rows.
+Composed as `ColdStartClassifier` (redline-application), wired behind the port in
 `lib/container.ts` (`buildColdStartClassifier`).
 
 **(6') Classification — the trained overlay (later).** Once boundary
@@ -567,10 +577,12 @@ carried as provenance, not as part of the join key (see §7).
    read-only and materialised from a pin.
 
 7. **The report tools expose ports, and expose them uninterpreted.**
-   `apps/redline-mcp` serves exactly seven read port methods —
+   `apps/redline-mcp` serves ten read tools — the deterministic reads
    `IChunkStore.fetchChunks`/`fetchByStructure`,
-   `IMoneySpanStore.fetchByDocument`/`fetchByStructure`, and
-   `IProcurementExtractionReader.readElements`/`readChunks`/`readTableCells` — over
+   `IMoneySpanStore.fetchByDocument`/`fetchByStructure`,
+   `IProcurementExtractionReader.readElements`/`readChunks`/`readTableCells`, and
+   the three graph-traversal reads
+   `IGraphStore.fetchEntities`/`fetchEdgesFrom`/`fetchEdgesTo` — over
    **streamable HTTP**, because Wayfinder's MCP client speaks SSE and
    streamable-HTTP only (no stdio) and addresses servers by URL.
 
@@ -584,14 +596,28 @@ carried as provenance, not as part of the join key (see §7).
    than looking like the whole answer. `postgres-mcp` is still worth having for
    ad-hoc analysis, off this path.
 
-   Two absences are deliberate and bind what a report can claim. There is **no
-   similarity search** (`findSimilar` is deferred) and **no graph** (redline's
-   womblex profile disables enrichment), so both tools an assembler gets are
-   deterministic — exact fetch by key, structural fetch by provenance. It transfers
-   facts it is *pointed at*; the pointing is done by classification, not by the
-   model roaming the corpus. And **money crosses uninterpreted**: an exact decimal
-   `value`, a possibly-unresolved `currency`, and the qualifiers womblex refuses to
-   fold in. Step (7)'s reading is not the shape these tools serve.
+   **The surface is built to its full shape, not to whatever is currently switched
+   on.** The deterministic tools are exact fetch by key and structural fetch by
+   provenance; **graph traversal is built alongside them** (`IGraphStore` →
+   `DrizzleGraphStore` over `redline_graph_entities` / `redline_graph_edges`,
+   mirroring womblex's `enrich` sidecars). It is the report assembler's navigation
+   mechanic (ADR-0017): an entity mention → its `mentioned_in` edge → the chunk it
+   names → the verbatim passage read back through `fetchChunks`. The graph *locates*
+   source rows; the transfer itself stays an exact chunk fetch, and it is **not**
+   vector search. Whether a graph has been loaded, or a similarity index exists, is
+   a *runtime* condition, not a build-time one: a graph tool whose evaluation has no
+   graph loaded returns an explicit `graphAvailable: false` — it is never dropped
+   from the surface, and an empty match over a *loaded* graph is distinguished from
+   an absent one so the assembler cannot mistake the two. An assembler that cannot
+   ground a section in retrievable data reports what it could not reach rather than
+   writing the section anyway. Deriving the tool surface from a config flag is how
+   an earlier revision of this section came to assert "no graph" while
+   `enrichment.enabled` was `true` and a run had already produced 1,771 edges. The
+   one thing deliberately absent is `IChunkStore.findSimilar`, which refuses with
+   NOT_IMPLEMENTED until the pgvector/ANN index lands. And **money crosses
+   uninterpreted**: an exact decimal `value`, a possibly-unresolved `currency`, and
+   the qualifiers womblex refuses to fold in. Step (7)'s reading is not the shape
+   these tools serve.
 
    In Wayfinder it registers with **`communicatesExternally: false`**. The flag
    classifies whether a server talks *outside* Wayfinder; this one reads redline's
@@ -601,6 +627,91 @@ carried as provenance, not as part of the join key (see §7).
    document human-review gate. `true` would register the server but make it **not
    selectable in flows**, which would make the assembler unbuildable.
 
+7. **An evaluation prefix holds many runs; a reader must select one.** The engine
+   publishes under `proc/{evaluationId}/runs/run-<timestamp>/documents/`, and a
+   re-run adds a directory rather than replacing one — the engine's
+   `processing.retention` policy governs its own output root, not this prefix. So
+   `proc/{evaluationId}/` accumulates N copies of every shard class, and any
+   reader that discovers shards by suffix across the whole prefix returns each row
+   N times. The run id is the selector: the stage runner already takes
+   `--run-id`, and every read seam needs the same.
+
+   **This invariant is currently violated.** `RealWomblexExtractor.extract` lists
+   the whole prefix and concatenates by suffix, so served extractions carry
+   duplicated elements and a `elementOrder` that no longer identifies one element.
+   Tracked in the delivery plan; recorded here because the invariant is the
+   durable half and the fix must not be re-derived.
+
+---
+
+## 5.1 What a report is
+
+The review grid is not the product; **the report is** (delivery-plan §2). A corpus
+that is merely extracted, chunked and classified is womblex plus a classifier —
+almost none of that is redline. redline is for the step after: assembling those
+addressable, provenance-tagged facts into a document a procurement specialist hands
+to a delegate. This section settles what that document *is*, so the assembly loop
+can be built and tested against a definition rather than an intuition. Nothing here
+is a rendering concern (that is §2's report-sheet seam); this is the *shape and the
+rules*.
+
+**A report is an ordered list of sections, each grounded in the store.** A section
+is `{ heading, body, citations }`. The **assembler LLM chooses** the heading, the
+ordering and the connective prose of the body — the narrative that frames the
+facts. It **does not author facts**: every load-bearing claim in a body is either a
+**transferred passage** (a chunk's text, copied byte-identical from the store) or a
+**financial expression** (a money span, carried with its exact `value`, `currency`
+and qualifiers as womblex wrote them). A `citation` names the store row a
+transferred passage or expression came from — `chunkId` for a passage, the span's
+provenance anchor for an expression — so every fact in the report resolves back to
+a source location the specialist can open. A section with a body but no citations
+is a defect: it is prose the assembler wrote unaided, which is exactly what the
+verbatim rule exists to prevent.
+
+**The verbatim rule is the testable core, and it is the provenance claim.** A
+transferred passage must be **byte-identical to the chunk it came from** — not
+paraphrased, not trimmed, not re-cased, not re-quoted. This is asserted directly
+against the store (the assembly loop's exit test re-fetches every cited `chunkId`
+and compares bytes), never eyeballed. The reason is not fastidiousness: redline
+sells provenance, and a passage that has been silently reworded no longer
+resolves to the source — the deep-link would land on text the report does not
+contain. The assembler may *quote a fragment* of a chunk, but a quoted fragment
+must be a contiguous substring of the stored chunk, so the byte-comparison still
+holds. Summarising or characterising a passage is the assembler's own prose and
+lives in the connective body, never presented as a transferred fact.
+
+**How the assembler reaches its facts.** It is pointed, not left to roam. The
+pointing comes from classification (a `ProcurementResponse` already names the
+`sourceChunkId`/`sourceElementOrder` that placed a document against a requirement)
+and from the graph (§5 invariant 7: entity → `mentioned_in` edge → chunk). There is
+no similarity search on this path (`findSimilar` is deferred), so the assembler
+transfers facts it is directed to rather than discovering them. **When it cannot
+ground a section in retrievable data it says so** — a section whose supporting graph
+or spans are absent is reported as *unreachable* (a user-facing note naming what it
+could not reach), never written anyway from the model's own knowledge. A run over
+an evaluation with no graph loaded therefore produces a report with an explicit
+unavailability, not a silently thinner one.
+
+**What a specialist can change before export.** A report is a **draft the
+assembler proposes**, and the specialist is the author of record. Before export
+they may: reorder sections; edit or delete a section's heading and connective body;
+and **remove** a transferred passage or a whole section. They may **not** silently
+edit the text of a transferred passage — doing so would break the byte-identity the
+citation asserts, so a passage is either kept verbatim (with its citation) or
+removed (and its citation with it). Adding a *new* transferred passage means citing
+a store row, so the same rule holds by construction. This keeps the specialist in
+control of the report's shape and voice while the provenance guarantee stays
+mechanical: every passage still present in the exported report is still
+byte-identical to a stored chunk.
+
+**What a report is not.** It is not a scoring or a recommendation — redline does not
+rank vendors or decide a tender, and a quality score is a non-goal
+(`design-principles.md`). It is not a fixed template: the sections are the
+assembler's, shaped by what the corpus actually addresses, so a document that
+answers nothing surfaces as a section that says so rather than being forced into a
+heading it does not fill. And it is not the review grid re-typed: the grid is one
+input the assembler may cite, alongside the chunks, spans and graph.
+
 ---
 
 ## 6. Repository layout
@@ -608,16 +719,18 @@ carried as provenance, not as part of the join key (see §7).
 ```
 redline/
 ├── apps/redline-web/              control surface (TypeScript)
-├── apps/redline-mcp/              the report tool surface — seven read ports served
-│                                  as an MCP server over streamable HTTP, plus its
-│                                  Dockerfile (compose profile `report`)
+├── apps/redline-mcp/              the report tool surface — ten read tools served
+│                                  as an MCP server over streamable HTTP (the
+│                                  deterministic chunk/money/extraction fetches plus
+│                                  IGraphStore traversal), plus its Dockerfile
+│                                  (compose profile `report`)
 ├── packages/
 │   ├── redline-domain/            entities + ports (zero deps, Result pattern)
 │   ├── redline-application/       use-cases (orchestration)
 │   ├── redline-adapters/          port implementations (the only code at the seams)
 │   └── redline-shared/            shared kernel
 ├── services/
-│   ├── womblex/                   ◄ SUBMODULE: the real womblex engine @ v0.3.0
+│   ├── womblex/                   ◄ SUBMODULE: the real womblex engine @ f283969
 │   ├── womblex-ingest/            FastAPI read sidecar (reads MinIO Parquet → JSON)
 │   │   ├── src/womblex_ingest/    stub + real extractor, records (wire shape),
 │   │   │                          shard_reader (schema map), storage, embedding,
@@ -662,8 +775,35 @@ redline/
 
 ### Vendoring / pinning discipline
 
-- **womblex** — git **submodule** at `services/womblex`, pinned to tag `v0.3.0`
-  (`b5730b0`). This is the on-disk source of truth for the Parquet schema the
+- **womblex** — git **submodule** at `services/womblex`, pinned to `f283969` — an
+  **untagged `main` commit**, deliberately ahead of the last release (`v0.3.0`,
+  `b5730b0`), for `womblex run-stage`.
+
+  **Why an untagged pin was accepted.** At `v0.3.0` the engine's distributed path
+  stops at extraction: `write_batch_parquet` hands `write_results` only the
+  extraction, so the chunks `batch.py` computes are discarded, and every
+  downstream stage was a `--shards` command taking a *local* directory while
+  redline's shards live in object storage. The consequence was not slowness but
+  silence — **no path in redline produced chunks at all**, and chunks are what the
+  cold-start classifier reads, so a corpus run completed, landed extraction shards
+  and left `redline_chunks` empty with nothing failing. `f283969` adds `run-stage`,
+  which generalises the stage-in/run/stage-out shape to every per-batch stage
+  without moving a single `*_shards()` signature, and converts the silent
+  Isaacus-gated skip into a loud refusal. Waiting for a release meant either no
+  chunks or growing redline's own stage runner for `chunk` and `embed` beside the
+  `money` one — the duplication the submodule discipline exists to prevent, and
+  thrown away on release. The commit's `tests/test_stage_runner.py` shipped
+  upstream unexecuted; all 33 tests were run here against the built image and
+  pass. Blast radius is narrow (a new CLI verb plus two new `cloud/` modules), and
+  womblex is DeepCivic's own, so a defect is funnelled upstream rather than worked
+  around locally. **The pin returns to a tag at womblex's next release.**
+
+  Two consequences worth carrying: extraction is the worker's job and everything
+  downstream is an explicit `run-stage` pass whose **ordering is the caller's**
+  (chunk before embed); and `ISAACUS_API_KEY` is load-bearing earlier, because the
+  chunk gate now fails a run rather than quietly trimming it.
+
+  This is the on-disk source of truth for the Parquet schema the
   sidecar maps, **and the source the engine image is built from** — the `womblex`
   compose profile builds the submodule's own `Dockerfile`. Initialise it with
   `git submodule update --init`; CI checks it out (`submodules: true`). The
@@ -733,9 +873,9 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    never reaches a shard — so a keyed run does the work twice. That is wasted CPU
    and wall clock, not Isaacus spend: redline sets no `chunking_model`, so chunking
    is local `semchunk` over the vendored tokeniser. `chunking.enabled: false` for
-   the `run` pass avoids it and is safe for the `chunk --shards` command, which
+   the `run` pass avoids it and is safe for `run-stage --stage chunk`, which
    ignores the flag; `womblex chunk --config` refuses outright when it is false
-   (`cli/pipeline.py:417-419`).
+   (`cli/pipeline.py:417-419`), so do not flip it if anyone uses that form.
 
 2. **Retrieval requires Isaacus.** `*.embeddings.parquet` is produced only by
    `kanon-2-embedder` (Isaacus). redline's retrieval classification
@@ -819,6 +959,34 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    Numbatch has no currency capability of its own either. redline's classification
    and financial extraction therefore stay exactly where §1 and §4 put them, and
    the Numbatch financial extension stays genuinely additive.
+
+7. **Three Isaacus-gated stages, not two — and only one is satisfied offline.**
+   Earlier text framed the boundary as chunk-and-embed. `enrich` declares the same
+   need (`kanon-2-enricher`), and it is now enabled in redline's profile. Of the
+   three, only `chunk` is satisfied by a placeholder key, because its tokeniser is
+   vendored in-tree and it makes no call; `embed` and `enrich` both spend against
+   a real credential. A deployment without an Isaacus account gets extraction and
+   chunks and nothing else.
+
+8. **The column-evidenced money path contributed nothing on a native-text
+   corpus — measured, not assumed.** The pricing design leans on womblex's finding
+   that ~98.7% of its corpus's amounts are bare numbers whose money-ness comes
+   from a column header. On the first real procurement corpus (2026-08-06,
+   1 REOI + 3 responses) that path recovered **zero**: 42 columns audited, 38
+   `insufficient`, 4 `vetoed`, none promoted, because no header carried money
+   vocabulary at all. All 65 money spans came from prose with an explicit symbol.
+
+   The reading is about corpus shape rather than the classifier: these documents
+   contain no priced tender schedule. It does mean the header/veto vocabulary in
+   `infra/womblex/redline.yaml` is **unvalidated by measurement**, and that a
+   corpus with real pricing tables is what would validate it.
+
+9. **The OCR-table gates are unexercised on redline's own path.** All four
+   documents of the first real corpus extracted `structured` via `native_text`,
+   and all 7 tables were native, so the paddleocr-only, deskew-refusal and
+   precision-refusal gates never executed. They guard the table-cell
+   reconstruction that recovers pricing from scanned tenders — a real consequence
+   — and remain unproven here until a scanned corpus runs.
 
 ---
 

@@ -69,8 +69,20 @@ spellfix:
   enabled: false
 pii:
   enabled: false
+# The Kanon-2 entity/edge graph. ADR-0017 names it the navigation mechanic and
+# delivery-plan items 3-7 read it, so it is on rather than off — but it is REAL
+# Isaacus spend (`kanon-2-enricher`), unlike chunking's vendored tokeniser, and
+# it is not part of `womblex run`/`worker`: it is a separate
+# `run-stage --stage enrich` pass that must follow chunk. Chunks are a
+# non-strict input, so enrich-before-chunk still succeeds — and lands every
+# entity with chunk_index = -1, a graph that cannot be joined to chunk text.
 enrichment:
-  enabled: false
+  enabled: true
+
+# Deliberately off, and NOT the same thing as enrichment. The graph comes from
+# `enrich`; `link` writes *.entity_links.parquet, which nothing in redline
+# reads, and its preflight hard-fails without a `linking.reference` register —
+# a tender corpus has no register to point at.
 linking:
   enabled: false
 
@@ -87,7 +99,7 @@ embedding:
 # LIVE as of the v0.3.0 submodule bump: the pinned engine defines `MoneyConfig`
 # (services/womblex/src/womblex/config.py:521, mounted at `WomblexConfig.money`),
 # so these keys are read rather than ignored. The redline side is built too — the
-# money stage runs over object storage (services/womblex-ingest money_stage.py)
+# money stage runs over object storage (`womblex run-stage --stage money`)
 # and MoneySpanFinancialExtractor sums its spans into grid AUD.
 #
 # Not part of `womblex run`/`worker`: this is a separate per-stage command
@@ -123,9 +135,15 @@ money:
     enabled: true
     numeric_fraction_min: 0.7
     min_cells: 3
-    # PROVISIONAL — tune against *.money_columns.parquet on the first real
-    # corpus; that sidecar is the per-column verdict audit and is
-    # the surface that makes these falsifiable.
+    # STILL PROVISIONAL — and the first real corpus could not falsify them.
+    # Run 2026-08-06 over the Technology PoC REOI + 3 responses: 42 columns
+    # audited, verdicts 38 `insufficient` / 4 `vetoed` / **0 promoted**. Not one
+    # header carried money vocabulary at all, so no term below was ever reached;
+    # the 4 vetoes were `#` row-number columns, a built-in. All 65 money spans
+    # came from prose (`narrative` locus, `p1` symbol-prefix evidence).
+    #
+    # The reading is about the corpus, not the terms: it contains no priced
+    # tender schedule. These stay unvalidated until one runs that does.
     #
     # Header matching is whole-token, so `subtotal` is NOT covered by the
     # built-in `total`. The rest are tender-schedule vocabulary the built-in

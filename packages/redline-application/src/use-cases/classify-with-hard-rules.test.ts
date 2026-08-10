@@ -66,13 +66,15 @@ describe("ClassifyWithHardRules", () => {
         requirementId: "topic-security",
         confidence: 1,
         sourceChunkId: null,
+        sourceElementOrder: null,
+        unclassified: null,
       },
     ]);
   });
 
   it("forwards only the unclaimed documents to the classifier", async () => {
     const classifier = new RecordingClassifier([
-      { documentId: "doc-prose", requirementId: "topic-network", confidence: 0.7, sourceChunkId: "c-9" },
+      { documentId: "doc-prose", requirementId: "topic-network", confidence: 0.7, sourceChunkId: "c-9", sourceElementOrder: null, unclassified: null },
     ]);
     const useCase = new ClassifyWithHardRules({ classifier });
 
@@ -98,12 +100,16 @@ describe("ClassifyWithHardRules", () => {
       requirementId: "topic-security",
       confidence: 1,
       sourceChunkId: null,
+      sourceElementOrder: null,
+      unclassified: null,
     });
     expect(result.data).toContainEqual({
       documentId: "doc-prose",
       requirementId: "topic-network",
       confidence: 0.7,
       sourceChunkId: "c-9",
+      sourceElementOrder: null,
+      unclassified: null,
     });
   });
 
@@ -158,7 +164,7 @@ describe("ClassifyWithHardRules", () => {
 
   it("orders the result claimed-first, then the model rows, deterministically", async () => {
     const classifier = new RecordingClassifier([
-      { documentId: "doc-prose", requirementId: "topic-network", confidence: 0.7, sourceChunkId: "c-9" },
+      { documentId: "doc-prose", requirementId: "topic-network", confidence: 0.7, sourceChunkId: "c-9", sourceElementOrder: null, unclassified: null },
     ]);
     const useCase = new ClassifyWithHardRules({ classifier });
 

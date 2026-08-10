@@ -91,9 +91,16 @@ class StubExtractor:
 
     def __init__(self) -> None:
         self.calls: List[tuple[str, tuple[str, ...]]] = []
+        self.run_ids: List[object] = []
 
-    def extract(self, evaluation_id: str, document_names: List[str]) -> ExtractionResult:
+    def extract(
+        self,
+        evaluation_id: str,
+        document_names: List[str],
+        run_id=None,
+    ) -> ExtractionResult:
         self.calls.append((evaluation_id, tuple(document_names)))
+        self.run_ids.append(run_id)
         embeddings: List[DocumentEmbeddings] = []
         shards: List[Shard] = [
             Shard(

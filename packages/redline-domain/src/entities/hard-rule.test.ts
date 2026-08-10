@@ -68,6 +68,48 @@ describe("makeHardRule", () => {
     if (!isErr(result)) return;
     expect(result.error.code).toBe("VALIDATION_FAILED");
   });
+
+  it("rejects a pattern containing a space — no identifier subject carries one", () => {
+    const result = makeHardRule({
+      id: "rule-sla",
+      pattern: "service level",
+      topicId: "support",
+    });
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+    expect(result.error.message).toContain("rule-sla");
+  });
+
+  it("rejects a wildcard-free prose word — no digit, so no identifier can equal it", () => {
+    const result = makeHardRule({ id: "rule-price", pattern: "price", topicId: "commercial" });
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+    expect(result.error.message).toContain("rule-price");
+  });
+
+  it("rejects a literal character no identifier subject can carry", () => {
+    const result = makeHardRule({ id: "rule-dot", pattern: "SEC.*", topicId: "topic-security" });
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("accepts a wildcard pattern with no digit — the wildcard supplies one", () => {
+    const result = makeHardRule({ id: "rule-sec", pattern: "SEC-*", topicId: "topic-security" });
+
+    expect(isOk(result)).toBe(true);
+  });
+
+  it("accepts a wildcard-free identifier that carries a letter and a digit", () => {
+    const result = makeHardRule({ id: "rule-a01", pattern: "A-01", topicId: "solution" });
+
+    expect(isOk(result)).toBe(true);
+  });
 });
 
 describe("matchesHardRule", () => {
@@ -98,11 +140,11 @@ describe("matchesHardRule", () => {
     expect(matchesHardRule(exact, "SEC-0142")).toBe(false);
   });
 
-  it("treats regex metacharacters in a pattern as literal text", () => {
-    const dotted = rule("rule-1", "SEC.*");
+  it("treats a pattern's non-wildcard run as a literal, not a regex fragment", () => {
+    const exact = rule("rule-1", "SEC-014");
 
-    expect(matchesHardRule(dotted, "SEC.014")).toBe(true);
-    expect(matchesHardRule(dotted, "SECX014")).toBe(false);
+    expect(matchesHardRule(exact, "SEC-014")).toBe(true);
+    expect(matchesHardRule(exact, "SECX014")).toBe(false);
   });
 
   it("trims the subject before matching", () => {

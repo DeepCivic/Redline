@@ -29,12 +29,20 @@ class RecordingAdjudicator implements IAdjudicator {
   }
 }
 
-// The default fake: choose the first candidate, rationalise in one sentence.
+// The default fake: the document addresses the first candidate only, cited to
+// the first passage, rationalised in one sentence.
 const chooseFirst = (req: AdjudicationRequest): Result<Adjudication> =>
   ok({
     documentId: req.documentId,
-    chosenTopicId: req.candidates[0]!.topicId,
-    rationale: `${req.candidates[0]!.name} best fits the passages`,
+    topics: [
+      {
+        topicId: req.candidates[0]!.topicId,
+        evidenceChunkIds: [req.passages[0]!.chunkId],
+        rationale: `${req.candidates[0]!.name} best fits the passages`,
+      },
+    ],
+    exception: null,
+    cost: null,
   });
 
 const candidates = [
@@ -48,14 +56,10 @@ const request = {
   documentIds: ["doc-unclear", "doc-other"],
 };
 
-const unclearDoc = (
-  documentId: string,
-  sourceChunkId: string | null = `${documentId}:0`,
-): UnclearDocument => ({
+const unclearDoc = (documentId: string, chunkIndex = 0): UnclearDocument => ({
   documentId,
-  passages: ["some ambiguous body text"],
+  passages: [{ chunkId: `${documentId}:${chunkIndex}`, text: "some ambiguous body text" }],
   candidates,
-  sourceChunkId,
 });
 
 describe("AdjudicateUnclear", () => {
@@ -82,7 +86,7 @@ describe("AdjudicateUnclear", () => {
 
     const result = await useCase.execute({
       request,
-      unclear: [unclearDoc("doc-unclear", "doc-unclear:3")],
+      unclear: [unclearDoc("doc-unclear", 3)],
     });
 
     expect(isOk(result)).toBe(true);
@@ -91,12 +95,78 @@ describe("AdjudicateUnclear", () => {
     // Same keys as RequirementClassification, plus `rationale`. Strip the extra
     // field and a downstream sees exactly the shared shape (D2).
     expect(Object.keys(row).sort()).toEqual(
-      ["confidence", "documentId", "rationale", "requirementId", "sourceChunkId"].sort(),
+      ["confidence", "documentId", "rationale", "requirementId", "sourceChunkId", "sourceElementOrder", "unclassified"].sort(),
     );
     // The chosen topic's id is written straight into requirementId (ADR-0010).
     expect(row.requirementId).toBe("topic-security");
-    // The passage that surfaced the ambiguity is preserved as the source chunk.
+    // The chunk the model cited as placing the topic is the row's provenance.
     expect(row.sourceChunkId).toBe("doc-unclear:3");
+  });
+
+  it("emits one row per topic the document addresses, each sourced from its own evidence", async () => {
+    const adjudicator = new RecordingAdjudicator((req) =>
+      ok({
+        documentId: req.documentId,
+        topics: [
+          {
+            topicId: "topic-security",
+            evidenceChunkIds: ["doc-both:0"],
+            rationale: "it describes access controls",
+          },
+          {
+            topicId: "topic-pricing",
+            evidenceChunkIds: ["doc-both:1"],
+            rationale: "it states a licence fee",
+          },
+        ],
+        exception: null,
+        cost: null,
+      }),
+    );
+    const useCase = new AdjudicateUnclear({ adjudicator });
+
+    const result = await useCase.execute({
+      request,
+      unclear: [
+        {
+          documentId: "doc-both",
+          passages: [
+            { chunkId: "doc-both:0", text: "role-based access control" },
+            { chunkId: "doc-both:1", text: "$40,000 per annum" },
+          ],
+          candidates,
+        },
+      ],
+    });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    // One model call, two rows — and the rows do not share a source chunk, which
+    // is what lets each carry its own summary and deep link.
+    expect(adjudicator.calls).toHaveLength(1);
+    expect(result.data.map((row) => row.requirementId)).toEqual([
+      "topic-security",
+      "topic-pricing",
+    ]);
+    expect(result.data.map((row) => row.sourceChunkId)).toEqual(["doc-both:0", "doc-both:1"]);
+  });
+
+  it("emits no rows for a document that addresses none of the candidates", async () => {
+    const adjudicator = new RecordingAdjudicator((req) =>
+      ok({
+        documentId: req.documentId,
+        topics: [],
+        exception: { documentId: req.documentId, detail: "a covering letter, nothing more" },
+        cost: null,
+      }),
+    );
+    const useCase = new AdjudicateUnclear({ adjudicator });
+
+    const result = await useCase.execute({ request, unclear: [unclearDoc("doc-unclear")] });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data).toEqual([]);
   });
 
   it("only adjudicates the documents the caller marked unclear", async () => {
@@ -142,7 +212,18 @@ describe("AdjudicateUnclear", () => {
     // the chosen id has to be one it was offered (the port promises a choice,
     // the use-case enforces it).
     const adjudicator = new RecordingAdjudicator((req) =>
-      ok({ documentId: req.documentId, chosenTopicId: "topic-invented", rationale: "made up" }),
+      ok({
+        documentId: req.documentId,
+        topics: [
+          {
+            topicId: "topic-invented",
+            evidenceChunkIds: [req.passages[0]!.chunkId],
+            rationale: "made up",
+          },
+        ],
+        exception: null,
+        cost: null,
+      }),
     );
     const useCase = new AdjudicateUnclear({ adjudicator });
 
@@ -177,9 +258,8 @@ describe("AdjudicateUnclear", () => {
       unclear: [
         {
           documentId: "doc-unclear",
-          passages: ["x"],
+          passages: [{ chunkId: "doc-unclear:0", text: "x" }],
           candidates: [candidates[0]],
-          sourceChunkId: null,
         },
       ],
     });

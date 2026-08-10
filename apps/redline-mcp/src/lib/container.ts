@@ -1,6 +1,7 @@
 import {
   createRedlinePostgres,
   DrizzleChunkStore,
+  DrizzleGraphStore,
   DrizzleMoneySpanStore,
   WomblexExtractionReader,
   type RedlinePostgresDatabase,
@@ -9,7 +10,7 @@ import { domainError, err, ok, type Result } from "@redline/redline-domain";
 import type { ReportToolDependencies } from "./report-tools";
 
 // The app's wiring (CLAUDE.md: "wiring lives in lib/container.ts"). This process
-// composes exactly three adapters and serves them as tools; it holds no use case,
+// composes the read-side adapters and serves them as tools; it holds no use case,
 // because exposure is all this item is — the ports already existed.
 //
 // It lives in an app rather than in `redline-adapters` because adapters is a
@@ -94,6 +95,7 @@ export const buildReportToolContainer = (
         baseUrl: configuration.womblexIngestUrl,
         httpClient: (url) => fetch(url),
       }),
+      graphStore: new DrizzleGraphStore(database),
     },
   };
 };

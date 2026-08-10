@@ -172,7 +172,7 @@ def test_ingest_marks_run_failed_when_extraction_raises(
     storage: FakeObjectStorage,
 ) -> None:
     class BrokenExtractor(StubExtractor):
-        def extract(self, evaluation_id, document_names):  # type: ignore[override]
+        def extract(self, evaluation_id, document_names, run_id=None):  # type: ignore[override]
             raise RuntimeError("womblex blew up")
 
     client = TestClient(

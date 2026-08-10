@@ -6,6 +6,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import {
   applyMigrations,
   DrizzleChunkStore,
+  DrizzleGraphStore,
   DrizzleMoneySpanStore,
   WomblexExtractionReader,
   redlineSchema,
@@ -177,6 +178,37 @@ const seedMoneySpans = async (database: ReturnType<typeof drizzle>) => {
   ]);
 };
 
+const seedGraph = async (database: ReturnType<typeof drizzle>) => {
+  // One person mentioned in chunk 0 (the verbatim narrative chunk), plus the
+  // mentioned_in edge that points at it. This is the traversal the assembler runs:
+  // entity → edge → chunkId → fetch_chunks → verbatim text.
+  await database.insert(redlineSchema.redlineGraphEntities).values([
+    {
+      evaluationId: EVALUATION_ID,
+      documentId: DOCUMENT_ID,
+      entityId: `${DOCUMENT_ID}:per:0`,
+      entityLabel: "person",
+      name: "The Contractor",
+      entityType: "corporate",
+      role: "seller",
+      mentionStart: 2,
+      mentionEnd: 16,
+      chunkIndex: 0,
+    },
+  ]);
+  await database.insert(redlineSchema.redlineGraphEdges).values([
+    {
+      evaluationId: EVALUATION_ID,
+      documentId: DOCUMENT_ID,
+      sourceId: `${DOCUMENT_ID}:per:0`,
+      targetId: `${DOCUMENT_ID}:chunk:0`,
+      relation: "mentioned_in",
+      propKey: "start",
+      propValue: "2",
+    },
+  ]);
+};
+
 const connectClient = async (): Promise<Client> => {
   const client = new Client({ name: "redline-exit-test-client", version: "0.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(server.url)));
@@ -202,6 +234,7 @@ beforeAll(async () => {
     .values({ id: EVALUATION_ID, name: "RFT-2026-11", stage: "review" });
   await seedChunks(database);
   await seedMoneySpans(database);
+  await seedGraph(database);
 
   dependencies = {
     chunkStore: new DrizzleChunkStore(database),
@@ -210,6 +243,7 @@ beforeAll(async () => {
       baseUrl: "http://womblex-ingest.invalid",
       httpClient: extractionHttpClient,
     }),
+    graphStore: new DrizzleGraphStore(database),
   };
 
   server = await startReportMcpHttpServer({ port: 0, host: "127.0.0.1", dependencies });
@@ -221,7 +255,7 @@ afterAll(async () => {
 });
 
 describe("an MCP client over streamable HTTP", () => {
-  it("lists the seven report tools with their descriptions and input schemas", async () => {
+  it("lists the report tools — the deterministic reads plus graph traversal", async () => {
     const client = await connectClient();
 
     const listed = await client.listTools();
@@ -232,6 +266,9 @@ describe("an MCP client over streamable HTTP", () => {
       "fetch_chunks_by_structure",
       "fetch_money_spans_by_document",
       "fetch_money_spans_by_structure",
+      "graph_edges_from",
+      "graph_edges_to",
+      "graph_find_entities",
       "read_extraction_chunks",
       "read_extraction_elements",
       "read_extraction_table_cells",
@@ -393,7 +430,7 @@ describe("an MCP client over streamable HTTP", () => {
 
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain("NOT_FOUND");
-    expect(stillWorks.tools).toHaveLength(7);
+    expect(stillWorks.tools).toHaveLength(10);
   });
 
   it("rejects a malformed call with a validation error, not a crash", async () => {
@@ -406,6 +443,50 @@ describe("an MCP client over streamable HTTP", () => {
     await client.close();
 
     expect(result.isError).toBe(true);
+  });
+
+  it("traverses entity → edge → chunk to reach verbatim text, and reports the graph available", async () => {
+    const client = await connectClient();
+
+    const entities = await client.callTool({
+      name: "graph_find_entities",
+      arguments: { evaluationId: EVALUATION_ID, documentId: DOCUMENT_ID, entityLabel: "person" },
+    });
+    const entityRows = payloadOf(entities).entities as { entityId: string; chunkIndex: number }[];
+    expect(payloadOf(entities).graphAvailable).toBe(true);
+    expect(entityRows[0]!.entityId).toBe(`${DOCUMENT_ID}:per:0`);
+
+    const edges = await client.callTool({
+      name: "graph_edges_from",
+      arguments: { evaluationId: EVALUATION_ID, entityId: entityRows[0]!.entityId },
+    });
+    const edgeRows = payloadOf(edges).edges as { targetId: string; relation: string }[];
+    const mentionedIn = edgeRows.find((edge) => edge.relation === "mentioned_in");
+    expect(mentionedIn!.targetId).toBe(`${DOCUMENT_ID}:chunk:0`);
+
+    // The edge names chunk 0; the chunkId the store keys on is {source_hash}:{index}.
+    const chunks = await client.callTool({
+      name: "fetch_chunks",
+      arguments: { evaluationId: EVALUATION_ID, chunkIds: [`${DOCUMENT_ID}:0`] },
+    });
+    await client.close();
+
+    const text = (payloadOf(chunks).chunks as { text: string }[])[0]!.text;
+    expect(text).toBe(VERBATIM_TEXT);
+  });
+
+  it("reports the graph unavailable for an evaluation that has none loaded", async () => {
+    const client = await connectClient();
+
+    const result = await client.callTool({
+      name: "graph_find_entities",
+      arguments: { evaluationId: "eval-with-no-graph", documentId: DOCUMENT_ID },
+    });
+    await client.close();
+
+    const payload = payloadOf(result);
+    expect(payload.graphAvailable).toBe(false);
+    expect(payload.entities).toEqual([]);
   });
 
   it("answers a health probe outside the MCP endpoint", async () => {

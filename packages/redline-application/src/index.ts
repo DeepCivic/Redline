@@ -30,7 +30,7 @@ export type {
 export { ClassifyResponseGroup } from "./use-cases/classify-response-group";
 export type { ClassifyResponseGroupDependencies } from "./use-cases/classify-response-group";
 
-// Cold-start classification (item 1b) — the untrained first-pass
+// Cold-start classification — the untrained first-pass
 // IProcurementClassifier: hard rules + LLM adjudication over the store's
 // exact/structural fetch (ADR-0008 / ADR-0018 addendum). No Numbatch, no trained
 // adapter, no nearest-neighbour step. Satisfies the same port the trained

@@ -5,11 +5,23 @@ coverage/
 *.log
 .env
 .env.local
+# Suffixed env files hold real API keys (infra/uat/.env.uat). The bare `.env`
+# pattern above does not match them, and infra/uat/ is committed as a directory.
+.env.*
+!.env.example
+!.env.*.example
 .DS_Store
 
 # Podman validation scratch (created by scripts/podman-run.sh if SCRATCH_BASE is set here)
 .redline-scratch/
 __pycache__/
+
+# Machine-local Claude Code tooling state: a permissions audit log carrying
+# absolute workstation paths and transient command history (stale commit refs
+# and all). Per-machine, not project source — the tracked .claude/ files are
+# CLAUDE.md and the command docs, never this.
+.claude/settings.json
+.claude/settings.local.json
 
 # Non-redistributable local test corpus for the womblex pod (Thread 37a). The
 # committed fixture corpus is services/womblex-ingest/tests/corpus/ (must be

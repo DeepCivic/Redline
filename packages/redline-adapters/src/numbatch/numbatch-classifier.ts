@@ -175,6 +175,8 @@ export class NumbatchClassifier implements IProcurementClassifier {
           requirementId,
           confidence: topic.score,
           sourceChunkId: null,
+          sourceElementOrder: null,
+          unclassified: null,
         });
       }
     }

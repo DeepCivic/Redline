@@ -26,3 +26,12 @@
     Run tests after changes — verify nothing is broken
     Keep code simple — direct implementations over complex abstractions
     Add docstrings — but keep them concise (explain what/why, not how)
+
+# Local testing on this machine
+
+    Prefer podman over docker — on this specific machine podman is the container
+    runtime to use for any local testing, compose stacks or containerised runs
+    (e.g. scripts/podman-run.sh, the infra/ and infra/uat/ compose stacks). The
+    scripts fall back to docker, but on this host always drive them with podman —
+    set COMPOSE="podman compose" and PODMAN="podman" (or the flatpak-spawn form
+    PODMAN="flatpak-spawn --host podman" if running from inside the flatpak).
