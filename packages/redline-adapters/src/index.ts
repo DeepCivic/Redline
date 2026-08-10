@@ -39,14 +39,21 @@ export {
 export {
   DrizzleMoneySpanStore,
 } from "./persistence/drizzle-money-span-store";
-// The chunk store (delivery-plan §2 item 1, ADR-0017/0018): the store-side
+// The chunk store (ADR-0017/0018): the store-side
 // query surface over redline_chunks, which the womblex-ingest sidecar's load
 // path writes and this adapter reads. Exact fetch + structural fetch; the domain
 // ChunkRow carries no vector (ADR-0017), and findSimilar refuses with
 // NOT_IMPLEMENTED until the pgvector/ANN index lands (ADR-0018 addendum).
 export { DrizzleChunkStore } from "./persistence/drizzle-chunk-store";
+// The enrichment-graph store (ADR-0017/0018): the report assembler's navigation
+// surface over redline_graph_entities / redline_graph_edges, which the
+// womblex-ingest sidecar's enrich load path writes and this adapter reads. Entity
+// filtering + edge traversal in both directions; the graph LOCATES source rows,
+// the transfer itself stays an exact chunk fetch. A graph that never loaded is an
+// empty table, so every read is an empty result rather than an error.
+export { DrizzleGraphStore } from "./persistence/drizzle-graph-store";
 export { DrizzleStagedCorpusReader } from "./persistence/drizzle-staged-corpus-reader";
-// The persisted lens (delivery-plan §2 item 1, ADR-0009/ADR-0020): the reader
+// The persisted lens (ADR-0009/ADR-0020): the reader
 // behind IClassificationLensReader, over redline_lenses / redline_topics /
 // redline_hard_rules / redline_lens_bindings. Topics and rules are read from the
 // store; `candidates` are derived per call by the identifier-token pre-pass,

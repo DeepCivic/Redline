@@ -5,7 +5,7 @@ import type { Result } from "../result";
 // a provenance-addressed surface whose results are *addressable rows*, never raw
 // vectors. At the measured ~90k-chunk corpus, vectors do not cross into
 // TypeScript (ADR-0017); the sidecar loads womblex's Parquet into redline's
-// `redline_` store and answers these queries in place (item 1a). This port is
+// `redline_` store and answers these queries in place. This port is
 // the domain's view of that store — plain data by construction, so
 // `redline-domain` purity (validate.sh #4) keeps it Parquet/Arrow/vector-free.
 //
@@ -17,7 +17,7 @@ import type { Result } from "../result";
 // implementation refuses with NOT_IMPLEMENTED until vector search lands. The
 // port carries it so adding it later is additive, not a seam change.
 //
-// The cold-start `IProcurementClassifier` (item 1b) reads this surface for the
+// The cold-start `IProcurementClassifier` reads this surface for the
 // passages the LLM adjudicates over — hard rules + adjudication over exact
 // fetch, *without* the deferred nearest-neighbour step.
 

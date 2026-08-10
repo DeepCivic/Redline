@@ -255,3 +255,63 @@ export type HardRuleRow = typeof redlineHardRules.$inferSelect;
 export type NewHardRuleRow = typeof redlineHardRules.$inferInsert;
 export type LensBindingRow = typeof redlineLensBindings.$inferSelect;
 export type NewLensBindingRow = typeof redlineLensBindings.$inferInsert;
+
+// The enrichment graph, materialised from womblex's `enrich` sidecars (ADR-0017/
+// 0018): entity mentions (`*.enrichment_entities.parquet` → ENTITY_SCHEMA) and
+// directed edges (`*.graph_edges.parquet` → GRAPH_EDGE_SCHEMA), each column mirrored
+// with `document_id` carrying the source_hash. WRITTEN by the womblex-ingest
+// sidecar's load path; this schema is the TypeScript-side view the DrizzleGraphStore
+// READS. The report assembler traverses it (entity → mentioned_in edge → chunk →
+// verbatim text); a graph that never loaded is an empty table, not an error.
+export const redlineGraphEntities = pgTable(
+  "redline_graph_entities",
+  {
+    evaluationId: text("evaluation_id").notNull(),
+    documentId: text("document_id").notNull(),
+    entityId: text("entity_id").notNull(),
+    entityLabel: text("entity_label").notNull(),
+    name: text("name").notNull(),
+    entityType: text("entity_type").notNull().default(""),
+    role: text("role").notNull().default(""),
+    mentionStart: integer("mention_start").notNull(),
+    mentionEnd: integer("mention_end").notNull(),
+    // womblex writes -1 when a mention did not map to a chunk.
+    chunkIndex: integer("chunk_index").notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.evaluationId, table.documentId, table.entityId, table.mentionStart],
+    }),
+  }),
+);
+
+export const redlineGraphEdges = pgTable(
+  "redline_graph_edges",
+  {
+    evaluationId: text("evaluation_id").notNull(),
+    documentId: text("document_id").notNull(),
+    sourceId: text("source_id").notNull(),
+    targetId: text("target_id").notNull(),
+    relation: text("relation").notNull(),
+    // womblex flattens edge properties to one row per (edge, property) pair.
+    propKey: text("prop_key").notNull().default(""),
+    propValue: text("prop_value").notNull().default(""),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [
+        table.evaluationId,
+        table.documentId,
+        table.sourceId,
+        table.targetId,
+        table.relation,
+        table.propKey,
+      ],
+    }),
+  }),
+);
+
+export type GraphEntityRow = typeof redlineGraphEntities.$inferSelect;
+export type NewGraphEntityRow = typeof redlineGraphEntities.$inferInsert;
+export type GraphEdgeRow = typeof redlineGraphEdges.$inferSelect;
+export type NewGraphEdgeRow = typeof redlineGraphEdges.$inferInsert;

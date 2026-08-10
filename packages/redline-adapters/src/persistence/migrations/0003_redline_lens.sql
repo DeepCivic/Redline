@@ -1,4 +1,4 @@
--- redline_ schema — the persisted comprehension lens (delivery-plan §2 item 1).
+-- redline_ schema — the persisted comprehension lens.
 -- ADR-0009 puts the lens, its hard rules and its bindings in redline_ tables;
 -- ADR-0020 settles that the cold-start topic DEFINITION text is redline-owned
 -- too, because ColdStartClassifier adjudicates over that prose and the lean

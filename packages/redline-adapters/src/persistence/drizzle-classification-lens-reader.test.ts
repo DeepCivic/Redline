@@ -13,7 +13,7 @@ import {
 } from "./schema";
 import { DrizzleClassificationLensReader } from "./drizzle-classification-lens-reader";
 
-// The exit test for delivery-plan §2 item 1: a lens saved with its topics, its
+// The exit test for the persisted lens: a lens saved with its topics, its
 // hard rules and its evaluation binding reads back byte-identical through
 // IClassificationLensReader — definitions included, since those are what
 // adjudication actually reads (ADR-0020).

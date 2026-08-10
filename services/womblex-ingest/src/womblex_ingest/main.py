@@ -145,9 +145,9 @@ def build_app(
                 "application/json",
             )
 
-        # Project chunks + embeddings into redline's own store (item 1a,
-        # ADR-0017/0018) alongside the durable MinIO shards, so the cold-start
-        # classifier (item 1b) can fetch them by provenance. The store is present
+        # Project chunks + embeddings into redline's own store (ADR-0017/0018)
+        # alongside the durable MinIO shards, so the cold-start
+        # classifier can fetch them by provenance. The store is present
         # only when a deployment wired a DSN; the stub / air-gapped lane skips it
         # and serves purely from the shards + JSON seam. A store write failure
         # fails the run loudly rather than leaving the store silently behind the

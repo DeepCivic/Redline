@@ -19,7 +19,7 @@ import {
   type Vendor,
 } from "@redline/redline-domain";
 
-// CreateEvaluation — the browser's way in (delivery-plan §2 item 1). It replaces
+// CreateEvaluation — the browser's way in. It replaces
 // the hand-written corpus manifest with three choices a specialist can actually
 // make: which staged corpus, which of its documents belong to which brand, and
 // which fields the responses are read against.
@@ -257,8 +257,9 @@ export class CreateEvaluation {
       name: `${evaluation.name} fields`,
       evaluationId: evaluation.id,
       topics,
-      // Cold start: no hard rule can be written before anyone has seen how these
-      // fields land on this corpus, so every field goes to adjudication.
+      // No hard rules, and not for want of knowing the corpus: the create screen
+      // yields topics, and a rule needs a pattern. Until there is somewhere to
+      // author one, every field goes to adjudication.
       rules: [],
     };
     const savedLens = await this.dependencies.lensWriter.saveLens(lens);

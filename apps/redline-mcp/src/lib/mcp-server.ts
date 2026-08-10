@@ -45,9 +45,15 @@ const SERVER_INSTRUCTIONS = [
   "one; and `rangeGroup`/`rangeRole` link a range's two endpoints, which are two",
   "rows for one amount. Nothing here totals or converts them.",
   "",
-  "There is no similarity search on this surface and no graph to traverse. Every",
-  "tool is exact fetch by key or structural fetch by provenance, so work from ids",
-  "and anchors you were given rather than roaming the corpus.",
+  "There is no similarity search on this surface. To find a passage, work from ids",
+  "and anchors you were given, or traverse the enrichment graph: graph_find_entities",
+  "locates people, places and terms and gives the chunk each was found in, and",
+  "graph_edges_from / graph_edges_to follow relations between nodes. The graph",
+  "LOCATES source rows; the transfer itself is still an exact fetch_chunks read.",
+  "A graph tool that returns graphAvailable: false means no enrichment graph has",
+  "been loaded for this evaluation — report that you could not reach it rather than",
+  "writing the section anyway, and never mistake an empty match over a loaded graph",
+  "for an absent one.",
 ].join("\n");
 
 const toCallToolResult = async (tool: ReportTool, args: unknown) => {

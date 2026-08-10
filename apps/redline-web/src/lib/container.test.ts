@@ -428,7 +428,7 @@ describe("WorkflowController — review", () => {
   });
 });
 
-// The other end of the review grid's source deep-link (delivery-plan item 1).
+// The other end of the review grid's source deep-link.
 // openDocument reads one document's elements through IProcurementExtractionReader
 // — the JSON presentation seam of ADR-0003/0017 — so the served route has
 // something to anchor the `element` query parameter on. Read side only.
@@ -504,7 +504,7 @@ describe("WorkflowController — document provenance", () => {
 // This proves the cold-start path is wired *behind the port* — the controller,
 // once built with it, reclassifies a group with no Numbatch and no trained
 // adapter anywhere in the graph.
-describe("container — cold-start classifier wiring (item 1b)", () => {
+describe("container — cold-start classifier wiring", () => {
   const topics: readonly Topic[] = [
     { id: "req-support", name: "Support", definition: "support services" },
     { id: "req-hosting", name: "Hosting", definition: "hosting services" },

@@ -1,6 +1,6 @@
 # redline — Delivery Plan (live)
 
-> **Status:** the live tracking document · **Date:** 2026-08-09
+> **Status:** the live tracking document.
 >
 > **This tracks outstanding work only. It does not restate design.**
 > [`architecture.md`](./architecture.md) is what redline *is*;
@@ -9,29 +9,26 @@
 > git history, not here. Item numbers are local to this file and are renumbered
 > whenever the outstanding set changes.
 >
-> **Almost nothing here has been run against live services.** The wiring
-> typechecks and is unit-tested; no sidecar and no adjudicator has ever been
-> behind it. The one exception is the money-span write path, which was proven
-> against a real Postgres 16 with the shipped migrations applied — the Python
-> writer landing spans and `DrizzleMoneySpanStore` reading them back. Everything
-> else should still expect config-level breakage on first boot; whenever a real
-> corpus is first run (§4 item 3), treat that as the first real proof rather than
-> a formality.
+> **Do not cross-reference sections of this file, and do not cite its item
+> numbers — from here, from the other documents, or from source comments.** The
+> numbering changes every time the outstanding set does, so every such reference
+> is wrong shortly after it is written, and cleaning them up has repeatedly cost
+> more than they ever saved. State the substance, or cite `architecture.md`,
+> which is stable.
 >
-> **Typechecking is not evidence a path exists.** The money-span table shipped
-> with a migration, a read adapter and a code comment naming a writer that was
-> never built — and every consumer degraded quietly rather than failing, so
-> nothing went red. It is written now, but assume there are more: when an item
-> claims a seam is "built", check for the producer, not just the type. The
-> `psycopg` driver both Postgres writers import was likewise declared in no
-> `pyproject.toml` until that writer was built.
+> **A corpus is input, never a premise.** redline is built for arbitrary
+> procurement corpora. Running one corpus produces *measurements* — a rule that
+> did not fire, a vocabulary that was never reached, an extraction path that was
+> never taken. A measurement may falsify something. It may never become a scope
+> decision, a design constraint, or a justification inside a general code path.
+> When recording a run finding, name the corpus, say what it showed, and say what
+> would validate the untested case.
 >
-> **One open decision carried in the code.** `redline_topics.id` is a plain
-> primary key, so a topic belongs to exactly one lens and a second lens reusing
-> an id fails. `CreateEvaluation` works around it by scoping every topic id to
-> its corpus (`{corpusId}:{field}`), which is why two tenders can both have a
-> "Warranty" field — but that is a workaround, not a decision. Revisit when lens
-> portability (§3) lands.
+> **Availability of a data source is a runtime condition, not a design input.**
+> Whether the enrich graph is loaded, or a similarity index exists, does not
+> decide which tools redline builds. Build the surface; return unavailable when
+> the data is not there; fail loudly and legibly when the task cannot be
+> completed. Never scope a capability out because a config flag is currently off.
 
 ---
 
@@ -55,25 +52,27 @@
 
 ## 2. The lean vertical (current priority)
 
-**Goal: a real procurement corpus goes in, and a specialist gets a report out —
+**Goal: a procurement corpus goes in, and a specialist gets a report out —
 delineated by topic and brand, with provenance back to source.** The
-comprehension-lens work and the trained-classifier overlay are **deferred** (§3).
+comprehension-lens work and the trained-classifier overlay are deferred to
+housekeeping.
 
 **The report is the product, not the grid.** A corpus that is merely extracted,
 chunked and classified is womblex plus a classifier; almost none of that needs
 redline. What redline is for is the step after — assembling those addressable,
 provenance-tagged facts into something a procurement specialist hands to a
 delegate. The report tool surface that gives an assembler hands is built
-(`apps/redline-mcp`, `architecture.md` §5 invariant 7); items 1 and 2 are what is
-left of that step, and **UAT does not start until they work**. A demo that ends at
-the review grid demonstrates the dependencies.
+(`apps/redline-mcp`) — the deterministic chunk/money/extraction fetches **and now
+graph traversal** — and **what a report is** is settled in `architecture.md` §5.1.
+The items below are what is left of that step, and **UAT does not start until they
+work**. A demo that ends at the review grid demonstrates the dependencies.
 
 **Numbatch is not on this path.** Classification runs cold-start over womblex
 extraction: hard rules + LLM adjudication navigating the store's
-chunks/provenance, with the nearest-neighbour step deferred. Financial facts come
-from womblex's own value-typed table cells / money sidecars. The Numbatch stack
-re-enters only when a *trained* overlay or the financial extension's roll-up is
-wanted; neither is needed to see the grid.
+chunks/provenance. Financial facts come from womblex's own value-typed table
+cells / money sidecars. The Numbatch stack re-enters only when a *trained*
+overlay or the financial extension's roll-up is wanted; neither is needed to see
+the grid.
 
 **"Pricing" is the wrong word for this layer, and using it has already cost us.**
 What womblex lands is *financial expressions* — value-typed spans with a currency,
@@ -82,85 +81,135 @@ the ports underneath must carry the general thing; interpretation (which
 requirement it belongs to, what it rolls up to, whether it is a price at all) is a
 consumer's job and belongs above them. The alternative — a bespoke path per
 financial-data type — is a build with no end. The money-span store is built
-against that rule (`architecture.md` §4 step 2'), and
-`MoneySpanFinancialExtractor`'s contract (one AUD figure per (document,
-requirement)) is one reading above it — a narrowing to hold at arm's length rather
-than entrench.
+against that rule, and `MoneySpanFinancialExtractor`'s contract (one AUD figure
+per (document, requirement)) is one reading above it — a narrowing to hold at
+arm's length rather than entrench.
 
 The read path is built and merged end to end — store-backed classifier, money
 extractor, the served fork, the persisted lens, the `/evaluations` index and the
-document route. **Creating** an evaluation is now a browser action too: the
+document route. **Creating** an evaluation is a browser action too: the
 `evaluation` router's `create` mutation over a picked staged corpus, gated on its
-own `evaluation:create` permission. See
-[`architecture.md`](./architecture.md) §3/§4/§5/§6.
+own `evaluation:create` permission.
 
-**The run stays on the script, and that is now a scope decision.** `IngestDocuments`,
+**The run stays on the script, and that is a scope decision.** `IngestDocuments`,
 `AssignDocumentsToGroups`, the cold-start classifier and `BuildEvaluationTable`
 are all built and wired in `container-redline.ts`, but nothing served calls them
 — `apps/web/scripts/seed-redline-evaluation.ts` drives the pipeline from a
-terminal and remains the only path that does. Driving it from a browser is **out
-of scope** (§4 item 2), so an operator with a terminal stages the corpus and
-starts the run; the specialist's browser surface begins at the populated
+terminal and remains the only path that does. Driving it from a browser is out of
+scope (see the open questions), so an operator with a terminal stages the corpus
+and starts the run; the specialist's browser surface begins at the populated
 evaluation.
 
-**Item 1 is fork-side** — the report assembly lives in
-`services/wayfinder/apps/web`, so it is two commits under §1's contract: the work
-on `redline-integration`, then the gitlink and pin moved here in step. Item 2 is
-redline-side: the workbook builder already lives in `apps/redline-web`. So is the
-report tool surface item 1 calls, which is built and served over a URL the fork
-registers rather than imports.
+**The pipeline has run end to end.** A fixture run over `cloud-rft-2026` (4
+documents) took extraction through chunk → embed → enrich → money and landed 133
+entities, 1,771 graph edges and 65 money spans. That proves the connectors and
+the shard path. It proves nothing about report quality, and its per-corpus
+findings are recorded at the sites they bear on, not here.
+
+**The fixture corpus is a test fixture and will grow heterogeneous.** It is not
+what redline is built against and it is not a scope boundary. Documents that are
+not tender responses — an annual report, a policy, a standard — must flow through
+the same path without special handling: they classify against whatever topics the
+lens carries, and a document that addresses none surfaces as a row with a null
+requirement and an `addressed_nothing` reason. Nothing may infer a document's
+kind from its name or assume every document answers something. Where a
+tender-shaped assumption is found, it is a defect.
 
 **The report work is not gated on a pipeline run, and treating it as though it
-were is a planning error we have already made once.** Items 1 and 2 need *rows
-in the store* — chunks, spans, responses with provenance — not a live
+were is a planning error we have already made once.** Both items need *rows in
+the store* — chunks, spans, responses with provenance — not a live
 extract→classify→build sequence that produced them. Those rows can be seeded
 straight into Postgres, which is how `packages/redline-adapters`' own suite
-already works (PGlite, seeded rows, no services). Build them against a seeded
-store and let the corpus run confirm them later; do not let the two block each
-other again.
+already works (PGlite, seeded rows, no services).
 
-**The in-repo fixture corpus is what this plan builds against, and that is a
-settled scope decision.** Seeded rows plus the fixture corpus are sufficient to
-build and prove every item below; a real-corpus run is the owner's to call and is
-not scheduled here (§4 item 3). One limit to hold while reading any fixture
-result: the `WOMBLEX_MODE=stub` extractor never reads the corpus — it synthesises
-each document from the name it is given — so a fixture run exercises connectors
-and shapes, never document content. Claims about what redline *understands*
-belong in unit tests over seeded rows, which is where they already are. The
-manifest is written
-(`services/womblex-ingest/tests/corpus/redline-manifest.json`, with the ordering
-constraint and the stub's limits recorded beside it).
+**Item 2 is fork-side** — the report assembly lives in
+`services/wayfinder/apps/web`, so it is two commits under the build-step
+contract. Item 3 is redline-side: the workbook builder already lives in
+`apps/redline-web`. So is the report tool surface item 2 calls, which is built and
+served over a URL the fork registers rather than imports.
 
-### 1 — LLM report assembly
+### 1 — QA the report-tool-surface changes (redline-side)
 
-The loop is not a build: `mcp-tool-prepass.ts` already drives an AI SDK `ToolSet`
-over MCP. It lives in `packages/adapters`, which redline does not vendor — but
-the fork's `apps/web` depends on `@rbrasier/adapters` directly (its
-`package.json`, verified), and that is where `container-redline.ts` already sits.
-**Build this fork-side and the vendoring seam never has to widen.**
+The graph-traversal half of the tool surface and the report definition landed as a
+redline-side change; this item is the QA pass over it before the fork-side loop
+builds on top. Nothing here is net-new design — it is verification that what was
+just merged holds under the gate and reads correctly.
 
-**The seven tools it drives already exist**, served over streamable HTTP from
-`apps/redline-mcp`. Register that server in Wayfinder as `streamable-http` at
-`http://redline-mcp:8930/mcp` with `communicatesExternally: false`
-(`architecture.md` §5 invariant 7 records why, and why `true` would make this item
-unbuildable). What is unbuilt is the loop above them.
+**What landed, to QA:**
 
-**This item must settle what a report actually is** — its sections, what the
-model chooses versus what is transferred verbatim, and what a specialist can
-change before it is exported. Nothing anywhere defines this. Settle it here and
-write it into `architecture.md`; the item cannot be tested otherwise, and item 2
-cannot start without it.
+- **`IGraphStore` port** (`redline-domain`) — `fetchEntities` / `fetchEdgesFrom` /
+  `fetchEdgesTo`, mirroring womblex's `enrich` sidecars (`ENTITY_SCHEMA` /
+  `GRAPH_EDGE_SCHEMA`) uninterpreted. No graph loaded is an empty read, never an
+  error.
+- **`DrizzleGraphStore` + `redline_graph_entities` / `redline_graph_edges`**
+  (`redline-adapters`, migration `0005_redline_graph.sql`) — the store-side query
+  surface, read-only, mirroring the DDL the sidecar's enrich load path will write
+  (that Python loader is **not** built here — same posture as the chunk loader).
+- **Three graph tools on `apps/redline-mcp`** — `graph_find_entities`,
+  `graph_edges_from`, `graph_edges_to`, so the surface serves ten tools. Each
+  reports `graphAvailable`, distinguishing an empty match over a *loaded* graph
+  from an *absent* one, so an assembler can report unreachability rather than a
+  silently thin answer.
+- **`architecture.md` §5.1 — what a report is:** ordered sections
+  `{ heading, body, citations }`; the model chooses ordering/heading/connective
+  prose, never authors facts; every load-bearing claim is a verbatim transferred
+  passage or a money span, each with a citation; the byte-identity rule is the
+  provenance claim; a specialist may reorder/edit-prose/remove but never silently
+  reword a transferred passage before export.
 
-The verbatim rule is the testable part and the reason to do this before the
-export: a transferred passage must be byte-identical to its stored chunk, because
-that is the provenance claim the product makes. Assert it directly.
+**QA checklist:**
+
+- `./validate.sh` green (size guard, purity — no vector or Parquet type crosses
+  `redline-domain`, prefix guard on the two new tables).
+- The end-to-end MCP test proves entity → edge → chunk → **byte-identical**
+  verbatim text over a real client, and the graph-absent evaluation reports
+  `graphAvailable: false`.
+- Migration idempotency holds (apply twice, no error).
+- The domain purity check still passes with `IGraphStore` exported.
+- Read `architecture.md` §5.1 against invariant 7 for consistency (both now say
+  ten tools, graph built, findSimilar the one deferred).
+
+_Version bump: none (verification of a merged MINOR)._
+_Exit: `./validate.sh` green; the graph-traversal MCP path proven end to end
+including the byte-identity assertion and the `graphAvailable: false` case; §5.1
+and invariant 7 read consistently._
+
+### 2 — LLM report assembly (fork-side) + register the MCP server
+
+The redline-side surface is done (item 1). What is left is fork-side and is two
+commits under the build-step contract:
+
+**a) Register the report tool server in Wayfinder.** `apps/redline-mcp` is served
+over streamable HTTP; register it as `streamable-http` at
+`http://redline-mcp:8930/mcp` with `communicatesExternally: false` (invariant 7 —
+`true` would make it unselectable in flows and the assembler unbuildable). This is
+a `RegisterMcpServer` call, so it needs a list-then-create guard to stay
+idempotent (the use-case always creates). Mirror the existing seed patterns
+(`redline-seed-evaluation.ts` / its script) rather than an admin click, so a UAT
+bring-up is scripted.
+
+**b) Build the assembly loop.** Not a build from scratch: `mcp-tool-prepass.ts`
+already drives an AI SDK `ToolSet` over MCP, lives in `@rbrasier/adapters` (which
+the fork's `apps/web` depends on directly), and `container-redline.ts` already
+sits beside it. **Build this fork-side and the vendoring seam never has to
+widen.** The loop assembles a report as `architecture.md` §5.1 defines it —
+ordered sections, model-chosen prose, verbatim transferred passages with
+citations, graph traversal to locate rows, and an explicit unreachability note
+when a section cannot be grounded.
+
+The verbatim rule is the testable core and the reason to do this before the
+export: **a transferred passage must be byte-identical to its stored chunk**,
+because that is the provenance claim the product makes. Assert it directly by
+re-fetching every cited `chunkId` from the store and comparing bytes — not
+eyeballed.
 
 _Version bump: MINOR._
-_Exit: an LLM assembles a report over a populated evaluation, and every
-transferred passage is byte-identical to the chunk it came from — asserted
-against the store, not eyeballed._
+_Exit: the MCP server is registered idempotently; an LLM assembles a report over a
+populated evaluation, and every transferred passage is byte-identical to the chunk
+it came from — asserted against the store, not eyeballed. A run with no graph
+loaded returns a reported unavailability, not a silently thinner report._
 
-### 2 — The report sheet seam
+### 3 — The report sheet seam
 
 The export target exists and is deterministic: `buildEvaluationWorkbook` takes
 grid + pivots to sheet data and the browser writes xlsx through
@@ -182,14 +231,13 @@ the file._
 
 ---
 
-## 4. Housekeeping — off the vertical, wanted before users
+## 3. Housekeeping — off the vertical, wanted before users
 
-Deferred until the lean vertical is complete. Revisit the lens work **after** the
-corpus run has shown what the cold-start path actually gets right — that evidence
-should shape it rather than be assumed. In dependency order:
+Deferred until the lean vertical is complete. In dependency order:
 
 | Item | Package(s) | Notes |
 |---|---|---|
+| Hard-rule authoring for prose | domain | The mechanism cannot express what specialists want to match. `evaluateHardRules` matches identifier-shaped tokens; a rule authored as a body-text phrase is now a loud authoring error rather than a silent miss, which is honest but leaves the need unmet. Decide what a specialist authors when the thing to match is prose. |
 | Collision selection, ordering & capping | domain | Bounded, deterministic selection of genuinely ambiguous documents. |
 | `BoundaryDecision` entity | domain | Net-new modelling. Owns primary/secondary semantics. |
 | Decision persistence + corrections push | adapters | Shrunk: upstream owns corrections + audit — an adapter call over an existing API, not a build. |
@@ -203,98 +251,57 @@ should shape it rather than be assumed. In dependency order:
 
 ---
 
-## 6. Open questions
+## 4. Open questions
 
-1. **Open questions still owned here:** tenancy mapping — Numbatch
-   `organisation_id` ↔ Wayfinder identity (settle before a lens is shared between
-   users); primary/secondary semantics (Numbatch returns score-sorted ≤3 topics
-   with no primary/secondary distinction; owned by `BoundaryDecision` in §3);
-   ambiguity thresholds (the signal register needs initial values, unmeasured
-   until the corpus runs). **What a report is** was on this list by omission —
-   five source comments assigned work to a "report-assembler LLM" that appeared
-   in no document and no item. That assembler now has hands (`apps/redline-mcp`),
-   and the definition is item 1's to settle.
+1. **Still owned here:** tenancy mapping — Numbatch `organisation_id` ↔ Wayfinder
+   identity (settle before a lens is shared between users); primary/secondary
+   semantics (Numbatch returns score-sorted ≤3 topics with no primary/secondary
+   distinction; owned by `BoundaryDecision`); ambiguity thresholds — the signal
+   register needs initial values, and they are a design choice to be reasoned
+   about and then tuned, not something one corpus can hand us. **What a report
+   is** was on this list by omission — five source comments assigned work to a
+   "report-assembler LLM" that appeared in no document and no item. That
+   assembler now has hands (`apps/redline-mcp`, including graph traversal), and
+   the definition is now **settled in `architecture.md` §5.1** — no longer open.
 
 2. **Running a corpus from the browser is out of scope.** Choosing which
    documents of a connected bucket are in scope for an evaluation, and starting
-   the pipeline over them, was §2 item 1 until it was descoped on 2026-08-09. It
-   is not deferred-and-scheduled: nothing in this file plans it, and the deferred
-   set in §3 does not carry it either. What that costs is stated plainly so it is
-   not rediscovered as a surprise — `IngestDocuments`,
-   `AssignDocumentsToGroups`, the cold-start classifier and
+   the pipeline over them, was a numbered item until it was descoped on
+   2026-08-09. It is not deferred-and-scheduled: nothing in this file plans it.
+   What that costs, stated plainly so it is not rediscovered as a surprise —
+   `IngestDocuments`, `AssignDocumentsToGroups`, the cold-start classifier and
    `BuildEvaluationTable` stay reachable only from
    `apps/web/scripts/seed-redline-evaluation.ts`, so every evaluation begins with
    an operator at a terminal, and the object-storage port and adapter redline
    would need to upload or browse a bucket in TypeScript remain unwritten. The
    `evaluation` router's `create` mutation is unaffected: an evaluation is still
-   created in the browser over an already-staged corpus. Two live consequences:
-   how a corpus reaches the bucket is written down nowhere and no item now owns
-   writing it (item 3 records the gap, but a run is not scheduled); and
+   created in the browser over an already-staged corpus.
+
+3. **How a corpus reaches the bucket is written down nowhere, and no item owns
+   writing it.** `two-stack-local-run.md` brings up MinIO and stops; `mc cp`
+   stages the bucket in practice, which is a note to ourselves rather than a
+   runbook. Whoever drives the next run writes that step first. This is the live
+   gap left by the descoped browser-driven run, and it is also why
    `redline-create-evaluation.spec.ts` still needs an
-   `E2E_REDLINE_STAGED_CORPUS_ID` staged by hand.
+   `E2E_REDLINE_STAGED_CORPUS_ID` staged by hand — one naming a corpus **no
+   evaluation has claimed**, since `create` refuses a claimed one with
+   `ALREADY_EXISTS`.
 
-3. **A real-corpus run is called by the owner, not scheduled here.** The fixture
-   corpus is what the lean vertical is built and proven against (§2 preamble). A
-   run over a real tender happens when whoever holds `ISAACUS_API_KEY`, the
-   compute and the tender says it happens; this file does not sequence it and
-   nothing above is gated on it. It was a numbered §2 item until that decision on
-   2026-08-09. What such a run would do, recorded so it need not be rediscovered:
-   `womblex` profile ingests → the sidecar extracts, chunks and embeds → chunk
-   rows and embeddings materialise into the `redline_` store → group by vendor →
-   cold-start classify → render, over a corpus in the git-ignored
-   `services/womblex-ingest/tests/corpus-local/` (a README today). Extraction
-   provenance serves as JSON; bulk vectors load as data but are not ANN-indexed.
-   The enrich graph is off in redline's profile (`enrichment.enabled: false`);
-   turning it on is a config plus Isaacus-cost decision that would extend the
-   store-load path to carry graph edges. A run is also the only thing that would
-   settle **the three OCR-table gates** (paddleocr-only, deskew refusal,
-   precision refusal), and the only source of the `E2E_REDLINE_EVALUATION_ID` the
-   five seed-gated Playwright specs wait on — plus the
-   `E2E_REDLINE_STAGED_CORPUS_ID` that `redline-create-evaluation.spec.ts` needs,
-   which must name a corpus **no evaluation has claimed**, since `create` refuses
-   a claimed one with `ALREADY_EXISTS`. **Staging is written down nowhere** —
-   `two-stack-local-run.md` brings up MinIO and stops, and §3's "`mc cp` stages
-   the bucket today" is a note to ourselves, not a runbook; whoever drives a run
-   writes that step first.
+4. **The Playwright specs that need a populated evaluation are unrun**, and the
+   reason is environmental, not a missing corpus: the UAT web container is a
+   production install with dev dependencies pruned and no browsers. They need an
+   `E2E_REDLINE_EVALUATION_ID` and a runner that has Playwright.
 
-   > **Upstream-behaviour facts to bake into the runbook (not obvious from config).**
-   > Line references verified against the pinned `services/womblex` @ `v0.3.0` on
-   > 2026-08-09.
-   > (a) `womblex run` writes `elements`/`table_cells`/`form_fields` but **does not
-   > persist chunks** — `write_batch_parquet` passes only `(doc_id, path, extraction)`
-   > to `write_results` (`src/womblex/operations/persist.py:18-27`), and chunks hang
-   > off `result.chunks`. Chunking and embedding are separate per-stage commands
-   > (`womblex chunk --shards` then `womblex embed --shards`) over the run's shard dir.
-   > (b) But `run` still *computes* chunking when `chunking.enabled`
-   > (`src/womblex/batch.py:63-64` — the top-level module, **not**
-   > `operations/batch.py`, which does not exist) and then discards it, so a keyed
-   > run does the work twice. Wasted CPU and wall
-   > clock, **not** Isaacus spend — redline sets no `chunking_model`, so chunking is
-   > local semchunk over the Kanon-2 tokeniser the engine vendors in-tree at
-   > `src/womblex/_models/kanon-2-tokenizer/`. Setting `chunking.enabled: false` for
-   > the `run` pass avoids it and is safe for the prescribed `chunk --shards` path,
-   > which ignores that flag — but `womblex chunk --config` **refuses outright** when
-   > it is false (`src/womblex/cli/pipeline.py:418-420`), so do not flip it if anyone
-   > uses the `--config` composition. (c) The **chunk** stage is Isaacus-gated in
-   > 0.3.0 and the gate is a **pre-flight policy refusal**, not a capability limit —
-   > `cli/pipeline.py:152` computes `chunk_will_skip = config.chunking.enabled and
-   > not isaacus_available()` before any tokeniser loads. Settled by reading the
-   > engine, see `architecture.md` §7.1; plan around it rather than re-testing it.
-   > (d) The **embed** stage is unambiguously Isaacus-gated
-   > (`kanon-2-embedder`), and **`enrich`/`linking` are disabled** in redline's
-   > profile (`infra/womblex/redline.yaml:72-75`, so no graph is produced unless
-   > turned on).
-
-4. **A lens is declared at create time, not authored.** The create screen's
+5. **A lens is declared at create time, not authored.** The create screen's
    fields become the lens's topics, so the manifest is gone — but the lens is
-   written once, with **no hard rules** (none can honestly be written before
-   anyone has seen how these fields land on this corpus, so every field goes to
-   adjudication). Nothing edits a lens after the fact, and there is no versioning
-   or durable-asset lifecycle; that surface stays in §3. The seed script still
-   writes rules from a manifest, and is now the only path that can.
+   written once, with **no hard rules**, because a specialist typing field names
+   supplies no patterns to author rules from. Nothing edits a lens after the
+   fact, and there is no versioning or durable-asset lifecycle; that surface is
+   housekeeping. The seed script still writes rules from a manifest, and is now
+   the only path that can.
 
-5. **A range inside a pricing *table* is still uncountable, and that is
-   upstream's.** The grid's reading now counts a range once at its upper endpoint
+6. **A range inside a pricing *table* is still uncountable, and that is
+   upstream's.** The grid's reading counts a range once at its upper endpoint
    (`readDocumentMoney`), but it can only see a range womblex grouped — and
    `money_stage.py`'s `_cell_row` attaches no `range_group`/`range_role` to cell
    spans at all, so "$1M–$2M" written in a pricing schedule arrives as two
@@ -302,56 +309,46 @@ should shape it rather than be assumed. In dependency order:
    properly is a womblex change, not a redline one; raise it upstream rather than
    inferring a grouping here from adjacency.
 
-6. **Source comments cite plan item numbers, which are guaranteed to rot.** Files
-   across `packages/`, `apps/` and `services/womblex-ingest` carry
-   `(delivery-plan §2 item 1)` / `(item 1a)` / `(item 1b)` referring to several
-   different past items — this file renumbers whenever the outstanding set
-   changes, so any such citation is dead the next time it does. Do not add more:
-   cite `architecture.md`, which is stable, or state the substance in the comment.
-   Fix the existing ones when touching the file. (Deliberately not counted here: a
-   count is one more thing that rots. `grep -rn 'delivery-plan.*item\|(item 1'`
-   is the live answer.)
+7. **Source comments cite ADR numbers, most of which no longer resolve.** Plan
+   item citations are gone from source — do not reintroduce them. What remains is
+   `ADR-00xx`, densely: `docs/adr/` holds four documents and the comments cite
+   many more. Harmless where the comment states its own substance, which is the
+   common case; fix opportunistically when touching the file rather than as a
+   pass of its own. `grep -rn 'ADR-00' packages apps services` is the live answer;
+   a count here would rot like everything else.
 
-7. **Source comments still cite dead ADR numbers.** The documents no longer do
-   (see `design-principles.md`), but comments across `packages/` and the fork do
-   — e.g. `hard-rule-evaluation.ts:47` cites ADR-0011 for a precedence rule now
-   stated in `architecture.md` §3. Harmless where the comment states its own
-   substance, which is the common case; fix them opportunistically when touching
-   the file rather than as a pass of its own.
+   Related and unresolved: `.claude/CLAUDE.md` and `design-principles.md` both
+   record that ADRs were deliberately abandoned, yet `docs/adr/` has four written
+   since. Either the deviation table is wrong or the ADRs are. Settle it.
 
 ---
 
-## 7. Sequencing
+## 5. Sequencing
 
-**The lean vertical runs to completion before the deferred work starts.**
+**The lean vertical runs to completion before the housekeeping work starts.**
 
-**Items 1 and 2 are the product, and nothing here may gate them on a run.**
-Everything before them assembles inputs; everything after them is proof or polish.
-They need rows in the store, which can be seeded (§2 preamble) — so they start
-now. An earlier revision of this plan
-sequenced a fixture run first on the reasoning that later items would then debug
-against known-good connectors; in practice that reasoning only deferred the
-product behind a proof of the plumbing, and the plumbing gap it was meant to catch
-— the absent money-span writer — is one it could not have caught. That ordering is
-withdrawn.
+**The product items are the report assembly (fork-side) and the report sheet
+seam, and nothing may gate them on a run.** Everything before them assembles
+inputs; everything after them is proof or polish. They need rows in the store,
+which can be seeded — so they start now. An earlier revision sequenced a fixture
+run first on the reasoning that later items would then debug against known-good
+connectors; in practice that only deferred the product behind a proof of the
+plumbing, and the plumbing gap it was meant to catch — the absent money-span
+writer — is one it could not have caught. That ordering is withdrawn.
 
-The report work's prerequisites are met: the money-span write path is built, so
-the spans reach the store, and the tool surface over them is built and served
-(`apps/redline-mcp`), so item 1 registers a URL rather than building one. Nothing
-in the lean vertical now waits on another item to start.
+Their prerequisites are met: the money-span write path is built, so spans reach
+the store; the tool surface over them is built and served (`apps/redline-mcp`)
+including graph traversal; and what a report is is settled (`architecture.md`
+§5.1). So the fork-side assembly loop extends and registers rather than starting
+from nothing. Nothing in the lean vertical waits on another item to start.
 
-Item 3 makes the screens worth trusting and can land any time. A real-corpus run
-is what all of it is for, and is the owner's call (§4 item 3) — it confirms the
-product rather than being scheduled against it.
+**The UAT gate is the report sheet seam.** A corpus rendering in a grid is a
+demonstration of womblex and a classifier; a specialist cannot evaluate a tender
+from it, and asking them to would test the wrong thing. The report items are what
+make it redline.
 
-**The UAT gate is item 2.** A real corpus rendering in a grid is a demonstration
-of womblex and a classifier; a specialist cannot evaluate a tender from it, and
-asking them to would test the wrong thing. A corpus run on its own says the
-pipeline works. Items 1–2 are what make it redline. Do not schedule UAT against a
-date that only clears a run.
-
-Then, and only then: §3 in dependency order, and finally workspace extraction and
-release.
+Then, and only then: housekeeping in dependency order, and finally workspace
+extraction and release.
 
 ### What the lean vertical deliberately does not do
 
@@ -362,19 +359,12 @@ release.
   portability all wait.
 - **No vector *similarity search*.** The `pgvector`/ANN *index*, `findSimilar` and
   the store-side query-embed path are deferred. The embeddings *are* loaded and
-  available; what waits is the nearest-neighbour index over them.
-- **No enrich graph by default.** redline's womblex profile disables
-  `enrichment`/`linking`; producing and loading the graph is an explicit,
-  Isaacus-costed opt-in.
+  available; what waits is the nearest-neighbour index over them. Per the runtime
+  rule above, this defers an index — it does not shrink the tool surface built
+  over retrieval.
 - **No workspace extraction.** Ship-shape is a later concern than see-shape.
 
-**Two of those bind the report work directly, and the built tool surface is shaped
-by both.** The source comments describe the report-assembler as *"traversing the
-graph and calling tools"* — the graph is off, so it must work without one. And with
-`findSimilar` deferred it cannot search for a relevant passage either. So
-`apps/redline-mcp` exposes neither: every tool on it is deterministic — exact fetch
-by key, structural fetch by provenance. That is a real constraint on what a report
-can claim, not an implementation detail — the assembler transfers facts it is
-pointed at, and the pointing is done by classification, not by the model roaming
-the corpus. Design items 1 and 2 for that, or reopen one of these two decisions
-deliberately and widen the tool surface with it.
+`linking` stays off deliberately and is not the same thing as enrichment: `link`
+writes `*.entity_links.parquet`, which nothing in redline reads, and its preflight
+hard-fails without a `linking.reference` register a tender corpus has no candidate
+for. Enrichment itself is **on**.

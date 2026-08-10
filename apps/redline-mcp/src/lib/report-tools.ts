@@ -3,7 +3,9 @@ import {
   err,
   isErr,
   ok,
+  type EntityFilter,
   type IChunkStore,
+  type IGraphStore,
   type IMoneySpanStore,
   type IProcurementExtractionReader,
   type MoneySpanFilter,
@@ -12,7 +14,8 @@ import {
 } from "@redline/redline-domain";
 import { z } from "zod";
 
-// The report tool surface — seven existing read ports, described so a
+// The report tool surface. The deterministic read ports — exact fetch by key,
+// structural fetch by provenance — plus graph traversal, described so a
 // report-assembler LLM can call them, and nothing else.
 //
 // Why these are hand-built rather than a generic SQL tool over the same rows: the
@@ -24,19 +27,28 @@ import { z } from "zod";
 // row, which is the claim redline sells; it must not route through a tool that
 // cannot guarantee it.
 //
-// Two ports are deliberately absent from this surface. `IChunkStore.findSimilar`
-// refuses with NOT_IMPLEMENTED until the pgvector/ANN index lands, so the assembler
-// cannot search for a relevant passage — it transfers facts it is pointed at, and
-// the pointing is done by classification. And nothing here totals, converts or
-// aligns money: a financial expression reaches the assembler with its magnitude,
-// currency, value type and provenance, exactly as womblex wrote it. The review
-// grid's own reading of the same rows (`readDocumentMoney`) is one reading, and is
-// not the shape these tools serve.
+// **The surface is built to its full shape, not to whatever is currently switched
+// on** (architecture §5 invariant 7). Graph traversal is on the surface even
+// though enrich is Isaacus spend that may not have run: whether a graph exists is a
+// *runtime* condition, not a build-time one. A traversal tool whose evaluation has
+// no graph loaded returns an explicit `graphAvailable: false` rather than being
+// dropped, so the assembler reports what it could not reach instead of writing a
+// section anyway or mistaking an empty match for an absent graph.
+//
+// `IChunkStore.findSimilar` is the one thing deliberately absent: it refuses with
+// NOT_IMPLEMENTED until the pgvector/ANN index lands, so the assembler cannot
+// search for a relevant passage — it transfers facts it is pointed at, and the
+// pointing is done by classification and by the graph. And nothing here totals,
+// converts or aligns money: a financial expression reaches the assembler with its
+// magnitude, currency, value type and provenance, exactly as womblex wrote it. The
+// review grid's own reading of the same rows (`readDocumentMoney`) is one reading,
+// and is not the shape these tools serve.
 
 export interface ReportToolDependencies {
   readonly chunkStore: IChunkStore;
   readonly moneySpanStore: IMoneySpanStore;
   readonly extractionReader: IProcurementExtractionReader;
+  readonly graphStore: IGraphStore;
 }
 
 // Every payload states what it returned against what matched, so a capped read is
@@ -69,6 +81,14 @@ const EVALUATION_ID = z
   .describe("The redline evaluation the rows belong to. Every read is scoped to one.");
 
 const DOCUMENT_ID = z.string().min(1).describe("The document's womblex source_hash.");
+
+const ENTITY_ID = z
+  .string()
+  .min(1)
+  .describe(
+    "A graph node id — an entity ({source_hash}:{label}:{n}), a chunk (" +
+      "{source_hash}:chunk:{i}) or a document id, as it appears in an edge's sourceId/targetId.",
+  );
 
 const buildPayload = (
   evaluationId: string,
@@ -282,8 +302,110 @@ const extractionTools = (dependencies: ReportToolDependencies): readonly ReportT
   }),
 ];
 
+// Whether the evaluation has any enrichment graph loaded at all. enrich is Isaacus
+// spend that may not have run, so an empty traversal result is ambiguous: it could
+// be a legitimate empty match over a real graph, or no graph at all. This probe
+// disambiguates the two so a tool can report `graphAvailable: false` for the
+// runtime-absent case rather than letting the assembler mistake it for "nothing
+// matched". Only consulted when the direct result is empty — a non-empty result
+// already proves the graph is there.
+const probeGraphAvailable = async (
+  graphStore: IGraphStore,
+  evaluationId: string,
+): Promise<boolean> => {
+  const any = await graphStore.fetchEntities(evaluationId, {});
+  return !isErr(any) && any.data.length > 0;
+};
+
+const buildGraphPayload = async (
+  graphStore: IGraphStore,
+  evaluationId: string,
+  rowsKey: string,
+  rows: readonly unknown[],
+): Promise<ReportToolPayload> => {
+  const payload = buildPayload(evaluationId, rowsKey, rows);
+  const graphAvailable = rows.length > 0 || (await probeGraphAvailable(graphStore, evaluationId));
+  return { ...payload, graphAvailable };
+};
+
+const graphTools = (dependencies: ReportToolDependencies): readonly ReportTool[] => [
+  defineTool({
+    name: "graph_find_entities",
+    title: "Find enrichment-graph entities",
+    description:
+      "The entities womblex's enrichment found — people, locations, terms, external documents — " +
+      "filtered by document, label and/or the chunk they fall in. Each mention carries its " +
+      "`chunkIndex`, so `{documentId}:{chunkIndex}` is the chunk id you then pass to fetch_chunks " +
+      "to read the verbatim passage the entity was found in (chunkIndex -1 means the mention was " +
+      "not mapped to a chunk). This LOCATES source rows; it is not similarity search. " +
+      "`graphAvailable: false` means no enrichment graph has been loaded for this evaluation — " +
+      "say so in the report rather than treating it as an empty finding.",
+    inputShape: {
+      evaluationId: EVALUATION_ID,
+      documentId: DOCUMENT_ID.optional(),
+      entityLabel: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('womblex\'s label, e.g. "person", "location", "term", "external_document".'),
+      chunkIndex: z
+        .number()
+        .int()
+        .optional()
+        .describe("The 0-based chunk index a mention falls in — the reverse lookup from a chunk."),
+    },
+    run: async (args) => {
+      const filter: EntityFilter = {
+        ...(args.documentId === undefined ? {} : { documentId: args.documentId }),
+        ...(args.entityLabel === undefined ? {} : { entityLabel: args.entityLabel }),
+        ...(args.chunkIndex === undefined ? {} : { chunkIndex: args.chunkIndex }),
+      };
+      const rows = await dependencies.graphStore.fetchEntities(args.evaluationId, filter);
+      if (isErr(rows)) return rows;
+      return ok(
+        await buildGraphPayload(dependencies.graphStore, args.evaluationId, "entities", rows.data),
+      );
+    },
+  }),
+  defineTool({
+    name: "graph_edges_from",
+    title: "Follow edges out of a node",
+    description:
+      "The directed edges leaving a node (its sourceId) — the out-step of a traversal. Follow an " +
+      "entity's `mentioned_in` edge to reach the chunk it names, then fetch_chunks that chunk id " +
+      "for the verbatim text. Edges are ordered by (targetId, relation, propKey); a property-less " +
+      "edge has empty propKey/propValue and a multi-property edge repeats across rows. " +
+      "`graphAvailable: false` means no graph is loaded.",
+    inputShape: { evaluationId: EVALUATION_ID, entityId: ENTITY_ID },
+    run: async (args) => {
+      const rows = await dependencies.graphStore.fetchEdgesFrom(args.evaluationId, args.entityId);
+      if (isErr(rows)) return rows;
+      return ok(
+        await buildGraphPayload(dependencies.graphStore, args.evaluationId, "edges", rows.data),
+      );
+    },
+  }),
+  defineTool({
+    name: "graph_edges_to",
+    title: "Follow edges into a node",
+    description:
+      "The directed edges arriving at a node (its targetId) — the in-step of a traversal. Given a " +
+      "chunk id, this finds every entity mentioned in it; given an entity, what relates to it. " +
+      "Same stable order and same `graphAvailable` semantics as graph_edges_from.",
+    inputShape: { evaluationId: EVALUATION_ID, entityId: ENTITY_ID },
+    run: async (args) => {
+      const rows = await dependencies.graphStore.fetchEdgesTo(args.evaluationId, args.entityId);
+      if (isErr(rows)) return rows;
+      return ok(
+        await buildGraphPayload(dependencies.graphStore, args.evaluationId, "edges", rows.data),
+      );
+    },
+  }),
+];
+
 export const buildReportTools = (dependencies: ReportToolDependencies): readonly ReportTool[] => [
   ...chunkTools(dependencies),
   ...moneySpanTools(dependencies),
   ...extractionTools(dependencies),
+  ...graphTools(dependencies),
 ];

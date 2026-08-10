@@ -194,7 +194,8 @@ are merged.
 
 **Three test layers, not two.** The brains and view models are proven
 framework-free under `apps/redline-web/`; the Playwright specs prove the served
-routes but skip until a real corpus has run (delivery-plan §4 item 3). Between
+routes but skip until they are given a populated evaluation to point at, from a
+run or from seeded rows — the corpus is the input, not the milestone. Between
 them, the fork's own vitest suite mounts the `"use client"` components under
 jsdom against a fake `trpc` query and asserts the rows and columns they render,
 so a break in the core→DOM binding fails without a browser or a corpus. `jsdom`
@@ -271,8 +272,9 @@ delineates by brand, and a document may be claimed by only one group, since
 `assignDocument` moves rather than copies. The lens is written **last**: its
 binding row references the evaluation, so the evaluation must exist first, and
 the lens must exist before classification or the reader resolves `NOT_FOUND`. It
-carries **no hard rules** — none can honestly be written before anyone has seen
-how these fields land on this corpus — so every field goes to adjudication.
+carries **no hard rules** — a specialist typing field names supplies topics, not
+patterns, so there is nothing to author a rule from — and every field goes to
+adjudication.
 
 The create half (`stagedCorpusReader`, `lensWriter`) is therefore **on**
 `RedlineModule`, reversing the earlier decision to keep every write part off it.
@@ -281,7 +283,7 @@ reads a corpus manifest and drives `IngestDocuments` → `saveLens` →
 `AssignDocumentsToGroups` → `BuildEvaluationTable`, printing the evaluation id
 that opens the review grid and feeds `E2E_REDLINE_EVALUATION_ID`. It stays the
 only path that can write a lens *with* hard rules, and the deliberate fallback
-for de-risking a live run without a browser (delivery-plan §2 item 1).
+for de-risking a live run without a browser.
 
 ### Why womblex is split into a pod + a sidecar
 
@@ -575,10 +577,12 @@ carried as provenance, not as part of the join key (see §7).
    read-only and materialised from a pin.
 
 7. **The report tools expose ports, and expose them uninterpreted.**
-   `apps/redline-mcp` serves exactly seven read port methods —
+   `apps/redline-mcp` serves ten read tools — the deterministic reads
    `IChunkStore.fetchChunks`/`fetchByStructure`,
-   `IMoneySpanStore.fetchByDocument`/`fetchByStructure`, and
-   `IProcurementExtractionReader.readElements`/`readChunks`/`readTableCells` — over
+   `IMoneySpanStore.fetchByDocument`/`fetchByStructure`,
+   `IProcurementExtractionReader.readElements`/`readChunks`/`readTableCells`, and
+   the three graph-traversal reads
+   `IGraphStore.fetchEntities`/`fetchEdgesFrom`/`fetchEdgesTo` — over
    **streamable HTTP**, because Wayfinder's MCP client speaks SSE and
    streamable-HTTP only (no stdio) and addresses servers by URL.
 
@@ -592,14 +596,28 @@ carried as provenance, not as part of the join key (see §7).
    than looking like the whole answer. `postgres-mcp` is still worth having for
    ad-hoc analysis, off this path.
 
-   Two absences are deliberate and bind what a report can claim. There is **no
-   similarity search** (`findSimilar` is deferred) and **no graph** (redline's
-   womblex profile disables enrichment), so both tools an assembler gets are
-   deterministic — exact fetch by key, structural fetch by provenance. It transfers
-   facts it is *pointed at*; the pointing is done by classification, not by the
-   model roaming the corpus. And **money crosses uninterpreted**: an exact decimal
-   `value`, a possibly-unresolved `currency`, and the qualifiers womblex refuses to
-   fold in. Step (7)'s reading is not the shape these tools serve.
+   **The surface is built to its full shape, not to whatever is currently switched
+   on.** The deterministic tools are exact fetch by key and structural fetch by
+   provenance; **graph traversal is built alongside them** (`IGraphStore` →
+   `DrizzleGraphStore` over `redline_graph_entities` / `redline_graph_edges`,
+   mirroring womblex's `enrich` sidecars). It is the report assembler's navigation
+   mechanic (ADR-0017): an entity mention → its `mentioned_in` edge → the chunk it
+   names → the verbatim passage read back through `fetchChunks`. The graph *locates*
+   source rows; the transfer itself stays an exact chunk fetch, and it is **not**
+   vector search. Whether a graph has been loaded, or a similarity index exists, is
+   a *runtime* condition, not a build-time one: a graph tool whose evaluation has no
+   graph loaded returns an explicit `graphAvailable: false` — it is never dropped
+   from the surface, and an empty match over a *loaded* graph is distinguished from
+   an absent one so the assembler cannot mistake the two. An assembler that cannot
+   ground a section in retrievable data reports what it could not reach rather than
+   writing the section anyway. Deriving the tool surface from a config flag is how
+   an earlier revision of this section came to assert "no graph" while
+   `enrichment.enabled` was `true` and a run had already produced 1,771 edges. The
+   one thing deliberately absent is `IChunkStore.findSimilar`, which refuses with
+   NOT_IMPLEMENTED until the pgvector/ANN index lands. And **money crosses
+   uninterpreted**: an exact decimal `value`, a possibly-unresolved `currency`, and
+   the qualifiers womblex refuses to fold in. Step (7)'s reading is not the shape
+   these tools serve.
 
    In Wayfinder it registers with **`communicatesExternally: false`**. The flag
    classifies whether a server talks *outside* Wayfinder; this one reads redline's
@@ -626,14 +644,86 @@ carried as provenance, not as part of the join key (see §7).
 
 ---
 
+## 5.1 What a report is
+
+The review grid is not the product; **the report is** (delivery-plan §2). A corpus
+that is merely extracted, chunked and classified is womblex plus a classifier —
+almost none of that is redline. redline is for the step after: assembling those
+addressable, provenance-tagged facts into a document a procurement specialist hands
+to a delegate. This section settles what that document *is*, so the assembly loop
+can be built and tested against a definition rather than an intuition. Nothing here
+is a rendering concern (that is §2's report-sheet seam); this is the *shape and the
+rules*.
+
+**A report is an ordered list of sections, each grounded in the store.** A section
+is `{ heading, body, citations }`. The **assembler LLM chooses** the heading, the
+ordering and the connective prose of the body — the narrative that frames the
+facts. It **does not author facts**: every load-bearing claim in a body is either a
+**transferred passage** (a chunk's text, copied byte-identical from the store) or a
+**financial expression** (a money span, carried with its exact `value`, `currency`
+and qualifiers as womblex wrote them). A `citation` names the store row a
+transferred passage or expression came from — `chunkId` for a passage, the span's
+provenance anchor for an expression — so every fact in the report resolves back to
+a source location the specialist can open. A section with a body but no citations
+is a defect: it is prose the assembler wrote unaided, which is exactly what the
+verbatim rule exists to prevent.
+
+**The verbatim rule is the testable core, and it is the provenance claim.** A
+transferred passage must be **byte-identical to the chunk it came from** — not
+paraphrased, not trimmed, not re-cased, not re-quoted. This is asserted directly
+against the store (the assembly loop's exit test re-fetches every cited `chunkId`
+and compares bytes), never eyeballed. The reason is not fastidiousness: redline
+sells provenance, and a passage that has been silently reworded no longer
+resolves to the source — the deep-link would land on text the report does not
+contain. The assembler may *quote a fragment* of a chunk, but a quoted fragment
+must be a contiguous substring of the stored chunk, so the byte-comparison still
+holds. Summarising or characterising a passage is the assembler's own prose and
+lives in the connective body, never presented as a transferred fact.
+
+**How the assembler reaches its facts.** It is pointed, not left to roam. The
+pointing comes from classification (a `ProcurementResponse` already names the
+`sourceChunkId`/`sourceElementOrder` that placed a document against a requirement)
+and from the graph (§5 invariant 7: entity → `mentioned_in` edge → chunk). There is
+no similarity search on this path (`findSimilar` is deferred), so the assembler
+transfers facts it is directed to rather than discovering them. **When it cannot
+ground a section in retrievable data it says so** — a section whose supporting graph
+or spans are absent is reported as *unreachable* (a user-facing note naming what it
+could not reach), never written anyway from the model's own knowledge. A run over
+an evaluation with no graph loaded therefore produces a report with an explicit
+unavailability, not a silently thinner one.
+
+**What a specialist can change before export.** A report is a **draft the
+assembler proposes**, and the specialist is the author of record. Before export
+they may: reorder sections; edit or delete a section's heading and connective body;
+and **remove** a transferred passage or a whole section. They may **not** silently
+edit the text of a transferred passage — doing so would break the byte-identity the
+citation asserts, so a passage is either kept verbatim (with its citation) or
+removed (and its citation with it). Adding a *new* transferred passage means citing
+a store row, so the same rule holds by construction. This keeps the specialist in
+control of the report's shape and voice while the provenance guarantee stays
+mechanical: every passage still present in the exported report is still
+byte-identical to a stored chunk.
+
+**What a report is not.** It is not a scoring or a recommendation — redline does not
+rank vendors or decide a tender, and a quality score is a non-goal
+(`design-principles.md`). It is not a fixed template: the sections are the
+assembler's, shaped by what the corpus actually addresses, so a document that
+answers nothing surfaces as a section that says so rather than being forced into a
+heading it does not fill. And it is not the review grid re-typed: the grid is one
+input the assembler may cite, alongside the chunks, spans and graph.
+
+---
+
 ## 6. Repository layout
 
 ```
 redline/
 ├── apps/redline-web/              control surface (TypeScript)
-├── apps/redline-mcp/              the report tool surface — seven read ports served
-│                                  as an MCP server over streamable HTTP, plus its
-│                                  Dockerfile (compose profile `report`)
+├── apps/redline-mcp/              the report tool surface — ten read tools served
+│                                  as an MCP server over streamable HTTP (the
+│                                  deterministic chunk/money/extraction fetches plus
+│                                  IGraphStore traversal), plus its Dockerfile
+│                                  (compose profile `report`)
 ├── packages/
 │   ├── redline-domain/            entities + ports (zero deps, Result pattern)
 │   ├── redline-application/       use-cases (orchestration)

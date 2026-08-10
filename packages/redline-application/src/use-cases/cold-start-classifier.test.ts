@@ -29,7 +29,7 @@ import { ColdStartClassifier } from "./cold-start-classifier";
 // *exact/structural* fetch — no nearest-neighbour placing, because vector
 // similarity search is deferred. The assertions turn on:
 //   - the lens is resolved per call through IClassificationLensReader, so one
-//     instance serves every evaluation in the process (delivery-plan item 1);
+//     instance serves every evaluation in the process;
 //   - a hard-rule-claimed document never reaches the store or the model;
 //   - an unclaimed document's passages come from fetchByStructure (exact fetch),
 //     and the adjudicator's chosen topic becomes the requirementId;
@@ -312,7 +312,7 @@ describe("ColdStartClassifier — untrained first pass over the store (ADR-0008 
   it("classifies two evaluations against their own lenses from one instance", async () => {
     // The exit test: the classifier is constructed once, with no lens of its own,
     // and serves two evaluations — the shape the fork's process-wide memoised
-    // getContainer() forces (delivery-plan item 1).
+    // getContainer() forces.
     const store = new RecordingChunkStore();
     store.seed("doc-a", [chunk({ documentId: "doc-a", chunkId: "doc-a:0", chunkIndex: 0 })]);
     store.seed("doc-b", [chunk({ documentId: "doc-b", chunkId: "doc-b:0", chunkIndex: 0 })]);

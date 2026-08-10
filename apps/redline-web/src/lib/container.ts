@@ -222,7 +222,7 @@ export const buildContainer = (parts: ProductionContainerParts): Result<Workflow
 };
 
 // The cold-start classification path, composed behind the IProcurementClassifier
-// port (delivery-plan item 1b; ADR-0008 first pass in the ADR-0018-addendum
+// port (ADR-0008 first pass in the ADR-0018-addendum
 // shape). This is where a deployment with no Numbatch and no trained adapter
 // wires classification: hard rules + LLM adjudication over the store's
 // exact/structural fetch, no nearest-neighbour step. The result is an ordinary
