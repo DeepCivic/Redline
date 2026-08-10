@@ -12,10 +12,12 @@
 #   3. `womblex enqueue` the corpus, then drain it with `womblex worker`,
 #   4. assert the shards landed under proc/{eval}/.
 #
-# The embed stage uses kanon-2-embedder (Isaacus); *.embeddings.parquet — the
-# retrieval sibling — is only produced when ISAACUS_API_KEY is set. Without a key
-# the extraction + chunk shards still land (the engine is proven; the embeddings
-# assertion is skipped with a warning).
+# ISAACUS_API_KEY is REQUIRED, and not only for embed. Both the chunk and embed
+# contracts declare an Isaacus need, and run-stage refuses a stage it cannot
+# satisfy rather than publishing nothing — so without a key this script fails at
+# the chunk stage instead of quietly proving less than it claims. Chunking still
+# makes no API call (the Kanon-2 tokeniser is vendored in-tree); the key is a
+# policy gate there, a real credential for embed.
 #
 # Requires: the submodule checked out (`git submodule update --init`) and podman
 # (or docker) with compose. Uses the redline-owned stack only (ADR-0002).
@@ -51,6 +53,14 @@ if [ ! -f "$REPO_ROOT/services/womblex/pyproject.toml" ]; then
   exit 127
 fi
 
+# Checked here rather than at the chunk stage so the failure names its cause.
+# Any non-empty value satisfies chunk; only embed spends against a real key.
+if [ -z "${ISAACUS_API_KEY:-}" ]; then
+  echo "ERROR: ISAACUS_API_KEY is unset — run-stage refuses both chunk and embed." >&2
+  echo "       Set it in infra/uat/.env.uat (uat-local is sufficient for chunk)." >&2
+  exit 78
+fi
+
 # Pick a compose runner.
 if [ -n "${COMPOSE:-}" ]; then
   :
@@ -60,6 +70,7 @@ else echo "ERROR: need podman or docker with compose" >&2; exit 127; fi
 
 compose() { $COMPOSE -f "$COMPOSE_FILE" --profile womblex "$@"; }
 compose_cli() { $COMPOSE -f "$COMPOSE_FILE" --profile womblex-cli "$@"; }
+compose_stage() { $COMPOSE -f "$COMPOSE_FILE" --profile stage "$@"; }
 
 cleanup() {
   if [ "${KEEP_UP:-0}" != "1" ]; then
@@ -96,6 +107,30 @@ compose run --rm womblex worker \
   --config /app/redline-config/redline.yaml \
   --poll-interval 2 --idle-timeout 30
 
+# The worker persists EXTRACTION shards only — it computes chunking and discards
+# it. chunk and embed are separate passes over the run's shard prefix, which is
+# what `womblex run-stage` does. Without these two the assertions below can never
+# pass, however healthy the run looks.
+#
+# The run id is the worker's, not ours, so read it back off the store.
+RUN_ID="$(compose exec -T minio sh -c "
+  mc alias set local http://localhost:9000 \"\$MINIO_ROOT_USER\" \"\$MINIO_ROOT_PASSWORD\" >/dev/null 2>&1
+  mc ls local/$BUCKET/proc/$EVAL_ID/runs/ 2>/dev/null
+" | awk '{print $NF}' | tr -d '/' | grep '^run-' | sort | tail -1)"
+
+if [ -z "$RUN_ID" ]; then
+  echo "FAIL: no run- directory under proc/$EVAL_ID/runs/ — the worker published nothing" >&2
+  exit 1
+fi
+echo ">> running the downstream stages over $RUN_ID"
+
+for stage in chunk embed; do
+  echo "   -- run-stage --stage $stage"
+  compose_stage run --rm stage \
+    --stage "$stage" --run-id "$RUN_ID" \
+    --config /app/redline-config/redline.yaml
+done
+
 echo ">> asserting shards landed in MinIO under proc/$EVAL_ID/"
 LISTING="$(mktemp)"
 compose exec -T minio sh -c "
@@ -114,13 +149,7 @@ check() {
 }
 check ".elements.parquet"
 check ".chunks.parquet"
-
-# The retrieval sibling is Isaacus-gated (kanon-2-embedder).
-if [ -n "${ISAACUS_API_KEY:-}" ]; then
-  check ".embeddings.parquet"
-else
-  echo "   SKIP  *.embeddings.parquet — ISAACUS_API_KEY unset (embed stage did not run)"
-fi
+check ".embeddings.parquet"
 
 if [ "$FAILED" -ne 0 ]; then echo; echo "WOMBLEX ENGINE SMOKE: FAILED"; exit 1; fi
 echo; echo "WOMBLEX ENGINE SMOKE: PASSED — the real engine landed shards in MinIO."
