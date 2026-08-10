@@ -309,17 +309,26 @@ Deferred until the lean vertical is complete. In dependency order:
    properly is a womblex change, not a redline one; raise it upstream rather than
    inferring a grouping here from adjacency.
 
-7. **Source comments cite ADR numbers, most of which no longer resolve.** Plan
-   item citations are gone from source — do not reintroduce them. What remains is
-   `ADR-00xx`, densely: `docs/adr/` holds four documents and the comments cite
-   many more. Harmless where the comment states its own substance, which is the
-   common case; fix opportunistically when touching the file rather than as a
-   pass of its own. `grep -rn 'ADR-00' packages apps services` is the live answer;
-   a count here would rot like everything else.
+7. **Source comments cite ADR numbers, none of which resolve.** Plan item
+   citations are gone from source — do not reintroduce them. What remains is
+   `ADR-00xx`, densely, across `packages/`, `apps/`, `infra/`, `scripts/` and
+   `validate.sh`. Harmless where the comment states its own substance, which is
+   the common case; fix opportunistically when touching the file rather than as a
+   pass of its own. `grep -rn 'ADR-00' packages apps services infra scripts` is
+   the live answer; a count here would rot like everything else. Read a surviving
+   number as a pointer into git history, except where it is plainly upstream's —
+   Wayfinder's, Numbatch's and womblex's own registers do still exist, which is
+   why the train/activate row above cites *upstream* ADR-0021 and means a
+   different document from anything redline ever wrote.
 
-   Related and unresolved: `.claude/CLAUDE.md` and `design-principles.md` both
-   record that ADRs were deliberately abandoned, yet `docs/adr/` has four written
-   since. Either the deviation table is wrong or the ADRs are. Settle it.
+   **Settled: ADRs stay abandoned.** Four were written after the deletion
+   (0008, 0018, 0019, 0021) and have been removed; `.claude/CLAUDE.md` and
+   `design-principles.md` were right and stand unchanged. Where a deleted ADR
+   carried something the prose did not, that substance was written into
+   `architecture.md` instead — the untagged womblex pin's justification is under
+   "Vendoring / pinning discipline". Decisions are recorded in the commit that
+   acts on them; a decision durable enough to govern many commits goes to
+   `design-principles.md`. Do not open `docs/adr/` again.
 
 ---
 

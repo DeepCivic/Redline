@@ -777,8 +777,33 @@ redline/
 
 - **womblex** — git **submodule** at `services/womblex`, pinned to `f283969` — an
   **untagged `main` commit**, deliberately ahead of the last release (`v0.3.0`,
-  `b5730b0`), for `womblex run-stage`. See ADR-0021 for why an untagged pin was
-  accepted. This is the on-disk source of truth for the Parquet schema the
+  `b5730b0`), for `womblex run-stage`.
+
+  **Why an untagged pin was accepted.** At `v0.3.0` the engine's distributed path
+  stops at extraction: `write_batch_parquet` hands `write_results` only the
+  extraction, so the chunks `batch.py` computes are discarded, and every
+  downstream stage was a `--shards` command taking a *local* directory while
+  redline's shards live in object storage. The consequence was not slowness but
+  silence — **no path in redline produced chunks at all**, and chunks are what the
+  cold-start classifier reads, so a corpus run completed, landed extraction shards
+  and left `redline_chunks` empty with nothing failing. `f283969` adds `run-stage`,
+  which generalises the stage-in/run/stage-out shape to every per-batch stage
+  without moving a single `*_shards()` signature, and converts the silent
+  Isaacus-gated skip into a loud refusal. Waiting for a release meant either no
+  chunks or growing redline's own stage runner for `chunk` and `embed` beside the
+  `money` one — the duplication the submodule discipline exists to prevent, and
+  thrown away on release. The commit's `tests/test_stage_runner.py` shipped
+  upstream unexecuted; all 33 tests were run here against the built image and
+  pass. Blast radius is narrow (a new CLI verb plus two new `cloud/` modules), and
+  womblex is DeepCivic's own, so a defect is funnelled upstream rather than worked
+  around locally. **The pin returns to a tag at womblex's next release.**
+
+  Two consequences worth carrying: extraction is the worker's job and everything
+  downstream is an explicit `run-stage` pass whose **ordering is the caller's**
+  (chunk before embed); and `ISAACUS_API_KEY` is load-bearing earlier, because the
+  chunk gate now fails a run rather than quietly trimming it.
+
+  This is the on-disk source of truth for the Parquet schema the
   sidecar maps, **and the source the engine image is built from** — the `womblex`
   compose profile builds the submodule's own `Dockerfile`. Initialise it with
   `git submodule update --init`; CI checks it out (`submodules: true`). The

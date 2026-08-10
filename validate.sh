@@ -288,7 +288,8 @@ elif [ ! -f services/womblex/pyproject.toml ]; then
   skip "womblex pin — services/womblex not initialised (git submodule update --init)"
 else
   # An exact tag is preferred, but the pin is deliberately an untagged `main`
-  # commit (ADR-0021 — taken for `womblex run-stage`). Falling back to the
+  # commit, taken for `womblex run-stage` (architecture.md, "Vendoring / pinning
+  # discipline" — it returns to a tag at the next release). Falling back to the
   # version the submodule DECLARES keeps this check live on an untagged pin;
   # skipping there would silently retire the one drift nothing else catches.
   WOMBLEX_SUBMODULE_VERSION="$(git -C services/womblex describe --tags --exact-match 2>/dev/null | sed 's/^v//')"

@@ -23,25 +23,25 @@ run `./validate.sh` and fix all failures before declaring done.
 
 | If the user is asking to…                                        | Run            |
 | ---------------------------------------------------------------- | -------------- |
-| Plan a new build step or component (add/refine an item in the plan) | Answer directly — **stop there** |
+| Plan a new build step or component (add/refine an item in the plan) | Answer directly, then `/doc-review` |
+| Review a planned build step before building it                   | `/doc-review`  |
 | Implement an outstanding item from the delivery plan, write code | `/build`       |
 | Change or extend something already built                         | `/enhance`     |
 | Fix something broken or not working                              | `/bugfix`      |
-| Review a planned build step, only when explicitly asked          | `/doc-review`  |
 | Anything else                                                    | Answer directly |
 
 Planning new work is not its own skill: add or refine the item directly in
 `docs/delivery-plan.md` (§2/§3) against the build-step contract in §1 — one build
 step including its test, one commit, one package where possible, an explicit
-`_Exit: …_` test. Split the item if its exit test joins two independently-testable
-behaviours, spans two languages, or introduces a new entity *and* port *and*
-adapter at once.
+`_Exit: …_` test — then route to `/doc-review`. Split the item if its exit test
+joins two independently-testable behaviours, spans two languages, or introduces a
+new entity *and* port *and* adapter at once.
 
-**There is no review step between planning and building.** Do not offer or run
-`/doc-review` after writing an item. Accepting the plan change *is* the approval —
-the next move is `/build`, and it waits for the user to name the item, not for a
-second opinion on the wording. `/doc-review` exists for when a plan is explicitly
-handed over for review; it is never the automatic next step.
+**The review step between planning and building stays.** It has paid for itself:
+the 2026-08-09 scope decisions reached `/doc-review` carrying two false claims —
+a descope record implying a staging runbook the plan says does not exist, and an
+assertion that nothing served calls the run use cases — and both were corrected
+rather than shipped. Wording is not what it catches; claims are.
 
 ---
 
@@ -63,8 +63,10 @@ design, and its item numbers are local to that file and renumbered whenever the
 outstanding set changes.
 
 Both upstream Python engines are **git submodules** consumed for their existing
-capabilities, not reimplemented: `services/womblex` (`v0.3.0`) and
-`services/numbatch` (`72bcead`). A submodule holds upstream source only — redline's
+capabilities, not reimplemented: `services/womblex` (`f283969` — an untagged
+`main` commit ahead of `v0.3.0`, taken for `womblex run-stage`; it returns to a
+tag at the next release) and `services/numbatch` (`72bcead`). A submodule holds
+upstream source only — redline's
 own code sits beside it (`services/womblex-ingest`, `services/numbatch-extension`).
 Run `git submodule update --init` on a fresh clone. Wayfinder is also vendored
 from a build-time pin (`wayfinder.pin`, johntooth/wayfinder) because vendoring

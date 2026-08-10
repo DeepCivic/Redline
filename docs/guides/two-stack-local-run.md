@@ -236,7 +236,7 @@ account.
   which omits the SDK — and an engine without it skips chunking silently, landing
   extraction shards and nothing else regardless of the key.
   Under `run-stage` the policy gate **fails the stage loudly** rather than
-  skipping silently — the behaviour ADR-0021's pin was taken for.
+  skipping silently — the behaviour the untagged womblex pin was taken for.
 - **`embed` genuinely needs a real key** (`kanon-2-embedder` is an API call).
 - **`enrich` genuinely needs a real key too** (`kanon-2-enricher`), and it is on
   by default as of 2026-08-06: `enrichment.enabled: true` in
