@@ -139,8 +139,8 @@ just merged holds under the gate and reads correctly.
 
 - **`IGraphStore` port** (`redline-domain`) — `fetchEntities` / `fetchEdgesFrom` /
   `fetchEdgesTo`, mirroring womblex's `enrich` sidecars (`ENTITY_SCHEMA` /
-  `GRAPH_EDGE_SCHEMA`) uninterpreted. No graph loaded is an empty read, never an
-  error.
+  `GRAPH_EDGE_SCHEMA`) uninterpreted, plus `hasEntities`, the bounded existence
+  probe behind `graphAvailable`. No graph loaded is an empty read, never an error.
 - **`DrizzleGraphStore` + `redline_graph_entities` / `redline_graph_edges`**
   (`redline-adapters`, migration `0005_redline_graph.sql`) — the store-side query
   surface, read-only, mirroring the DDL the sidecar's enrich load path will write

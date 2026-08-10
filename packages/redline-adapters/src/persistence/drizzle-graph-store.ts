@@ -37,6 +37,7 @@ interface RedlineDb {
     from: (table: unknown) => {
       where: (predicate: unknown) => {
         orderBy: (...columns: unknown[]) => Promise<unknown[]>;
+        limit: (rows: number) => Promise<unknown[]>;
       };
     };
   };
@@ -105,6 +106,22 @@ export class DrizzleGraphStore implements IGraphStore {
       return ok(rows.map(toEntityRow));
     } catch (cause) {
       return err(domainError("INFRA_FAILURE", "failed to read graph entities", cause));
+    }
+  }
+
+  // Deliberately unordered: the caller wants existence, not a row, so the stable
+  // ENTITY_ORDER sort would be paid for nothing on a table that reaches corpus
+  // scale.
+  async hasEntities(evaluationId: string): Promise<Result<boolean>> {
+    try {
+      const rows = await this.db
+        .select()
+        .from(redlineGraphEntities)
+        .where(eq(redlineGraphEntities.evaluationId, evaluationId))
+        .limit(1);
+      return ok(rows.length > 0);
+    } catch (cause) {
+      return err(domainError("INFRA_FAILURE", "failed to probe graph entities", cause));
     }
   }
 

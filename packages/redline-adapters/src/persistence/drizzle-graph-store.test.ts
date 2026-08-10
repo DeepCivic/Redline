@@ -166,6 +166,48 @@ describe("DrizzleGraphStore — round-trip", () => {
     expect(edgesTo.data).toEqual([]);
   });
 
+  it("probes availability without reading the whole entity table", async () => {
+    await seedEntity(entity({ entityId: "one" }));
+    await seedEntity(entity({ entityId: "two" }));
+
+    const captured: string[] = [];
+    pg.query = new Proxy(pg.query, {
+      apply: (target, thisArg, args: unknown[]) => {
+        captured.push(String(args[0]));
+        return Reflect.apply(target, thisArg, args);
+      },
+    });
+
+    const result = await store.hasEntities("eval-1");
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data).toBe(true);
+    // The point of the probe: one bounded row, never the ~90k-row read the tool
+    // row cap exists to prevent.
+    expect(captured.some((sql) => /limit \$?\d+/i.test(sql))).toBe(true);
+    expect(captured.some((sql) => /order by/i.test(sql))).toBe(false);
+  });
+
+  it("probes availability as false when no enrich run has loaded a graph", async () => {
+    const result = await store.hasEntities("eval-1");
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data).toBe(false);
+  });
+
+  it("scopes the availability probe to one evaluation", async () => {
+    await seedEvaluation("eval-2");
+    await seedEntity(entity({ evaluationId: "eval-1", entityId: "one" }));
+
+    const result = await store.hasEntities("eval-2");
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data).toBe(false);
+  });
+
   it("scopes entities and edges by evaluation", async () => {
     await seedEvaluation("eval-2");
     await seedEntity(entity({ evaluationId: "eval-1", entityId: "one" }));

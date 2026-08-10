@@ -101,4 +101,12 @@ export interface IGraphStore {
     evaluationId: string,
     entityId: string,
   ): Promise<Result<readonly GraphEdgeRow[]>>;
+
+  // Whether the evaluation holds any entity mention at all — the availability
+  // question above, asked directly. A caller facing an empty traversal needs to
+  // separate "nothing matched" from "no graph here", and only this answer, never
+  // the rows: at corpus scale (~90k chunks) reading every entity row to test one
+  // boolean is the unbounded read the tool surface caps against, so an
+  // implementation must answer it bounded (a `LIMIT 1`, not a full scan).
+  hasEntities(evaluationId: string): Promise<Result<boolean>>;
 }
