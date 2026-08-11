@@ -137,11 +137,36 @@ A UAT run needs **no Isaacus account** — `ISAACUS_API_KEY=uat-local` in
 `infra/.env` produces chunks offline. Only the embed stage spends against a real
 key, and its output is inert while ADR-0018's addendum defers similarity search.
 
+## 6. The report tool server (optional)
+
+The report assembler reaches redline's rows through `apps/redline-mcp`, an MCP
+server over streamable HTTP. Bring it up under the `report` profile — it shares
+redline's Postgres and sidecar, so it joins the `redline` project, not this one:
+
+```bash
+$PODMAN compose -f infra/docker-compose.yml --profile report up -d redline-mcp
+curl -s localhost:8930/health   # {"status":"ok", ...}
+```
+
+Register it in Wayfinder from the same web container. The seed is a
+list-then-create guard over `RegisterMcpServer`, so re-running it is a no-op —
+it registers `streamable-http` at `http://redline-mcp:8930/mcp` with
+`communicatesExternally: false` (invariant 7 — `true` would make it unselectable
+in flows and the assembler unbuildable):
+
+```bash
+$PODMAN compose -f infra/uat/docker-compose.yml exec wayfinder-web \
+  sh -lc 'cd /app/services/wayfinder && pnpm --filter @wayfinder/web seed:redline-mcp'
+```
+
+It prints whether the server was newly registered or already present, and the
+registered id. The report assembler is now selectable in a flow.
+
 ## Tear down
 
 ```bash
 $PODMAN compose -f infra/uat/docker-compose.yml down          # the fork
-$PODMAN compose -f infra/docker-compose.yml --profile ingest down
+$PODMAN compose -f infra/docker-compose.yml --profile ingest --profile report down
 ```
 
 Add `-v` to either to drop its volumes. Tearing down `redline-uat` leaves

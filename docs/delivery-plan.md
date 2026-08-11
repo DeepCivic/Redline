@@ -40,11 +40,11 @@
 - Tests-first: the test file is written before the implementation file.
 - One package where possible.
 - **A fork-side step is two commits, not one.** Work in `services/wayfinder`
-  lands on `redline-integration` there, then needs the gitlink *and*
+  lands on the fork's `main` there, then needs the gitlink *and*
   `wayfinder.pin`'s `ref` moved here in step. Letting those two drift is what
   left redline typechecking against a domain package the fork had moved past.
   **The order is forced, not stylistic:** `validate.sh` #15 fails unless the
-  submodule sits on `redline-integration`'s commit, so a fork feature branch
+  submodule sits on the fork `main`'s commit, so a fork feature branch
   cannot be pinned — it must merge there first. Plan the fork PR as part of the
   step, or the second commit cannot be made.
 
@@ -61,11 +61,13 @@ housekeeping.
 chunked and classified is womblex plus a classifier; almost none of that needs
 redline. What redline is for is the step after — assembling those addressable,
 provenance-tagged facts into something a procurement specialist hands to a
-delegate. The report tool surface that gives an assembler hands is built
-(`apps/redline-mcp`) — the deterministic chunk/money/extraction fetches **and now
-graph traversal** — and **what a report is** is settled in `architecture.md` §5.1.
-The items below are what is left of that step, and **UAT does not start until they
-work**. A demo that ends at the review grid demonstrates the dependencies.
+delegate. The report tool surface that gives an assembler hands is built, QA'd
+and registered in Wayfinder (`apps/redline-mcp`) — the deterministic
+chunk/money/extraction fetches **and** graph traversal, ten tools served, its
+byte-identity and `graphAvailable` cases proven under the gate — and **what a
+report is** is settled in `architecture.md` §5.1. The items below are what is left
+of that step, and **UAT does not start until they work**. A demo that ends at the
+review grid demonstrates the dependencies.
 
 **Numbatch is not on this path.** Classification runs cold-start over womblex
 extraction: hard rules + LLM adjudication navigating the store's
@@ -122,80 +124,32 @@ extract→classify→build sequence that produced them. Those rows can be seeded
 straight into Postgres, which is how `packages/redline-adapters`' own suite
 already works (PGlite, seeded rows, no services).
 
-**Item 2 is fork-side** — the report assembly lives in
-`services/wayfinder/apps/web`, so it is two commits under the build-step
-contract. Item 3 is redline-side: the workbook builder already lives in
-`apps/redline-web`. So is the report tool surface item 2 calls, which is built and
-served over a URL the fork registers rather than imports.
+**The first item is fork-side** — the report assembly lives in
+`services/wayfinder/apps/web`, so it lands as two commits under the build-step
+contract (the feature on the fork's `main`, then the gitlink and pin moved
+here in step). The second is redline-side: the workbook builder already lives in
+`apps/redline-web`. So is the report tool surface the fork-side loop calls, which
+is built, QA'd and served over a URL the fork registers rather than imports.
 
-### 1 — QA the report-tool-surface changes (redline-side)
+### 1 — LLM report assembly (fork-side)
 
-The graph-traversal half of the tool surface and the report definition landed as a
-redline-side change; this item is the QA pass over it before the fork-side loop
-builds on top. Nothing here is net-new design — it is verification that what was
-just merged holds under the gate and reads correctly.
+The redline-side surface is done — the graph-traversal tools, the `IGraphStore`
+port with its bounded `hasEntities` probe, `DrizzleGraphStore` over
+`redline_graph_entities` / `redline_graph_edges` (migration `0005_redline_graph.sql`),
+and `architecture.md` §5.1's definition of what a report is, all landed and proven
+under the gate (byte-identity end to end, the `graphAvailable: false` case, ten
+tools served), and it is registered in Wayfinder as an internal streamable-http
+server by an idempotent seed, so the fork-side loop has a selectable tool surface
+to call.
 
-**What landed, to QA:**
-
-- **`IGraphStore` port** (`redline-domain`) — `fetchEntities` / `fetchEdgesFrom` /
-  `fetchEdgesTo`, mirroring womblex's `enrich` sidecars (`ENTITY_SCHEMA` /
-  `GRAPH_EDGE_SCHEMA`) uninterpreted, plus `hasEntities`, the bounded existence
-  probe behind `graphAvailable`. No graph loaded is an empty read, never an error.
-- **`DrizzleGraphStore` + `redline_graph_entities` / `redline_graph_edges`**
-  (`redline-adapters`, migration `0005_redline_graph.sql`) — the store-side query
-  surface, read-only, mirroring the DDL the sidecar's enrich load path will write
-  (that Python loader is **not** built here — same posture as the chunk loader).
-- **Three graph tools on `apps/redline-mcp`** — `graph_find_entities`,
-  `graph_edges_from`, `graph_edges_to`, so the surface serves ten tools. Each
-  reports `graphAvailable`, distinguishing an empty match over a *loaded* graph
-  from an *absent* one, so an assembler can report unreachability rather than a
-  silently thin answer.
-- **`architecture.md` §5.1 — what a report is:** ordered sections
-  `{ heading, body, citations }`; the model chooses ordering/heading/connective
-  prose, never authors facts; every load-bearing claim is a verbatim transferred
-  passage or a money span, each with a citation; the byte-identity rule is the
-  provenance claim; a specialist may reorder/edit-prose/remove but never silently
-  reword a transferred passage before export.
-
-**QA checklist:**
-
-- `./validate.sh` green (size guard, purity — no vector or Parquet type crosses
-  `redline-domain`, prefix guard on the two new tables).
-- The end-to-end MCP test proves entity → edge → chunk → **byte-identical**
-  verbatim text over a real client, and the graph-absent evaluation reports
-  `graphAvailable: false`.
-- Migration idempotency holds (apply twice, no error).
-- The domain purity check still passes with `IGraphStore` exported.
-- Read `architecture.md` §5.1 against invariant 7 for consistency (both now say
-  ten tools, graph built, findSimilar the one deferred).
-
-_Version bump: none (verification of a merged MINOR)._
-_Exit: `./validate.sh` green; the graph-traversal MCP path proven end to end
-including the byte-identity assertion and the `graphAvailable: false` case; §5.1
-and invariant 7 read consistently._
-
-### 2 — LLM report assembly (fork-side) + register the MCP server
-
-The redline-side surface is done (item 1). What is left is fork-side and is two
-commits under the build-step contract:
-
-**a) Register the report tool server in Wayfinder.** `apps/redline-mcp` is served
-over streamable HTTP; register it as `streamable-http` at
-`http://redline-mcp:8930/mcp` with `communicatesExternally: false` (invariant 7 —
-`true` would make it unselectable in flows and the assembler unbuildable). This is
-a `RegisterMcpServer` call, so it needs a list-then-create guard to stay
-idempotent (the use-case always creates). Mirror the existing seed patterns
-(`redline-seed-evaluation.ts` / its script) rather than an admin click, so a UAT
-bring-up is scripted.
-
-**b) Build the assembly loop.** Not a build from scratch: `mcp-tool-prepass.ts`
-already drives an AI SDK `ToolSet` over MCP, lives in `@rbrasier/adapters` (which
-the fork's `apps/web` depends on directly), and `container-redline.ts` already
-sits beside it. **Build this fork-side and the vendoring seam never has to
-widen.** The loop assembles a report as `architecture.md` §5.1 defines it —
-ordered sections, model-chosen prose, verbatim transferred passages with
-citations, graph traversal to locate rows, and an explicit unreachability note
-when a section cannot be grounded.
+**What is left is the assembly loop.** Not a build from scratch:
+`mcp-tool-prepass.ts` already drives an AI SDK `ToolSet` over MCP, lives in
+`@rbrasier/adapters` (which the fork's `apps/web` depends on directly), and
+`container-redline.ts` already sits beside it. **Build this fork-side and the
+vendoring seam never has to widen.** The loop assembles a report as
+`architecture.md` §5.1 defines it — ordered sections, model-chosen prose, verbatim
+transferred passages with citations, graph traversal to locate rows, and an
+explicit unreachability note when a section cannot be grounded.
 
 The verbatim rule is the testable core and the reason to do this before the
 export: **a transferred passage must be byte-identical to its stored chunk**,
@@ -204,19 +158,19 @@ re-fetching every cited `chunkId` from the store and comparing bytes — not
 eyeballed.
 
 _Version bump: MINOR._
-_Exit: the MCP server is registered idempotently; an LLM assembles a report over a
-populated evaluation, and every transferred passage is byte-identical to the chunk
-it came from — asserted against the store, not eyeballed. A run with no graph
-loaded returns a reported unavailability, not a silently thinner report._
+_Exit: an LLM assembles a report over a populated evaluation, and every
+transferred passage is byte-identical to the chunk it came from — asserted against
+the store, not eyeballed. A run with no graph loaded returns a reported
+unavailability, not a silently thinner report._
 
-### 3 — The report sheet seam
+### 2 — The report sheet seam
 
 The export target exists and is deterministic: `buildEvaluationWorkbook` takes
 grid + pivots to sheet data and the browser writes xlsx through
 `write-excel-file`. What is missing is a seam where an assembled report becomes
-sheets. Split from item 1 because it is independently testable — a fixed report
-structure exports correctly whether a model or a fixture produced it — and
-because it is the half a specialist actually receives.
+sheets. Split from the assembly loop because it is independently testable — a
+fixed report structure exports correctly whether a model or a fixture produced it
+— and because it is the half a specialist actually receives.
 
 **Prefer extending that builder over adopting an Excel MCP server**
 (`haris-musa/excel-mcp-server`, MIT, streamable-HTTP, is the credible one): it
@@ -246,6 +200,7 @@ Deferred until the lean vertical is complete. In dependency order:
 | Lens stage machine | redline-web | Define → map → resolve → save, its own machine. |
 | Collision resolution surface | redline-web | View model + controller for resolving a collision set. |
 | Sample accrual | adapters | Shrunk: upstream topic-scoped dedupe indexes give re-push idempotence for free. |
+| Corpus upload via UI | domain + adapters + redline-web | The "or via UI" half of raw-corpus intake. Direct-to-bucket (`mc cp`/any S3 client into `proc/{evaluationId}/`) works today, out of product; a browser upload does not, because redline has no object-store port — its domain ports are all read surfaces (`IChunkStore`/`IGraphStore`/`IMoneySpanStore`). Needs a write-side port + S3 adapter and an upload surface that lands raw documents under the evaluation prefix the womblex engine then processes. Distinct from browser-driven *run* (still descoped): this stages bytes, it does not orchestrate extraction. |
 | Train/activate policy | adapters | Needs redesign — auto-activation contradicts upstream ADR-0021 (activation is a user-controlled pointer move with a replay diff). Surface the upstream flow: auto-*train* on crossing the floor, then let the specialist activate. |
 | Workspace extraction & release prep | workspace | Standalone workspace; sever the vendoring seam; graft the financial overlay onto the fork. Last by nature. |
 
@@ -272,25 +227,35 @@ Deferred until the lean vertical is complete. In dependency order:
    `IngestDocuments`, `AssignDocumentsToGroups`, the cold-start classifier and
    `BuildEvaluationTable` stay reachable only from
    `apps/web/scripts/seed-redline-evaluation.ts`, so every evaluation begins with
-   an operator at a terminal, and the object-storage port and adapter redline
-   would need to upload or browse a bucket in TypeScript remain unwritten. The
-   `evaluation` router's `create` mutation is unaffected: an evaluation is still
-   created in the browser over an already-staged corpus.
+   an operator at a terminal. The object-storage port and adapter redline would
+   need to *browse* a connected bucket in TypeScript remain unwritten (the *write*
+   side — uploading a raw corpus via UI — is a tracked housekeeping item; see the
+   next question). The `evaluation` router's `create` mutation is unaffected: an
+   evaluation is still created in the browser over an already-staged corpus.
 
-3. **How a corpus reaches the bucket is written down nowhere, and no item owns
-   writing it.** `two-stack-local-run.md` brings up MinIO and stops; `mc cp`
-   stages the bucket in practice, which is a note to ourselves rather than a
-   runbook. Whoever drives the next run writes that step first. This is the live
-   gap left by the descoped browser-driven run, and it is also why
-   `redline-create-evaluation.spec.ts` still needs an
-   `E2E_REDLINE_STAGED_CORPUS_ID` staged by hand — one naming a corpus **no
-   evaluation has claimed**, since `create` refuses a claimed one with
-   `ALREADY_EXISTS`.
+3. **Raw-corpus intake has two paths, and only the direct one exists today.**
+   Direct-to-bucket works now, out of product: an S3 client (`mc cp`, or any
+   uploader) writes the raw documents under `proc/{evaluationId}/` in redline's
+   bucket — the seam is plain S3 (ADR-0002), redline builds nothing for it, and
+   the path is documented in `docs/guides/two-stack-local-run.md`. The **via-UI**
+   path is a real capability the intake requirement asks for and it is *not* built:
+   redline has no object-store write port (its ports are all read surfaces), so a
+   browser upload has nothing to call. That is now a tracked housekeeping item
+   (corpus upload via UI), not an omission. Both paths stage bytes only — womblex
+   then processes the corpus and mints the `source_hash` identities the evaluation
+   manifest references, which is why `redline-create-evaluation.spec.ts` gates on
+   an `E2E_REDLINE_STAGED_CORPUS_ID` naming a corpus **no evaluation has claimed**
+   (`create` refuses a claimed one with `ALREADY_EXISTS`).
 
-4. **The Playwright specs that need a populated evaluation are unrun**, and the
-   reason is environmental, not a missing corpus: the UAT web container is a
-   production install with dev dependencies pruned and no browsers. They need an
-   `E2E_REDLINE_EVALUATION_ID` and a runner that has Playwright.
+4. **The Playwright specs that need a populated evaluation wait until after UAT,
+   and that is deliberate.** They prove the *served DOM* the view models bind to;
+   the view models and builders are already proven framework-free in the
+   `redline-web` and `redline-adapters` vitest suites, and the report items' own
+   exits assert against the store, not the browser. So nothing in the lean
+   vertical is gated on these specs. Running them is post-UAT: it needs an
+   `E2E_REDLINE_EVALUATION_ID`, a runner that has Playwright, and a web container
+   that is not the pruned production install (no dev dependencies, no browsers).
+   Scheduling that environment is not a lean-vertical concern.
 
 5. **A lens is declared at create time, not authored.** The create screen's
    fields become the lens's topics, so the manifest is gone — but the lens is
@@ -305,9 +270,11 @@ Deferred until the lean vertical is complete. In dependency order:
    (`readDocumentMoney`), but it can only see a range womblex grouped — and
    `money_stage.py`'s `_cell_row` attaches no `range_group`/`range_role` to cell
    spans at all, so "$1M–$2M" written in a pricing schedule arrives as two
-   ungrouped rows and is counted twice. Narrative ranges are handled. Fixing this
-   properly is a womblex change, not a redline one; raise it upstream rather than
-   inferring a grouping here from adjacency.
+   ungrouped rows and is counted twice. Narrative ranges are handled. Re-checked
+   against womblex 0.4.0 (`d6850de`, the narrative-money release): `_cell_row`
+   still neither accepts nor sets those fields, so the bump does not close this.
+   Fixing it properly is a womblex change, not a redline one; raise it upstream
+   rather than inferring a grouping here from adjacency.
 
 7. **Source comments cite ADR numbers, none of which resolve.** Plan item
    citations are gone from source — do not reintroduce them. What remains is
@@ -347,9 +314,10 @@ writer — is one it could not have caught. That ordering is withdrawn.
 
 Their prerequisites are met: the money-span write path is built, so spans reach
 the store; the tool surface over them is built and served (`apps/redline-mcp`)
-including graph traversal; and what a report is is settled (`architecture.md`
-§5.1). So the fork-side assembly loop extends and registers rather than starting
-from nothing. Nothing in the lean vertical waits on another item to start.
+including graph traversal, and registered in Wayfinder; and what a report is is
+settled (`architecture.md` §5.1). So the fork-side assembly loop extends what is
+there rather than starting from nothing. Nothing in the lean vertical waits on
+another item to start.
 
 **The UAT gate is the report sheet seam.** A corpus rendering in a grid is a
 demonstration of womblex and a classifier; a specialist cannot evaluate a tender

@@ -120,7 +120,7 @@ flowchart TB
     mcp -->|Drizzle, read-only| pg
     mcp -->|HTTP+JSON| sidecar
 
-    fork["services/wayfinder — SUBMODULE<br/>the Wayfinder FORK, branch redline-integration<br/>its apps/web SERVES the redline-web brains"]
+    fork["services/wayfinder — SUBMODULE<br/>the Wayfinder FORK, branch main<br/>its apps/web SERVES the redline-web brains"]
     fork -.->|mounts + serves| web
     fork -.->|MCP over streamable HTTP, by URL| mcp
     fork --> pg
@@ -745,7 +745,7 @@ redline/
 │   ├── numbatch-extension/        redline's additive overlay (financial_extension
 │   │                              + bootstrap-profile.py), grafts onto the fork
 │   └── wayfinder/                 ◄ SUBMODULE: the Wayfinder FORK,
-│                                  branch redline-integration. apps/web serves
+│                                  branch main. apps/web serves
 │                                  the redline-web UI; resolves @redline/* as
 │                                  workspace packages. Mount lives here only.
 │                                  As built: server/routers/evaluation.ts (tRPC;
@@ -827,14 +827,15 @@ redline/
   - the **build-time typed-reuse seam** — materialised read-only from
     `wayfinder.pin` into `vendor/wayfinder`, never committed;
   - the **runtime UI-mount seam** — the Wayfinder **fork** as a submodule at
-    `services/wayfinder`, tracking branch `redline-integration`. This is a
+    `services/wayfinder`, tracking branch `main`. This is a
     submodule redline *runs and edits* (unlike the byte-identical
     womblex/numbatch submodules): the review UI mounts into the fork's `apps/web`,
     which resolves redline's `@redline/*` packages as workspace members. The
     invariant that replaces "never modified" is enforced by `validate.sh` #15:
-    the checkout stays on `redline-integration`. The check once also asserted the
-    fork's `main` never diverged from rbrasier, protecting a clean upstreaming
-    diff; redline builds against johntooth/wayfinder only, so that half was
+    the checkout stays on the branch `.gitmodules` names (the fork's `main`). The
+    check once also asserted the fork's `main` never diverged from rbrasier,
+    protecting a clean upstreaming diff; redline builds against johntooth/wayfinder
+    only, so that half was
     removed rather than left policing a relationship we do not have.
 
 ---

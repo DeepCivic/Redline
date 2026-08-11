@@ -181,7 +181,7 @@ while IFS= read -r f; do
   if [ "$lc" -ge 800 ]; then SIZE_FAILURES+="  $lc  $f\n"; else SIZE_WARNINGS+="  $lc  $f\n"; fi
 # services/womblex, services/numbatch and services/wayfinder are the vendored
 # upstream submodules — source we never modify (the Wayfinder fork carries
-# redline's mount on its redline-integration branch, but that tree is the fork's
+# redline's mount on its `main` branch, but that tree is the fork's
 # to shape, not redline source to lint), excluded from our own static guards
 # exactly as vendor/wayfinder is. redline's own overlay lives in
 # services/numbatch-extension and IS checked.
@@ -339,18 +339,19 @@ fi
 # ── 15. Wayfinder fork hygiene (services/wayfinder submodule) ────────────────
 # The Wayfinder fork is a submodule we RUN and EDIT (ADR-0019), unlike the
 # byte-identical Python submodules. One invariant replaces "never modified": the
-# checkout is on the redline-integration branch's commit the superproject
-# records — redline's mount lives only there.
+# checkout is on the fork's `main` branch commit the superproject
+# records — redline's mount lives on johntooth/wayfinder's `main`.
 #
 # This check used to carry a second half, asserting the fork's `main` had not
 # diverged from rbrasier's — protecting a clean upstreaming diff. redline builds
 # and runs against johntooth/wayfinder only, so that guard policed a
-# relationship we do not have, and PR #9 (redline-integration merged into main)
-# breached it with no consequence. Removed rather than left failing.
+# relationship we do not have, and PR #9 breached it with no consequence.
+# Removed rather than left failing. The branch this check enforces is read from
+# .gitmodules, so it follows a rename there rather than hard-coding a name.
 #
 # SKIPs (never fails) on a clone without the submodule initialised, matching
 # #13's clean-clone posture.
-section "15. Wayfinder fork checkout is on redline-integration"
+section "15. Wayfinder fork checkout is on the branch .gitmodules names"
 if [ ! -d services/wayfinder/.git ] && [ ! -f services/wayfinder/.git ]; then
   skip "wayfinder fork — services/wayfinder not initialised (git submodule update --init)"
 elif ! command -v git >/dev/null 2>&1; then
@@ -364,7 +365,7 @@ else
   # to stay robust to a detached-but-correct checkout.
   # --verify --quiet, not a bare rev-parse: a bare `git rev-parse <unknown-ref>`
   # ECHOES its argument to stdout before failing, so the fallback below would set
-  # this to the literal string "origin/redline-integration" rather than leaving
+  # this to the literal string "origin/main" rather than leaving
   # it empty — silently defeating every emptiness test downstream.
   WF_BRANCH_SHA="$(git -C services/wayfinder rev-parse --verify --quiet "origin/${WF_CONFIGURED_BRANCH}" 2>/dev/null || git -C services/wayfinder rev-parse --verify --quiet "${WF_CONFIGURED_BRANCH}" 2>/dev/null)"
   WF_HEAD_SHA="$(git -C services/wayfinder rev-parse HEAD 2>/dev/null)"

@@ -20,7 +20,7 @@
 # (.github/workflows/ci.yml checks out `repo` @ `ref`), so they are a live
 # source, not a label.
 #
-# The ref tracks `redline-integration`, so the vendored @rbrasier/domain is the
+# The ref tracks the fork's `main`, so the vendored @rbrasier/domain is the
 # one the app we mount into actually runs. Keep it in step with the
 # services/wayfinder gitlink; the two drifting apart is what let redline
 # typecheck against a domain package the fork had already moved past.
@@ -31,4 +31,4 @@
 # tells you whether the new commit still satisfies the contract redline reuses.
 
 repo=johntooth/wayfinder
-ref=5f61fb261da3af2bb6c76ce6bd42694cfa906eec
+ref=8c9d9b8bb0489b997d0e1499565ac9e6e8aad0fa

@@ -7,4 +7,4 @@
 [submodule "services/wayfinder"]
 	path = services/wayfinder
 	url = https://github.com/johntooth/wayfinder.git
-	branch = redline-integration
+	branch = main
