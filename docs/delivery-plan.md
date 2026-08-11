@@ -65,9 +65,15 @@ delegate. The report tool surface that gives an assembler hands is built, QA'd
 and registered in Wayfinder (`apps/redline-mcp`) — the deterministic
 chunk/money/extraction fetches **and** graph traversal, ten tools served, its
 byte-identity and `graphAvailable` cases proven under the gate — and **what a
-report is** is settled in `architecture.md` §5.1. The items below are what is left
-of that step, and **UAT does not start until they work**. A demo that ends at the
-review grid demonstrates the dependencies.
+report is** is settled in `architecture.md` §5.1. **The assembly loop that turns
+that surface into a report is built** (fork-side, `ReportAssembler` in
+`@rbrasier/adapters`): it gathers over the tools, assembles ordered sections of
+model-chosen prose with verbatim cited passages, and asserts every transferred
+passage byte-identical against the store — the no-graph case returning a reported
+unavailability rather than a thinner report, all proven under the gate. The one
+item left is turning an assembled report into the sheet a specialist receives,
+and **UAT does not start until it works**. A demo that ends at the review grid
+demonstrates the dependencies.
 
 **Numbatch is not on this path.** Classification runs cold-start over womblex
 extraction: hard rules + LLM adjudication navigating the store's
@@ -118,52 +124,20 @@ kind from its name or assume every document answers something. Where a
 tender-shaped assumption is found, it is a defect.
 
 **The report work is not gated on a pipeline run, and treating it as though it
-were is a planning error we have already made once.** Both items need *rows in
-the store* — chunks, spans, responses with provenance — not a live
+were is a planning error we have already made once.** The remaining item needs
+*rows in the store* — chunks, spans, responses with provenance — not a live
 extract→classify→build sequence that produced them. Those rows can be seeded
 straight into Postgres, which is how `packages/redline-adapters`' own suite
 already works (PGlite, seeded rows, no services).
 
-**The first item is fork-side** — the report assembly lives in
-`services/wayfinder/apps/web`, so it lands as two commits under the build-step
-contract (the feature on the fork's `main`, then the gitlink and pin moved
-here in step). The second is redline-side: the workbook builder already lives in
-`apps/redline-web`. So is the report tool surface the fork-side loop calls, which
-is built, QA'd and served over a URL the fork registers rather than imports.
+**The remaining item is redline-side** — the workbook builder already lives in
+`apps/redline-web`. The report tool surface the assembler calls, and the
+assembly loop itself, are both built: the surface is served over a URL the fork
+registers rather than imports (`apps/redline-mcp`), and the loop is fork-side in
+`@rbrasier/adapters`, so its landing was two commits (the feature on the fork's
+`main`, then the gitlink and pin moved here in step).
 
-### 1 — LLM report assembly (fork-side)
-
-The redline-side surface is done — the graph-traversal tools, the `IGraphStore`
-port with its bounded `hasEntities` probe, `DrizzleGraphStore` over
-`redline_graph_entities` / `redline_graph_edges` (migration `0005_redline_graph.sql`),
-and `architecture.md` §5.1's definition of what a report is, all landed and proven
-under the gate (byte-identity end to end, the `graphAvailable: false` case, ten
-tools served), and it is registered in Wayfinder as an internal streamable-http
-server by an idempotent seed, so the fork-side loop has a selectable tool surface
-to call.
-
-**What is left is the assembly loop.** Not a build from scratch:
-`mcp-tool-prepass.ts` already drives an AI SDK `ToolSet` over MCP, lives in
-`@rbrasier/adapters` (which the fork's `apps/web` depends on directly), and
-`container-redline.ts` already sits beside it. **Build this fork-side and the
-vendoring seam never has to widen.** The loop assembles a report as
-`architecture.md` §5.1 defines it — ordered sections, model-chosen prose, verbatim
-transferred passages with citations, graph traversal to locate rows, and an
-explicit unreachability note when a section cannot be grounded.
-
-The verbatim rule is the testable core and the reason to do this before the
-export: **a transferred passage must be byte-identical to its stored chunk**,
-because that is the provenance claim the product makes. Assert it directly by
-re-fetching every cited `chunkId` from the store and comparing bytes — not
-eyeballed.
-
-_Version bump: MINOR._
-_Exit: an LLM assembles a report over a populated evaluation, and every
-transferred passage is byte-identical to the chunk it came from — asserted against
-the store, not eyeballed. A run with no graph loaded returns a reported
-unavailability, not a silently thinner report._
-
-### 2 — The report sheet seam
+### 1 — The report sheet seam
 
 The export target exists and is deterministic: `buildEvaluationWorkbook` takes
 grid + pivots to sheet data and the browser writes xlsx through
@@ -250,8 +224,9 @@ Deferred until the lean vertical is complete. In dependency order:
 4. **The Playwright specs that need a populated evaluation wait until after UAT,
    and that is deliberate.** They prove the *served DOM* the view models bind to;
    the view models and builders are already proven framework-free in the
-   `redline-web` and `redline-adapters` vitest suites, and the report items' own
-   exits assert against the store, not the browser. So nothing in the lean
+   `redline-web` and `redline-adapters` vitest suites, and the report sheet
+   seam's own exit asserts against the store, not the browser. So nothing in the
+   lean
    vertical is gated on these specs. Running them is post-UAT: it needs an
    `E2E_REDLINE_EVALUATION_ID`, a runner that has Playwright, and a web container
    that is not the pruned production install (no dev dependencies, no browsers).
@@ -303,26 +278,27 @@ Deferred until the lean vertical is complete. In dependency order:
 
 **The lean vertical runs to completion before the housekeeping work starts.**
 
-**The product items are the report assembly (fork-side) and the report sheet
-seam, and nothing may gate them on a run.** Everything before them assembles
-inputs; everything after them is proof or polish. They need rows in the store,
-which can be seeded — so they start now. An earlier revision sequenced a fixture
-run first on the reasoning that later items would then debug against known-good
-connectors; in practice that only deferred the product behind a proof of the
-plumbing, and the plumbing gap it was meant to catch — the absent money-span
-writer — is one it could not have caught. That ordering is withdrawn.
+**The product item is the report sheet seam, and nothing may gate it on a run.**
+Everything before it assembles inputs; everything after it is proof or polish. It
+needs rows in the store, which can be seeded — so it starts now. An earlier
+revision sequenced a fixture run first on the reasoning that later items would
+then debug against known-good connectors; in practice that only deferred the
+product behind a proof of the plumbing, and the plumbing gap it was meant to
+catch — the absent money-span writer — is one it could not have caught. That
+ordering is withdrawn.
 
-Their prerequisites are met: the money-span write path is built, so spans reach
-the store; the tool surface over them is built and served (`apps/redline-mcp`)
-including graph traversal, and registered in Wayfinder; and what a report is is
-settled (`architecture.md` §5.1). So the fork-side assembly loop extends what is
-there rather than starting from nothing. Nothing in the lean vertical waits on
-another item to start.
+Its prerequisites are met: the money-span write path is built, so spans reach the
+store; the tool surface over them is built and served (`apps/redline-mcp`)
+including graph traversal, and registered in Wayfinder; what a report is is
+settled (`architecture.md` §5.1); and the assembly loop that produces one is
+built (fork-side, `ReportAssembler`). So the seam takes an assembled report — a
+fixture-shaped one, or the loop's output — and renders it, rather than starting
+from nothing.
 
 **The UAT gate is the report sheet seam.** A corpus rendering in a grid is a
 demonstration of womblex and a classifier; a specialist cannot evaluate a tender
-from it, and asking them to would test the wrong thing. The report items are what
-make it redline.
+from it, and asking them to would test the wrong thing. The report is what makes
+it redline.
 
 Then, and only then: housekeeping in dependency order, and finally workspace
 extraction and release.
