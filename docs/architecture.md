@@ -132,8 +132,11 @@ flowchart TB
 **Reading the map.** Each layer, and what the diagram compresses:
 
 - **`apps/redline-web`** — the control surface: workflow, review grid, pricing
-  pivots, Excel export. Served by the forked Wayfinder; **no Wayfinder imports
-  leak back** into these packages.
+  pivots, Excel export, and the **report sheet seam** (`report-export.ts`) that
+  renders an assembled report (§5.1) to a workbook through the same
+  `write-excel-file` writer. Served by the forked Wayfinder; **no Wayfinder
+  imports leak back** into these packages — the assembled-report shape the seam
+  consumes is declared redline-side, so the loop's output crosses as plain data.
 - **`apps/redline-mcp`** — the **report tool surface**: the same read ports, served
   as an MCP server so a report-assembler LLM can call them. See §5 invariant 7 for
   what it does and does not expose. It is a *process with a URL*, not a library —
@@ -722,7 +725,11 @@ input the assembler may cite, alongside the chunks, spans and graph.
 
 ```
 redline/
-├── apps/redline-web/              control surface (TypeScript)
+├── apps/redline-web/              control surface (TypeScript) — workflow, review
+│                                  grid, pricing pivots, Excel export, and the
+│                                  report sheet seam (report-export.ts): an
+│                                  assembled report (§5.1) → a workbook, rendered
+│                                  deterministically through write-excel-file
 ├── apps/redline-mcp/              the report tool surface — ten read tools served
 │                                  as an MCP server over streamable HTTP (the
 │                                  deterministic chunk/money/extraction fetches plus

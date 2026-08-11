@@ -70,10 +70,13 @@ that surface into a report is built** (fork-side, `ReportAssembler` in
 `@rbrasier/adapters`): it gathers over the tools, assembles ordered sections of
 model-chosen prose with verbatim cited passages, and asserts every transferred
 passage byte-identical against the store — the no-graph case returning a reported
-unavailability rather than a thinner report, all proven under the gate. The one
-item left is turning an assembled report into the sheet a specialist receives,
-and **UAT does not start until it works**. A demo that ends at the review grid
-demonstrates the dependencies.
+unavailability rather than a thinner report, all proven under the gate. **The
+seam that turns an assembled report into the sheet a specialist receives is now
+built too** (`report-export.ts` in `apps/redline-web`): `buildReportSheetData` /
+`buildReportWorkbook` render an assembled report deterministically to a workbook
+through the existing `write-excel-file` writer, with every citation intact,
+proven by a builder test over a fixed report structure. The lean vertical is
+therefore feature-complete; **UAT can start**.
 
 **Numbatch is not on this path.** Classification runs cold-start over womblex
 extraction: hard rules + LLM adjudication navigating the store's
@@ -124,38 +127,22 @@ kind from its name or assume every document answers something. Where a
 tender-shaped assumption is found, it is a defect.
 
 **The report work is not gated on a pipeline run, and treating it as though it
-were is a planning error we have already made once.** The remaining item needs
-*rows in the store* — chunks, spans, responses with provenance — not a live
-extract→classify→build sequence that produced them. Those rows can be seeded
-straight into Postgres, which is how `packages/redline-adapters`' own suite
-already works (PGlite, seeded rows, no services).
+were is a planning error we have already made once.** The report seam needs *rows
+in the store* — chunks, spans, responses with provenance — not a live
+extract→classify→build sequence that produced them, and the sheet builder needs
+only an assembled report as data (a fixture-shaped one or the loop's output).
+Those rows can be seeded straight into Postgres, which is how
+`packages/redline-adapters`' own suite already works (PGlite, seeded rows, no
+services).
 
-**The remaining item is redline-side** — the workbook builder already lives in
-`apps/redline-web`. The report tool surface the assembler calls, and the
-assembly loop itself, are both built: the surface is served over a URL the fork
-registers rather than imports (`apps/redline-mcp`), and the loop is fork-side in
-`@rbrasier/adapters`, so its landing was two commits (the feature on the fork's
-`main`, then the gitlink and pin moved here in step).
-
-### 1 — The report sheet seam
-
-The export target exists and is deterministic: `buildEvaluationWorkbook` takes
-grid + pivots to sheet data and the browser writes xlsx through
-`write-excel-file`. What is missing is a seam where an assembled report becomes
-sheets. Split from the assembly loop because it is independently testable — a
-fixed report structure exports correctly whether a model or a fixture produced it
-— and because it is the half a specialist actually receives.
-
-**Prefer extending that builder over adopting an Excel MCP server**
-(`haris-musa/excel-mcp-server`, MIT, streamable-HTTP, is the credible one): it
-writes files server-side, which is a different delivery model to redline's
-browser download, and the existing builder is deterministic and unit-testable.
-Revisit only if the LLM needs to control formatting or charts.
-
-_Version bump: MINOR._
-_Exit: a fixed report structure renders to a workbook a specialist can open, with
-its provenance intact, proven by a test over the builder rather than by opening
-the file._
+**The report-side work is complete.** The workbook builder
+(`buildEvaluationWorkbook`) and the report sheet seam (`buildReportSheetData` /
+`buildReportWorkbook`, `report-export.ts`) both live in `apps/redline-web`. The
+report tool surface the assembler calls, and the assembly loop itself, are both
+built: the surface is served over a URL the fork registers rather than imports
+(`apps/redline-mcp`), and the loop is fork-side in `@rbrasier/adapters`, so its
+landing was two commits (the feature on the fork's `main`, then the gitlink and
+pin moved here in step).
 
 ---
 
@@ -224,9 +211,10 @@ Deferred until the lean vertical is complete. In dependency order:
 4. **The Playwright specs that need a populated evaluation wait until after UAT,
    and that is deliberate.** They prove the *served DOM* the view models bind to;
    the view models and builders are already proven framework-free in the
-   `redline-web` and `redline-adapters` vitest suites, and the report sheet
-   seam's own exit asserts against the store, not the browser. So nothing in the
-   lean
+   `redline-web` and `redline-adapters` vitest suites — the report sheet seam's
+   own exit asserts against the builder (a fixed report renders with its
+   provenance intact), and the assembly loop's exit asserts byte-identity against
+   the store. So nothing in the lean
    vertical is gated on these specs. Running them is post-UAT: it needs an
    `E2E_REDLINE_EVALUATION_ID`, a runner that has Playwright, and a web container
    that is not the pruned production install (no dev dependencies, no browsers).
@@ -276,29 +264,29 @@ Deferred until the lean vertical is complete. In dependency order:
 
 ## 5. Sequencing
 
-**The lean vertical runs to completion before the housekeeping work starts.**
+**The lean vertical runs to completion before the housekeeping work starts, and
+it now has.**
 
-**The product item is the report sheet seam, and nothing may gate it on a run.**
-Everything before it assembles inputs; everything after it is proof or polish. It
-needs rows in the store, which can be seeded — so it starts now. An earlier
-revision sequenced a fixture run first on the reasoning that later items would
-then debug against known-good connectors; in practice that only deferred the
-product behind a proof of the plumbing, and the plumbing gap it was meant to
-catch — the absent money-span writer — is one it could not have caught. That
-ordering is withdrawn.
+**The product item was the report sheet seam, and it is built.** Everything
+before it assembled inputs; everything after it is proof or polish. It needed
+rows in the store, which can be seeded, and an assembled report as data — both
+without a live run. An earlier revision sequenced a fixture run first on the
+reasoning that later items would then debug against known-good connectors; in
+practice that only deferred the product behind a proof of the plumbing, and the
+plumbing gap it was meant to catch — the absent money-span writer — is one it
+could not have caught. That ordering was withdrawn.
 
-Its prerequisites are met: the money-span write path is built, so spans reach the
-store; the tool surface over them is built and served (`apps/redline-mcp`)
-including graph traversal, and registered in Wayfinder; what a report is is
-settled (`architecture.md` §5.1); and the assembly loop that produces one is
-built (fork-side, `ReportAssembler`). So the seam takes an assembled report — a
-fixture-shaped one, or the loop's output — and renders it, rather than starting
-from nothing.
+All its prerequisites were met and it landed: the money-span write path is built,
+so spans reach the store; the tool surface over them is built and served
+(`apps/redline-mcp`) including graph traversal, and registered in Wayfinder; what
+a report is is settled (`architecture.md` §5.1); the assembly loop that produces
+one is built (fork-side, `ReportAssembler`); and the sheet seam that renders an
+assembled report to a workbook is built (`report-export.ts`, `apps/redline-web`).
 
-**The UAT gate is the report sheet seam.** A corpus rendering in a grid is a
-demonstration of womblex and a classifier; a specialist cannot evaluate a tender
-from it, and asking them to would test the wrong thing. The report is what makes
-it redline.
+**The UAT gate is the report sheet seam, and it is now open.** A corpus rendering
+in a grid is a demonstration of womblex and a classifier; a specialist cannot
+evaluate a tender from it, and asking them to would test the wrong thing. The
+report is what makes it redline, and the seam that delivers it is built.
 
 Then, and only then: housekeeping in dependency order, and finally workspace
 extraction and release.

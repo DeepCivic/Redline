@@ -95,3 +95,13 @@ export {
   type ExportEvaluationInput,
   type WriteEvaluationWorkbookInput,
 } from "./lib/excel-export";
+
+export {
+  buildReportSheetData,
+  buildReportWorkbook,
+  REPORT_SHEET_NAME,
+  type AssembledReport,
+  type ReportSection,
+  type TransferredPassage,
+  type ReportFinancialExpression,
+} from "./lib/report-export";
