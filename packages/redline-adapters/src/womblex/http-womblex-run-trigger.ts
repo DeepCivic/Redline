@@ -123,10 +123,20 @@ export class HttpWomblexRunTrigger implements IWomblexRunTrigger {
 
   async start(request: TriggerRunRequest): Promise<Result<{ readonly runId: string }>> {
     return this.send(
-      { url: `${this.baseUrl}/runs`, method: "POST", body: {
-        evaluationId: request.evaluationId,
-        stageSequence: [...request.stageSequence],
-      } },
+      {
+        url: `${this.baseUrl}/runs`,
+        method: "POST",
+        body: {
+          evaluationId: request.evaluationId,
+          stageSequence: [...request.stageSequence],
+          // The allow-listed config override rides alongside the sequence only
+          // when a form authored one; an absent override leaves the run on the
+          // sidecar's file default, so it is omitted rather than sent as null.
+          ...(request.configOverride === undefined
+            ? {}
+            : { configOverride: request.configOverride }),
+        },
+      },
       parseRunId,
     );
   }

@@ -1,4 +1,5 @@
 import type { Result } from "../result";
+import type { RunConfigOverride } from "./run-config-override";
 
 // redline's second seam to the womblex engine (architecture §3/§5). Object
 // storage was the only coupling until now — the engine wrote shards, the sidecar
@@ -55,6 +56,13 @@ export interface TriggerRunRequest {
   // above, so a request always names at least one); the sidecar validates it
   // against the allow-list and normalises its ordering.
   readonly stageSequence: readonly AuthorableStage[];
+  // The rest of the allow-listed config slice — the chunk mode and money
+  // vocabulary a form authored (design-principles.md "a defined allow-list").
+  // Absent means every group was left blank and the run inherits the
+  // redline.yaml file default below the seam; a present override's groups are
+  // merged over the file default. The stage sequence stays above rather than
+  // inside this because it is what a run *is*, not a config knob.
+  readonly configOverride?: RunConfigOverride;
 }
 
 export interface IWomblexRunTrigger {

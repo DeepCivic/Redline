@@ -17,6 +17,8 @@ import {
   type IProcurementClassifier,
   type IProcurementExtractionReader,
   type IStagedCorpusReader,
+  type IStagedCorpusWriter,
+  type IWomblexRunTrigger,
   type ProcurementResponse,
   type RequirementClassification,
   type Result,
@@ -33,6 +35,8 @@ import {
   type CreateEvaluationInput,
 } from "@redline/redline-application";
 import { WorkflowManager } from "./workflow-manager";
+import { CreateCorpusController } from "./create-corpus-controller";
+import { RunStatusController } from "./run-status-controller";
 import { ReviewGrid } from "./review-grid";
 import { PricingPivot } from "./pricing-pivot";
 import { buildEvaluationWorkbook, type EvaluationWorkbook } from "./excel-export";
@@ -58,6 +62,14 @@ export interface WorkflowContainer {
   // only if a terminal script had made one.
   readonly stagedCorpusReader: IStagedCorpusReader;
   readonly lensWriter: IClassificationLensWriter;
+  // The run half. Until now the served container carried the create use-case but
+  // no way to stage the bytes a run reads or to fire the run itself — an
+  // evaluation could be composed from the browser, but the run that turns it into
+  // a review grid still needed a terminal. These two seams close that gap: the
+  // object-store writer stages a specialist's chosen bytes under the evaluation's
+  // input prefix, and the run trigger fires ingest → lens → grouping → build.
+  readonly stagedCorpusWriter: IStagedCorpusWriter;
+  readonly runTrigger: IWomblexRunTrigger;
   readonly productName: string;
 }
 
@@ -71,6 +83,11 @@ export class WorkflowController {
   private readonly classifyResponseGroup: ClassifyResponseGroup;
   private readonly buildEvaluationTable: BuildEvaluationTable;
   private readonly createEvaluationUseCase: CreateEvaluation;
+  // The run-side controllers, composed over the two write seams. Carried on the
+  // workflow controller so the served router reaches the whole create-and-run
+  // surface through one object, the way it reaches the read side.
+  private readonly createCorpusController: CreateCorpusController;
+  private readonly runStatusController: RunStatusController;
 
   constructor(private readonly container: WorkflowContainer) {
     this.createEvaluationUseCase = new CreateEvaluation({
@@ -78,6 +95,12 @@ export class WorkflowController {
       stagedCorpusReader: container.stagedCorpusReader,
       lensWriter: container.lensWriter,
     });
+    this.createCorpusController = new CreateCorpusController({
+      writer: container.stagedCorpusWriter,
+      runTrigger: container.runTrigger,
+      createEvaluation: this.createEvaluationUseCase,
+    });
+    this.runStatusController = new RunStatusController({ runTrigger: container.runTrigger });
     this.assignDocumentsToGroups = new AssignDocumentsToGroups({
       repository: container.repository,
     });
@@ -104,6 +127,18 @@ export class WorkflowController {
 
   createEvaluation(input: CreateEvaluationInput): Promise<Result<Evaluation>> {
     return this.createEvaluationUseCase.execute(input);
+  }
+
+  // The create-and-run surface (delivery-plan §2 item 1). Reached through the
+  // workflow controller so the served router holds one object, not three: the
+  // corpus controller drives staging + create + trigger, and the status
+  // controller polls and resumes the run the trigger returned.
+  corpus(): CreateCorpusController {
+    return this.createCorpusController;
+  }
+
+  runStatus(): RunStatusController {
+    return this.runStatusController;
   }
 
   async openWorkflow(input: OpenWorkflowInput): Promise<Result<WorkflowManager>> {
@@ -210,6 +245,8 @@ export interface ProductionContainerParts {
   readonly languageModel: ILanguageModel;
   readonly stagedCorpusReader: IStagedCorpusReader;
   readonly lensWriter: IClassificationLensWriter;
+  readonly stagedCorpusWriter: IStagedCorpusWriter;
+  readonly runTrigger: IWomblexRunTrigger;
   readonly productName: string;
 }
 

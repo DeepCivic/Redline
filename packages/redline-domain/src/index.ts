@@ -71,3 +71,8 @@ export * from "./ports/procurement-extraction-reader";
 // run-stage. redline drives and observes; it does not reimplement the engine's
 // batching, retry or scale-out.
 export * from "./ports/womblex-run-trigger";
+// The allow-listed run-config override the Create Corpus form authors — the
+// defined slice of the womblex config (chunk mode + money vocabulary) that
+// plausibly differs as corpus nature changes. Blank inherits the file default;
+// the smart constructor keeps a malformed override off the wire.
+export * from "./ports/run-config-override";

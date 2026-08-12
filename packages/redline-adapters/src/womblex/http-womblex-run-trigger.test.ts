@@ -67,6 +67,52 @@ describe("HttpWomblexRunTrigger — the run seam over the sidecar's JSON endpoin
     });
   });
 
+  it("forwards the allow-listed config override alongside the sequence when one is authored", async () => {
+    const sidecar = new FakeSidecar();
+    sidecar.queue(202, { runId: "run-8", evaluationId: "tender-water" });
+
+    await trigger(sidecar).start({
+      evaluationId: "tender-water",
+      stageSequence: ["chunk", "embed"],
+      configOverride: {
+        chunkMode: { chunkingModel: null, chunkSize: 320, chunkTables: false },
+        moneyVocabulary: {
+          extraHeaderTerms: ["subtotal"],
+          extraVetoTerms: [],
+          defaultCurrency: "AUD",
+        },
+      },
+    });
+
+    expect(sidecar.calls[0]?.body).toEqual({
+      evaluationId: "tender-water",
+      stageSequence: ["chunk", "embed"],
+      configOverride: {
+        chunkMode: { chunkingModel: null, chunkSize: 320, chunkTables: false },
+        moneyVocabulary: {
+          extraHeaderTerms: ["subtotal"],
+          extraVetoTerms: [],
+          defaultCurrency: "AUD",
+        },
+      },
+    });
+  });
+
+  it("omits the config override from the body when the form left every group blank", async () => {
+    const sidecar = new FakeSidecar();
+    sidecar.queue(202, { runId: "run-9", evaluationId: "tender-water" });
+
+    await trigger(sidecar).start({
+      evaluationId: "tender-water",
+      stageSequence: ["chunk"],
+    });
+
+    expect(sidecar.calls[0]?.body).toEqual({
+      evaluationId: "tender-water",
+      stageSequence: ["chunk"],
+    });
+  });
+
   it("maps a done run's status into the view model a poller binds to", async () => {
     const sidecar = new FakeSidecar();
     sidecar.queue(200, {
