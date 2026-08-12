@@ -102,14 +102,18 @@ document route. **Creating** an evaluation is a browser action too: the
 `evaluation` router's `create` mutation over a picked staged corpus, gated on its
 own `evaluation:create` permission.
 
-**The run stays on the script, and that is a scope decision.** `IngestDocuments`,
+**The run is on the script today, and a browser-driven run is now the next
+priority (the Create Corpus programme below).** `IngestDocuments`,
 `AssignDocumentsToGroups`, the cold-start classifier and `BuildEvaluationTable`
-are all built and wired in `container-redline.ts`, but nothing served calls them
-— `apps/web/scripts/seed-redline-evaluation.ts` drives the pipeline from a
-terminal and remains the only path that does. Driving it from a browser is out of
-scope (see the open questions), so an operator with a terminal stages the corpus
-and starts the run; the specialist's browser surface begins at the populated
-evaluation.
+are all built and wired in `container-redline.ts`, but nothing served calls them —
+`apps/web/scripts/seed-redline-evaluation.ts` drives the pipeline from a terminal
+and remains the only path that does. UAT begins on that footing: an operator
+with a terminal stages the corpus and starts the run, and the specialist's
+browser surface begins at the populated evaluation. **That the run was out of
+scope is no longer true** — UAT showed a specialist cannot be handed a terminal,
+so the Create Corpus programme (below) brings staging, the run and its progress
+into the browser. The old descope is retired; the reasoning is under
+"Superseded decisions" below.
 
 **The pipeline has run end to end.** A fixture run over `cloud-rft-2026` (4
 documents) took extraction through chunk → embed → enrich → money and landed 133
@@ -146,6 +150,78 @@ pin moved here in step).
 
 ---
 
+## 2.1 The Create Corpus programme (next priority)
+
+**Goal: a specialist starts a corpus from the browser — picks documents, names
+the evaluation, triggers the womblex run, watches it drain, and lands on a
+populated evaluation — with no terminal in the loop.** This is the capability UAT
+showed is required: an operator at a terminal is not a delivery mechanism, so the
+run descope is retired (see "Superseded decisions") and the work below is planned
+rather than merely costed.
+
+**This makes redline trigger and track a womblex run, which it did not before.**
+Until now object storage was the only seam to the engine — redline wrote shards'
+prefix and read them back, and the engine's batching, retry and scale-out were
+its own, driven from the compose profiles. A browser "start run" button adds a
+*second* seam: a trigger into the engine's job queue and a read of its state.
+That is a real change to what redline is; `architecture.md` (§3/§5) is amended to
+record the new engine seam **as each part is built**, not ahead of it — the
+engine seam stops being object-storage-only when the code that adds the second
+one lands. What does **not** change: redline still does not reimplement batching,
+retry or scale-out — those stay the engine's (`cloud/worker.py`, its Postgres
+queue). redline drives and observes; it does not wrap.
+
+**What is a specialist's to configure, and what is not — this is load-bearing.**
+The surface exposes **corpus composition** (which documents, the evaluation's
+name/id) and reuses the existing create surface's **lens and grouping** (topics,
+definitions, brands — already `CreateEvaluation`'s inputs). It exposes **none of
+the engine's stage tuning**: chunk size, the money vocabulary/vetoes, the OCR
+engine, `enrichment.enabled` and the Isaacus gate all stay in
+`infra/womblex/redline.yaml`, where each carries a load-bearing comment earned by
+measurement or an upstream constraint. Those are engineering decisions, not
+specialist ones — a user toggling `enrichment.enabled` or `chunk_size` silently
+breaks retrieval or the graph the report assembler navigates. Surfacing engine
+config as UI knobs is a non-goal, now recorded in `design-principles.md`.
+
+The programme is a set of build steps, each tests-first, in dependency order. The
+fork-side ones are two commits (the build-step contract's fork rule). Ordering
+between them is real: a step cannot use a seam an earlier step has not built.
+
+| Step | Package(s) | What it is |
+|---|---|---|
+| Object-store write + browse port | domain + adapters | redline's first write-side and list-side object-store port — every existing domain port is a read surface. Lists raw objects under a bucket prefix (so the picker can show documents womblex has **not** processed yet, before any `source_hash`/chunk identity exists) and stages uploaded/selected bytes under `proc/{evaluationId}/`. The seam stays plain S3 (redline owns its bucket); the adapter is the only code at it. Folds in what was the "corpus upload via UI" housekeeping item — upload is one caller of this port. |
+| Run trigger + run-status seam | adapters (+ sidecar) | The second engine seam. A trigger that enqueues an evaluation's documents for extraction and sequences the ordered downstream passes (chunk → embed → enrich, then `money` once the fleet drains), and a **read** of run state so the browser can report progress. **Open design question below** decides whether redline reads/writes womblex's `womblex_jobs` queue directly or the `womblex-ingest` sidecar fronts it — do not build until settled. The ordering of the passes is not the specialist's to get right; it is this seam's. |
+| Run-status view model + controller | redline-web | Framework-free: a run's state (queued / extracting / staging chunk… / draining money / ready / failed) as a pure view model the served route binds to, over the status seam. A run that fails a stage surfaces which stage and why, not a spinner that never resolves. |
+| Create Corpus surface | redline-web | The document picker (from a **staged corpus** via the existing `IStagedCorpusReader`, or from **raw bucket objects** via the new browse port — lead with the staged path, it reuses a built port), the evaluation name/id field, and the trigger. On completion it drives the already-built ingest → lens → grouping → build sequence — the seed script's middle, minus the manifest. |
+| Fork mount: route + procedure + gate | wayfinder (two commits) | The served `/evaluations/new`-adjacent surface in `johntooth/wayfinder`, its tRPC procedures (trigger, poll status) behind `evaluation:create`, and the sidebar entry. Same shape as the existing evaluation mount. If it touches `@rbrasier/domain`, the contract test and `wayfinder.pin` bump come in step. |
+
+**The synthesis document-picker rides on this, it does not fork off it.** UAT also
+asked that Wayfinder's own "Synthesise Information" flow let a user select
+documents from a bucket or an existing corpus rather than only upload. That is
+normal work on `johntooth/wayfinder` (redline's own fork — the old
+"upstream, do not touch" framing was wrong; there is no clean-diff relationship to
+rbrasier left to protect, and `validate.sh` #15 only enforces the checkout sits
+on the fork's `main`). The **leaner change is "from a corpus"**: it reuses the
+`IStagedCorpusReader` this programme already leans on, over documents that
+already carry stable `source_hash` identities. "From the raw bucket" needs the
+browse port above, so it is not additional work once that port exists — build
+the corpus path first, add the raw-bucket path behind the same port. The one
+caution is the fork rule: a change touching `@rbrasier/domain` brings the
+contract test and pin bump in step.
+
+**Open design question, settle before the run-trigger step.** Does redline drive
+womblex's job queue **directly** (redline reads/writes `womblex_jobs`, coupling
+it to the engine's queue schema), or through a **thin new endpoint on the
+`womblex-ingest` sidecar** that fronts the queue (keeping "the sidecar is the
+only Python redline talks to" shape, at the cost of a new sidecar surface)? The
+sidecar-fronted option preserves the existing seam discipline and is the
+provisional lean; the direct option is fewer moving parts but a schema coupling
+to an engine redline pins rather than owns. This is a design choice to reason
+about, not something a corpus decides — record the outcome in `architecture.md`
+when made.
+
+---
+
 ## 3. Housekeeping — off the vertical, wanted before users
 
 Deferred until the lean vertical is complete. In dependency order:
@@ -161,7 +237,6 @@ Deferred until the lean vertical is complete. In dependency order:
 | Lens stage machine | redline-web | Define → map → resolve → save, its own machine. |
 | Collision resolution surface | redline-web | View model + controller for resolving a collision set. |
 | Sample accrual | adapters | Shrunk: upstream topic-scoped dedupe indexes give re-push idempotence for free. |
-| Corpus upload via UI | domain + adapters + redline-web | The "or via UI" half of raw-corpus intake. Direct-to-bucket (`mc cp`/any S3 client into `proc/{evaluationId}/`) works today, out of product; a browser upload does not, because redline has no object-store port — its domain ports are all read surfaces (`IChunkStore`/`IGraphStore`/`IMoneySpanStore`). Needs a write-side port + S3 adapter and an upload surface that lands raw documents under the evaluation prefix the womblex engine then processes. Distinct from browser-driven *run* (still descoped): this stages bytes, it does not orchestrate extraction. |
 | Train/activate policy | adapters | Needs redesign — auto-activation contradicts upstream ADR-0021 (activation is a user-controlled pointer move with a replay diff). Surface the upstream flow: auto-*train* on crossing the floor, then let the specialist activate. |
 | Workspace extraction & release prep | workspace | Standalone workspace; sever the vendoring seam; graft the financial overlay onto the fork. Last by nature. |
 
@@ -180,33 +255,29 @@ Deferred until the lean vertical is complete. In dependency order:
    assembler now has hands (`apps/redline-mcp`, including graph traversal), and
    the definition is now **settled in `architecture.md` §5.1** — no longer open.
 
-2. **Running a corpus from the browser is out of scope.** Choosing which
-   documents of a connected bucket are in scope for an evaluation, and starting
-   the pipeline over them, was a numbered item until it was descoped on
-   2026-08-09. It is not deferred-and-scheduled: nothing in this file plans it.
-   What that costs, stated plainly so it is not rediscovered as a surprise —
-   `IngestDocuments`, `AssignDocumentsToGroups`, the cold-start classifier and
-   `BuildEvaluationTable` stay reachable only from
-   `apps/web/scripts/seed-redline-evaluation.ts`, so every evaluation begins with
-   an operator at a terminal. The object-storage port and adapter redline would
-   need to *browse* a connected bucket in TypeScript remain unwritten (the *write*
-   side — uploading a raw corpus via UI — is a tracked housekeeping item; see the
-   next question). The `evaluation` router's `create` mutation is unaffected: an
-   evaluation is still created in the browser over an already-staged corpus.
+2. **The browser-driven run is planned, not descoped — see the Create Corpus
+   programme.** Choosing which documents are in scope for an evaluation, staging
+   them, starting the pipeline and tracking it was descoped on 2026-08-09 as "out
+   of scope, not deferred-and-scheduled." **UAT reversed that**: a specialist
+   cannot be handed a terminal, so the capability is now the next priority. The
+   reversal and what it changed (a second engine seam, the object-store write
+   port) are the programme's own concern; the retired reasoning is under
+   "Superseded decisions." The `evaluation` router's `create` mutation is
+   unchanged — it still creates an evaluation over a staged corpus; the programme
+   adds the staging and the run *before* it.
 
-3. **Raw-corpus intake has two paths, and only the direct one exists today.**
-   Direct-to-bucket works now, out of product: an S3 client (`mc cp`, or any
-   uploader) writes the raw documents under `proc/{evaluationId}/` in redline's
-   bucket — the seam is plain S3 (ADR-0002), redline builds nothing for it, and
-   the path is documented in `docs/guides/two-stack-local-run.md`. The **via-UI**
-   path is a real capability the intake requirement asks for and it is *not* built:
-   redline has no object-store write port (its ports are all read surfaces), so a
-   browser upload has nothing to call. That is now a tracked housekeeping item
-   (corpus upload via UI), not an omission. Both paths stage bytes only — womblex
-   then processes the corpus and mints the `source_hash` identities the evaluation
-   manifest references, which is why `redline-create-evaluation.spec.ts` gates on
-   an `E2E_REDLINE_STAGED_CORPUS_ID` naming a corpus **no evaluation has claimed**
-   (`create` refuses a claimed one with `ALREADY_EXISTS`).
+3. **Raw-corpus intake has two paths; the direct one exists and the UI one is now
+   planned.** Direct-to-bucket works now: an S3 client (`mc cp`, or any uploader)
+   writes the raw documents under `proc/{evaluationId}/` in redline's bucket — the
+   seam is plain S3, redline builds nothing for it, and the path is documented in
+   `docs/guides/two-stack-local-run.md`. The **via-UI** path — upload or select in
+   the browser — is the object-store write/browse port at the head of the Create
+   Corpus programme; it is no longer a standalone housekeeping item. Both paths
+   stage bytes only — womblex then processes the corpus and mints the
+   `source_hash` identities the evaluation references, which is why
+   `redline-create-evaluation.spec.ts` gates on an `E2E_REDLINE_STAGED_CORPUS_ID`
+   naming a corpus **no evaluation has claimed** (`create` refuses a claimed one
+   with `ALREADY_EXISTS`).
 
 4. **The Playwright specs that need a populated evaluation wait until after UAT,
    and that is deliberate.** They prove the *served DOM* the view models bind to;
@@ -264,8 +335,10 @@ Deferred until the lean vertical is complete. In dependency order:
 
 ## 5. Sequencing
 
-**The lean vertical runs to completion before the housekeeping work starts, and
-it now has.**
+**The lean vertical ran to completion, and the Create Corpus programme now sits
+between it and housekeeping.** The order is: lean vertical (done) → UAT (open) →
+Create Corpus programme → housekeeping in dependency order → workspace extraction
+and release.
 
 **The product item was the report sheet seam, and it is built.** Everything
 before it assembled inputs; everything after it is proof or polish. It needed
@@ -288,8 +361,37 @@ in a grid is a demonstration of womblex and a classifier; a specialist cannot
 evaluate a tender from it, and asking them to would test the wrong thing. The
 report is what makes it redline, and the seam that delivers it is built.
 
-Then, and only then: housekeeping in dependency order, and finally workspace
-extraction and release.
+**The Create Corpus programme follows UAT, not housekeeping.** UAT is what
+surfaced its necessity — a specialist cannot be handed a terminal to stage a
+corpus and run the pipeline — so the programme is scheduled ahead of the
+housekeeping set rather than inside it. Its steps have their own internal
+ordering (the write/browse port before the run seam before the surface); the
+synthesis document-picker rides the same port and is not separate work. Then, and
+only then: housekeeping in dependency order, and finally workspace extraction and
+release.
+
+### Superseded decisions
+
+- **Browser-driven run was descoped (2026-08-09), and that is retired
+  (UAT).** The descope read: running a corpus from the browser is out of scope,
+  not deferred — nothing planned it, and every evaluation begins with an operator
+  at a terminal driving `seed-redline-evaluation.ts`. Its stated cost was the two
+  unwritten seams (an object-store browse port, a run trigger/status seam) and the
+  "redline does not wrap the engine" posture. **UAT falsified the premise**: a
+  terminal is not a delivery mechanism for the specialists who use this. The
+  Create Corpus programme now plans exactly those seams. The posture is
+  amended rather than discarded — redline *drives and observes* the engine's run
+  but still does not reimplement its batching, retry or scale-out; `architecture.md`
+  §3/§5 is updated to record that as the seam is built, not ahead of it.
+- **"The Wayfinder fork is upstream, do not modify" was never the rule, and the
+  earlier framing of it was wrong.** redline builds and runs against
+  `johntooth/wayfinder` — its own fork — on branch `main`. The clean-upstreaming-
+  diff guard that once justified treating the fork as read-only was deliberately
+  removed from `validate.sh` #15 ("policed a relationship we do not have").
+  Modifying the fork's own features (e.g. the synthesis document source) is
+  ordinary fork work under the two-commit rule; the only live caution is that a
+  change to `@rbrasier/domain`'s shape brings the contract test and
+  `wayfinder.pin` bump in step.
 
 ### What the lean vertical deliberately does not do
 

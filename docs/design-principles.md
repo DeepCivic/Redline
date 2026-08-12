@@ -127,6 +127,18 @@ Recorded so they do not creep back thread by thread:
 - **No graph visualisations.** Unnecessary for the target use cases.
 - **No confidence scores in the UI.** Replaced by Clear/Ambiguous buckets.
 - **No lens orchestrator.** Explicitly rejected — womblex deleted theirs.
+- **No engine tuning exposed as UI.** The womblex stage configuration in
+  `infra/womblex/redline.yaml` — chunk size, the money vocabulary and vetoes, the
+  OCR engine, `enrichment.enabled`, the Isaacus gate — stays there, where each
+  value carries a load-bearing comment earned by measurement or an upstream
+  constraint. These are engineering decisions, not a specialist's: a user
+  toggling `enrichment.enabled` or `chunk_size` silently breaks retrieval or the
+  graph the report assembler navigates. This is **not** a bar on redline
+  *driving* a run (composition, the run trigger and its progress are a specialist
+  surface, and orchestrating the ordered stage passes is redline's job, not the
+  user's) — it is a bar on surfacing the engine's own tuning knobs as controls.
+  The line: expose *what to run over* and *that it ran*, never *how the engine is
+  tuned*.
 - **Air-gap / offline operation.** Both the `chunk` and `embed` stages require
   Isaacus; a deployment that cannot reach it cannot build a corpus to read.
   (See `architecture.md` §2 and §7.1.)
