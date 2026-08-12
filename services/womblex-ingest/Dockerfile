@@ -10,12 +10,15 @@
 # womblex-free is what lets the sidecar stay light either way; the seam is object
 # storage, and neither imports the other.
 #
-# Two build targets:
+# This image has a single build target:
 #   - `sidecar` (default): the light read seam, no womblex. The `womblex-ingest`
 #     compose service builds this.
-#   - `womblex`: adds the `[womblex]` extra for the money annotation step
-#     (item 1), which runs womblex's own `money_shards()`. The `money` compose
-#     service builds this.
+#
+# The money annotation step needs the engine installed, so it does NOT build a
+# target here — its image is built from the repo root by
+# infra/docker/womblex-money.Dockerfile (the `money` compose service), which
+# installs the engine from the submodule source. This Dockerfile stays
+# womblex-free.
 #
 # WOMBLEX_MODE selects the extractor at runtime:
 #   - real (redline's deployment): the real extractor reads the engine's shards

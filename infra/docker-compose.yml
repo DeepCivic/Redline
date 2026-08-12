@@ -19,7 +19,8 @@
 #               publishes the *.money_spans/*.money_columns siblings back and
 #               loads the spans into redline_money_spans
 #               (`compose --profile money run --rm money --evaluation-id <id>`).
-#               Needs the `[womblex]` extra, so it builds its own image target.
+#               Needs the engine installed, so it builds its own image from the
+#               submodule source (infra/docker/womblex-money.Dockerfile).
 #   stage     — one downstream shard stage (chunk / embed / enrich / …), run on
 #               demand after a womblex run has drained: lists the run's shard
 #               prefix, stages a unit down, runs the engine's own `*_shards()`
@@ -82,7 +83,7 @@ services:
     image: docker.io/minio/minio:latest
     # Every profile whose services depend_on minio must list it, or compose
     # rejects the project outright ("depends on undefined service").
-    profiles: ["ingest", "numbatch", "womblex", "womblex-cli", "stage"]
+    profiles: ["ingest", "money", "numbatch", "womblex", "womblex-cli", "stage"]
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
@@ -138,20 +139,23 @@ services:
   # evaluation's `*.elements`/`*.table_cells` shards down from object storage,
   # runs womblex's own `money_shards()`, publishes the two sidecars back beside
   # them, and lands the spans in `redline_money_spans`. Unlike the read-seam
-  # sidecar above, this needs `womblex` installed, so it builds the `[womblex]`
-  # image target.
+  # sidecar above, this needs the engine installed, so it builds its own image.
   #
   # The `stage` service below cannot replace this one: `run-stage` publishes
   # sidecars to object storage and stops, so the load into `redline_money_spans`
   # has no upstream equivalent. Compute is shared; the store write is redline's.
   #
+  # Built from the REPO ROOT with infra/docker/womblex-money.Dockerfile because
+  # the image needs both source trees — the engine submodule and the sidecar
+  # package — and installs the engine from the submodule source (the `[womblex]`
+  # pin is an untagged commit not on any index). See that Dockerfile's header.
+  #
   #   podman compose -f infra/docker-compose.yml --profile money \
   #     run --rm money --evaluation-id <evaluationId>
   money:
     build:
-      context: ../services/womblex-ingest
-      dockerfile: Dockerfile
-      target: womblex
+      context: ..
+      dockerfile: infra/docker/womblex-money.Dockerfile
     profiles: ["money"]
     depends_on:
       minio:

@@ -15,11 +15,16 @@ vendor/wayfinder
 **/.env.*
 .redline-scratch
 
-# The Python submodules are not in either pnpm workspace — neither the root
-# (apps/*, packages/*, vendor/wayfinder/packages/*) nor the fork's globs reach
-# them, and the web image never reads them. They build from their OWN contexts
-# in infra/docker-compose.yml. Together with the stale .venv above these are
-# ~680MB of the ~709MB context, so excluding them is most of the build's setup
-# cost.
-services/womblex
+# The Python submodules are large and are NOT in either pnpm workspace — neither
+# the root (apps/*, packages/*, vendor/wayfinder/packages/*) nor the fork's globs
+# reach them, and the web/mcp images never COPY them (each Dockerfile copies only
+# the workspace members it needs). They build from their OWN contexts in
+# infra/docker-compose.yml.
+#
+# numbatch stays excluded — nothing built from the repo-root context reads it.
+# womblex is NOT excluded here: the money image (infra/docker/womblex-money.
+# Dockerfile) is built from the repo root and COPYs services/womblex from source,
+# and this provider does not honour a per-Dockerfile .dockerignore, so a root-level
+# exclusion would filter the engine tree out of that build. The web/mcp builds
+# still never copy it, so carrying it in their context costs transfer only.
 services/numbatch
