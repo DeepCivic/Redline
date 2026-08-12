@@ -25,6 +25,7 @@
     "@redline/redline-domain": "workspace:*",
     "@redline/redline-shared": "workspace:*",
     "drizzle-orm": "^0.45.2",
+    "minio": "^8.0.7",
     "postgres": "^3.4.5"
   },
   "devDependencies": {

@@ -38,6 +38,11 @@ export * from "./ports/chunk-store";
 // staged, and the documents behind each. Read before an evaluation exists, so
 // the operator picks a corpus id rather than retyping the one the store keys on.
 export * from "./ports/staged-corpus-reader";
+// The write half of the object-store seam — redline's first write-side
+// object-store port. Puts a specialist's chosen bytes under
+// `proc/{evaluationId}/inputs/`, the prefix the womblex runner reads its input
+// from, so a browser upload reaches a run without a terminal `mc cp`.
+export * from "./ports/staged-corpus-writer";
 // The evaluation-scoped lens context, read per call so one classifier instance
 // serves every evaluation in a process (the fork's getContainer() is a
 // process-wide singleton).

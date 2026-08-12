@@ -127,18 +127,25 @@ Recorded so they do not creep back thread by thread:
 - **No graph visualisations.** Unnecessary for the target use cases.
 - **No confidence scores in the UI.** Replaced by Clear/Ambiguous buckets.
 - **No lens orchestrator.** Explicitly rejected — womblex deleted theirs.
-- **No engine tuning exposed as UI.** The womblex stage configuration in
-  `infra/womblex/redline.yaml` — chunk size, the money vocabulary and vetoes, the
-  OCR engine, `enrichment.enabled`, the Isaacus gate — stays there, where each
-  value carries a load-bearing comment earned by measurement or an upstream
-  constraint. These are engineering decisions, not a specialist's: a user
-  toggling `enrichment.enabled` or `chunk_size` silently breaks retrieval or the
-  graph the report assembler navigates. This is **not** a bar on redline
-  *driving* a run (composition, the run trigger and its progress are a specialist
-  surface, and orchestrating the ordered stage passes is redline's job, not the
-  user's) — it is a bar on surfacing the engine's own tuning knobs as controls.
-  The line: expose *what to run over* and *that it ran*, never *how the engine is
-  tuned*.
+- **Engine config is authored through a defined allow-list, not the whole file,
+  and never the structural keys.** The Create Corpus surface *may* author a
+  per-run override over `infra/womblex/redline.yaml`, which is the default layer:
+  a field left blank inherits the default we defined. But the overridable set is
+  a **defined allow-list** — the run parameters that plausibly differ as corpus
+  nature changes — not the whole config. In scope: the **stage sequence** (which
+  of chunk/embed/enrich/money run, in what order), the **chunk mode**
+  (`chunking.chunking_model` null for offline token chunking vs set for AI/
+  semantic chunking, plus `chunk_size` / `chunk_tables`), and the **money
+  vocabulary** (`extra_header_terms` / `extra_veto_terms` / `default_currency`,
+  which are corpus-specific by nature). Out of scope, and fixed in the file
+  regardless of what a form submits: the **structural / identity keys** — the
+  embed model and `task`, the OCR `engine`, `enrichment.enabled` where the report
+  graph depends on it, the Isaacus gate. Changing one of those does not tune a
+  run, it silently orphans the vectors, deletes table cells, or empties the
+  graph the report assembler navigates — a break that only surfaces stages later
+  as an empty grid. The mechanism is the override layer; the safety is the
+  allow-list. This supersedes the earlier flat "no engine tuning in UI" — some
+  tuning *is* a run-shape choice a user makes; the structural keys are not.
 - **Air-gap / offline operation.** Both the `chunk` and `embed` stages require
   Isaacus; a deployment that cannot reach it cannot build a corpus to read.
   (See `architecture.md` §2 and §7.1.)

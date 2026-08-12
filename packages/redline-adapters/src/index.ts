@@ -53,6 +53,20 @@ export { DrizzleChunkStore } from "./persistence/drizzle-chunk-store";
 // empty table, so every read is an empty result rather than an error.
 export { DrizzleGraphStore } from "./persistence/drizzle-graph-store";
 export { DrizzleStagedCorpusReader } from "./persistence/drizzle-staged-corpus-reader";
+// The write side of the object-store seam: redline's first write-side adapter,
+// putting a specialist's chosen bytes under `proc/{evaluationId}/inputs/` in
+// redline's own bucket — the prefix the womblex runner reads its input from.
+// Client-injected so it is testable without a bucket; createStagedCorpusWriter
+// is the production wiring that builds the real minio client from config.
+export {
+  MinioStagedCorpusWriter,
+  type StagedCorpusPutClient,
+  type MinioStagedCorpusWriterOptions,
+} from "./storage/minio-staged-corpus-writer";
+export {
+  createStagedCorpusWriter,
+  type RedlineStorageOptions,
+} from "./storage/redline-storage";
 // The persisted lens (ADR-0009/ADR-0020): the reader
 // behind IClassificationLensReader, over redline_lenses / redline_topics /
 // redline_hard_rules / redline_lens_bindings. Topics and rules are read from the

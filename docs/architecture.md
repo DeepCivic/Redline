@@ -150,7 +150,8 @@ flowchart TB
 - **`packages/redline-domain`** — entities plus the ports:
   `IProcurementExtractionReader`, `IChunkStore`, `IProcurementClassifier`,
   `IClassificationLensReader`, `IClassificationLensWriter`, `IFinancialExtractor`,
-  `IMoneySpanStore`, `IAdjudicator`, `ILanguageModel`, `IEvaluationRepository`.
+  `IMoneySpanStore`, `IStagedCorpusReader`, `IStagedCorpusWriter`, `IAdjudicator`,
+  `ILanguageModel`, `IEvaluationRepository`.
   The lens seam's adapters are `DrizzleClassificationLensReader` and
   `DrizzleClassificationLensWriter`, both over the four lens tables.
 - **`packages/redline-adapters`** — each seam is "as if C":
@@ -556,6 +557,16 @@ carried as provenance, not as part of the join key (see §7).
    (S3-shaped), never an in-process link, so the same code runs whether the two
    share a host or not, and what backs the storage (an S3 bucket or an
    AWS-managed equivalent) is config.
+
+   **redline's own write into that bucket is a staging write, not an engine
+   seam.** `IStagedCorpusWriter` / `MinioStagedCorpusWriter` is redline's first
+   write-side object-store port — every other object-store port is a read. It puts
+   a specialist's chosen bytes under `proc/{evaluationId}/inputs/`, the prefix the
+   engine's runner resolves its input from, so a browser upload reaches a run
+   without a terminal `mc cp`. It stages bytes only: womblex still mints the
+   `source_hash` identities when it extracts, and redline reads nothing back from
+   this path until the run drains. The *trigger* into the engine's job queue is a
+   separate, second engine seam, recorded when it is built.
 
 3. **Embeddings are loaded into the store as data and never cross to TypeScript.**
    At real corpus scale bulk vectors are projected into `redline_chunks`
