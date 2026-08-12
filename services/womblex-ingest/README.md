@@ -133,21 +133,25 @@ step that bridges the gap (mirroring `womblex finalize`): it downloads an
 evaluation's money inputs to a scratch dir, runs womblex's `money_shards()`,
 publishes the two sidecars back under `proc/{evaluationId}/documents/`, and loads
 the spans into `redline_money_spans` off the same scratch dir. Run it on demand
-once a run has drained:
+once a run has drained, via the `money` compose profile:
 
 ```sh
-podman compose -f ../../infra/docker-compose.yml --profile stage \
-  run --rm stage --stage money --run-id <runId>
+podman compose -f ../../infra/docker-compose.yml --profile money \
+  run --rm money --evaluation-id <evaluationId>
 ```
 
-This sidecar package previously carried its own `money_stage.py` for that bridge.
-Upstream generalised the shape across every stage (ADR-0021), so the redline copy
-was deleted rather than kept in parallel.
+The engine's own generic `run-stage --stage money` (the `stage` profile) shares
+the *compute* but stops at publishing the sidecars — it has no equivalent of the
+`redline_money_spans` load, which is redline's. That load is why `money_stage.py`
+is kept rather than replaced by the generic stage runner.
 
 The `money:` section (vocabulary, vetoes, currency default) is read from the same
 `infra/womblex/redline.yaml` the worker runs with (`WOMBLEX_CONFIG`), so the
-tuning is never restated. It builds the Dockerfile's `womblex` target — the read
-seam above stays the light, womblex-free `sidecar` target.
+tuning is never restated. The `money` image is built from the repo root by
+`infra/docker/womblex-money.Dockerfile`, which installs the engine from the
+`services/womblex` submodule source — the `[womblex]` extra's pin is an untagged
+commit not on any index, so it cannot be pip-installed. The read seam above keeps
+its own light, womblex-free `sidecar` Dockerfile.
 
 The load is the step that makes the annotation worth running:
 `money_span_store.py` decodes each `*.money_spans.parquet` and
@@ -216,7 +220,9 @@ requirement: the sidecar image is `python:3.12-slim` (inside womblex's 3.11/3.12
 support), so the engine can equally be co-located with the sidecar on one host.
 Either way the seam is object storage (ADR-0002), and what backs it — an S3
 bucket or an AWS-managed equivalent — is config. The engine source is pinned as a
-submodule at `services/womblex` (tag `v0.3.0`).
+submodule at `services/womblex` (an untagged `main` commit ahead of `v0.3.0`,
+declaring version `0.4.0`; the sidecar's `[womblex]` pin tracks it — see
+`docs/architecture.md`, "Vendoring / pinning discipline").
 
 `WOMBLEX_MODE` selects which extractor this API sidecar uses:
 

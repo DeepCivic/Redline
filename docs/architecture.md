@@ -379,9 +379,11 @@ runs womblex's own `money_shards()` (config sourced from
 `infra/womblex/redline.yaml` via `WOMBLEX_CONFIG` — the tuning is never restated),
 and publishes `*.money_spans.parquet` + `*.money_columns.parquet` back under
 `proc/{evaluationId}/documents/`. Runnable via the `money` compose profile
-(`compose --profile money run --rm money --evaluation-id <id>`), which builds the
-sidecar Dockerfile's `womblex` target (the read seam keeps the light `sidecar`
-target).
+(`compose --profile money run --rm money --evaluation-id <id>`), whose image is
+built from the repo root by `infra/docker/womblex-money.Dockerfile` — it installs
+the engine from the `services/womblex` submodule source, because the `[womblex]`
+extra's pin is an untagged commit not on any index. The read-seam sidecar keeps
+its own light, womblex-free `sidecar` Dockerfile.
 
 Publishing is not the last step: `run_money_stage` then **loads** the spans into
 `redline_money_spans` off the same scratch dir
@@ -784,7 +786,8 @@ redline/
 │   │   │                          money_span_store[_postgres] (the span load),
 │   │   │                          run_trigger (the run-trigger seam: fires the
 │   │   │                          fixed CLI sequence, reads run state)
-│   │   └── Dockerfile             `sidecar` (light) + `womblex` (money) targets
+│   │   └── Dockerfile             the light, womblex-free `sidecar` image; the
+│   │                          `money` image is infra/docker/womblex-money.Dockerfile
 │   ├── numbatch/                  ◄ SUBMODULE: the Numbatch fork @ 72bcead
 │   ├── numbatch-extension/        redline's additive overlay (financial_extension
 │   │                              + bootstrap-profile.py), grafts onto the fork
@@ -809,6 +812,8 @@ redline/
 ├── infra/
 │   ├── docker-compose.yml         profiles: ingest | money | womblex | numbatch |
 │   │                              redline | report
+│   ├── docker/                    repo-root-context Dockerfiles built by compose
+│   │                              (womblex-money.Dockerfile — the `money` image)
 │   └── womblex/redline.yaml       redline's pipeline config for the engine
 ├── docs/
 │   ├── architecture.md            ◄ THIS FILE — what redline IS (the design truth)

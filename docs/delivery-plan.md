@@ -210,10 +210,11 @@ deferred.** How redline drives and watches the run is decided:
   over `redline.yaml`). Batching, retry and scale-out stay inside each pass
   (`cloud/worker.py`, the queue); redline does not reimplement them. "Drives and
   observes, does not wrap" holds.
-- **The sidecar owns trigger and status.** The `womblex-ingest` sidecar already
-  carries the `[womblex]` image (the `money` profile), so firing the CLI sequence
-  is Python's job there, not TypeScript's — and it keeps the queue-schema
-  knowledge out of redline. redline calls two JSON endpoints: run this
+- **The sidecar owns trigger and status.** The `womblex-ingest` world already
+  runs the money stage in Python against the engine installed from the submodule
+  source (the `money` compose image), so firing the CLI sequence is Python's job
+  there, not TypeScript's — and it keeps the queue-schema knowledge out of
+  redline. redline calls two JSON endpoints: run this
   evaluation's pipeline, and status of this run. Reading womblex's `womblex_jobs`
   table directly from TypeScript was the alternative (fewer parts, but couples
   redline to an engine-owned schema on an untagged pin); rejected for the sidecar.
