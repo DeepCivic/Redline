@@ -169,11 +169,21 @@ The run trigger + run-status seam is built: `IWomblexRunTrigger` /
 caller-authored order, dependency-normalised) against the UI-authored config,
 layering the current downstream stage over `womblex_jobs` for status. Resume
 re-fires the same run (idempotent enqueue + skip-on-output). `architecture.md`
-§3/§5 records the second engine seam. The remaining steps:
+§3/§5 records the second engine seam.
+
+The run-status view model + controller is built: `renderRunStatusView` /
+`RunStatusController` (redline-web) over that status seam. The view model is a
+pure `RunStatusView` → presentation transform the served route binds to,
+reducing a minutes-long run to the four states the surface must show — **started**
+(running), **errored** (which stage, and why), **resumable**, **done** — and
+owning `shouldKeepPolling` so a failed stage names itself and offers resume
+rather than spinning forever. The controller drives the seam (start, poll into
+the view model, resume by re-firing the same trigger) and returns seam errors as
+`Result`s rather than throwing across the boundary. Polled, not streamed. The
+remaining steps:
 
 | Step | Package(s) | What it is |
 |---|---|---|
-| Run-status view model + controller | redline-web | Framework-free: a run's state as a pure view model the served route binds to, over the status seam, showing the four things the surface must — **started**, **errored** (which stage, and why), **resumable**, **done** (see the settled decisions below). Polled, not streamed. A failed stage names itself and offers resume; it is never a spinner that never resolves. |
 | Create Corpus surface | redline-web | The document picker (from a **staged corpus** via the existing `IStagedCorpusReader`, lead with this; raw-bucket browse is deferred), the evaluation name/id field, the **allow-listed config overrides** (stage sequence, chunk mode, money vocabulary — blank inherits the `redline.yaml` default), and the trigger. On completion it drives the already-built ingest → lens → grouping → build sequence — the seed script's middle, minus the manifest. |
 | Fork mount: standalone tab + procedures + gate | wayfinder (two commits) | A **standalone Create Corpus tab** in `johntooth/wayfinder` (not a change to `/evaluations/new` — ingest and evaluation are different users), its tRPC procedures (trigger, poll status) behind `evaluation:create`, and the sidebar entry. If it touches `@rbrasier/domain`, the contract test and `wayfinder.pin` bump come in step. |
 
