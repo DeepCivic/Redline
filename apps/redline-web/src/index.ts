@@ -53,6 +53,16 @@ export {
 } from "./lib/review-view";
 
 export {
+  renderRunStatusView,
+  type RunStatusViewModel,
+} from "./lib/run-status-view";
+
+export {
+  RunStatusController,
+  type RunStatusControllerParts,
+} from "./lib/run-status-controller";
+
+export {
   renderDocumentView,
   documentElementDomId,
   type RenderDocumentViewInput,
