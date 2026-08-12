@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from womblex_ingest.chunk_store import ChunkStore, load_extraction
 from womblex_ingest.embedding import TextEmbedder
 from womblex_ingest.extraction import Extractor
+from womblex_ingest.run_trigger import RunPlan, RunTrigger, UnknownStage
 from womblex_ingest.runs import Run, RunRegistry
 from womblex_ingest.storage import ObjectNotFound, ObjectStorage
 
@@ -49,6 +50,14 @@ class IngestRequest(BaseModel):
 
 class QueryEmbeddingRequest(BaseModel):
     text: str
+
+
+class TriggerRunRequest(BaseModel):
+    evaluationId: str
+    # The allow-listed downstream stage sequence (architecture §2.1). The trigger
+    # validates it against the allow-list and normalises its ordering; a blank
+    # inherits the default at the surface above, so a request always names one.
+    stageSequence: List[str]
 
 
 def _error(status_code: int, code: str, message: str, run_id: Optional[str] = None) -> JSONResponse:
@@ -78,6 +87,7 @@ def build_app(
     womblex_mode: str = "stub",
     isaacus_enabled: bool = False,
     chunk_store: Optional[ChunkStore] = None,
+    run_trigger: Optional[RunTrigger] = None,
 ) -> FastAPI:
     app = FastAPI(title="womblex-ingest", version="0.1.0")
     registry = RunRegistry()
@@ -184,6 +194,60 @@ def build_app(
             return _error(404, "RUN_NOT_FOUND", f"no run with id {run_id}")
         return JSONResponse(status_code=200, content=_run_view(run))
 
+    # --- The run-trigger seam (Create Corpus, architecture §2.1) -------------
+    #
+    # The second engine seam: a trigger into the queue and a read of run state.
+    # Present only when a trigger is wired (a DSN + store URI configured); the
+    # stub / read-only lane omits it and the routes 503, so a misconfigured
+    # deployment is legible rather than silently accepting a run it cannot fire.
+
+    def _require_trigger() -> Optional[JSONResponse]:
+        if run_trigger is None:
+            return _error(
+                503, "INFRA_FAILURE",
+                "run trigger is not configured (needs WOMBLEX_DB_DSN + WOMBLEX_STORE_URI)",
+            )
+        return None
+
+    @app.post("/runs")
+    def trigger_run(request: TriggerRunRequest) -> JSONResponse:
+        unavailable = _require_trigger()
+        if unavailable is not None:
+            return unavailable
+        evaluation_id = request.evaluationId.strip()
+        if not evaluation_id:
+            return _error(422, "INVALID_REQUEST", "evaluationId must not be empty")
+        assert run_trigger is not None
+        try:
+            started = run_trigger.start(
+                RunPlan(evaluation_id=evaluation_id, stage_sequence=list(request.stageSequence))
+            )
+        except UnknownStage as bad_stage:
+            return _error(422, "INVALID_REQUEST", str(bad_stage))
+        return JSONResponse(status_code=202, content=started)
+
+    @app.get("/runs/{run_id}")
+    def read_run(run_id: str) -> JSONResponse:
+        unavailable = _require_trigger()
+        if unavailable is not None:
+            return unavailable
+        assert run_trigger is not None
+        try:
+            return JSONResponse(status_code=200, content=run_trigger.status(run_id))
+        except KeyError:
+            return _error(404, "RUN_NOT_FOUND", f"no run with id {run_id}")
+
+    @app.post("/runs/{run_id}/resume")
+    def resume_run(run_id: str) -> JSONResponse:
+        unavailable = _require_trigger()
+        if unavailable is not None:
+            return unavailable
+        assert run_trigger is not None
+        try:
+            return JSONResponse(status_code=202, content=run_trigger.resume(run_id))
+        except KeyError:
+            return _error(404, "RUN_NOT_FOUND", f"no run with id {run_id}")
+
     @app.get("/extractions/{evaluation_id}/{document_id}")
     def read_extraction(evaluation_id: str, document_id: str) -> JSONResponse:
         """Serve one document's JSON read model — the Parquet→JSON seam.
@@ -265,6 +329,14 @@ def build_app_from_env() -> FastAPI:
         store.migrate()
         chunk_store = store
 
+    # Wire the run trigger only when the engine's queue DSN + store URI are
+    # configured (the second engine seam, architecture §2.1). Absent, the sidecar
+    # is a read-only seam and the /runs routes 503 — a legible misconfiguration,
+    # never a run silently accepted that cannot fire.
+    from womblex_ingest.run_trigger import run_trigger_from_env
+
+    run_trigger = run_trigger_from_env()
+
     return build_app(
         storage=storage,
         extractor=extractor,
@@ -273,4 +345,5 @@ def build_app_from_env() -> FastAPI:
         womblex_mode=settings.womblex_mode,
         isaacus_enabled=settings.isaacus_enabled,
         chunk_store=chunk_store,
+        run_trigger=run_trigger,
     )

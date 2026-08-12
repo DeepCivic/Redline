@@ -14,6 +14,17 @@ export {
   type HttpResponse,
   type WomblexExtractionReaderOptions,
 } from "./womblex/womblex-extraction-reader";
+// The run-trigger seam (architecture §3/§5): redline's second coupling to the
+// womblex engine, over the sidecar's `POST /runs` / `GET /runs/{runId}` /
+// `POST /runs/{runId}/resume` endpoints. Triggers a run and reads its state;
+// redline does not reimplement the engine's batching, retry or scale-out.
+export {
+  HttpWomblexRunTrigger,
+  type RunTriggerHttpClient,
+  type RunTriggerHttpRequest,
+  type RunTriggerHttpResponse,
+  type HttpWomblexRunTriggerOptions,
+} from "./womblex/http-womblex-run-trigger";
 export {
   NumbatchClassifier,
   type HttpClient as NumbatchHttpClient,

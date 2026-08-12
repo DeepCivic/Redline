@@ -65,3 +65,9 @@ export * from "./ports/money-span-store";
 export * from "./ports/graph-store";
 export * from "./ports/procurement-classifier";
 export * from "./ports/procurement-extraction-reader";
+// The run-trigger seam — redline's second coupling to the womblex engine. A
+// trigger into the engine's job queue and a read of run state, so a browser
+// starts and watches a run without a terminal driving enqueue / worker /
+// run-stage. redline drives and observes; it does not reimplement the engine's
+// batching, retry or scale-out.
+export * from "./ports/womblex-run-trigger";

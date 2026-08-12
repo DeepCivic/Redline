@@ -159,12 +159,20 @@ The object-store write port at the head of this programme is built:
 bytes under `proc/{evaluationId}/inputs/` (the prefix the engine's runner reads
 its input from). It stages bytes only — womblex mints the `source_hash`
 identities on extract — and the **list/browse** half (raw objects womblex has
-not processed yet) is deferred with the document-selection work below. The
-remaining steps:
+not processed yet) is deferred with the document-selection work below.
+
+The run trigger + run-status seam is built: `IWomblexRunTrigger` /
+`HttpWomblexRunTrigger` (redline-adapters) over the sidecar's `POST /runs` /
+`GET /runs/{runId}` / `POST /runs/{runId}/resume`, and the sidecar's
+`run_trigger.py` behind them — the thin runner that fires the fixed CLI sequence
+(extraction `worker`, then `run-stage --stage {chunk,embed,enrich,money}` in the
+caller-authored order, dependency-normalised) against the UI-authored config,
+layering the current downstream stage over `womblex_jobs` for status. Resume
+re-fires the same run (idempotent enqueue + skip-on-output). `architecture.md`
+§3/§5 records the second engine seam. The remaining steps:
 
 | Step | Package(s) | What it is |
 |---|---|---|
-| Run trigger + run-status seam | sidecar + adapters | The second engine seam, **fronted by the `womblex-ingest` sidecar** (decided below — redline calls JSON, not `womblex_jobs` directly). A trigger that fires the fixed CLI sequence for one evaluation (extraction `worker`, then `run-stage --stage {chunk,embed,enrich}`, then `money`) against the UI-authored config, and a **read** of run state. redline's adapter calls two endpoints (run this evaluation, status of this run); the ordering of the passes is the sidecar's, not the specialist's — the allow-listed stage *sequence* is authored, but the dependency (chunk before embed) is enforced here. |
 | Run-status view model + controller | redline-web | Framework-free: a run's state as a pure view model the served route binds to, over the status seam, showing the four things the surface must — **started**, **errored** (which stage, and why), **resumable**, **done** (see the settled decisions below). Polled, not streamed. A failed stage names itself and offers resume; it is never a spinner that never resolves. |
 | Create Corpus surface | redline-web | The document picker (from a **staged corpus** via the existing `IStagedCorpusReader`, lead with this; raw-bucket browse is deferred), the evaluation name/id field, the **allow-listed config overrides** (stage sequence, chunk mode, money vocabulary — blank inherits the `redline.yaml` default), and the trigger. On completion it drives the already-built ingest → lens → grouping → build sequence — the seed script's middle, minus the manifest. |
 | Fork mount: standalone tab + procedures + gate | wayfinder (two commits) | A **standalone Create Corpus tab** in `johntooth/wayfinder` (not a change to `/evaluations/new` — ingest and evaluation are different users), its tRPC procedures (trigger, poll status) behind `evaluation:create`, and the sidebar entry. If it touches `@rbrasier/domain`, the contract test and `wayfinder.pin` bump come in step. |

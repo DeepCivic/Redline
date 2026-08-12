@@ -35,15 +35,19 @@ the domain's `IProcurementExtractionReader` DTOs mirror.
 | `GET /health`        | —                                              | `{ "status": "ok", "bucket": "redline", "womblexMode" }` |
 | `POST /ingest`       | `{ "evaluationId": string, "documentNames": string[] }` | `202 { runId, status, documentCount, shardKeys }` |
 | `GET /status/{run_id}` | —                                            | `200 { runId, evaluationId, status, documentCount, shardKeys, error }` |
+| `POST /runs`         | `{ "evaluationId": string, "stageSequence": string[] }` | `202 { runId, evaluationId }` |
+| `GET /runs/{run_id}` | —                                              | `200 { runId, evaluationId, phase, completedStages[], failedStage, resumable, error }` |
+| `POST /runs/{run_id}/resume` | —                                      | `202 { runId, evaluationId }` |
 | `GET /extractions/{evaluationId}/{documentId}` | —                          | `200 { documentId, elements[], chunks[], tableCells[] }` |
 | `GET /embeddings/{evaluationId}/{documentId}` | —                           | `200 { documentId, model, dimensions, vectors[] }` |
 | `POST /embeddings/query` | `{ "text": string }`                              | `200 { model, dimensions, values[] }` |
 
 Errors cross the boundary Result-shaped — `{ "error": { "code", "message" } }` —
 so the Thread 4 adapter maps them straight into a redline `DomainError`. Codes:
-`INVALID_REQUEST` (422, empty ingest field *or* blank query text), `RUN_NOT_FOUND`
-(404), `NOT_FOUND` (404, unknown extraction *or* unknown embeddings),
-`EXTRACTION_FAILED` (502).
+`INVALID_REQUEST` (422, empty ingest field, blank query text, *or* an off-list
+stage in a run request), `RUN_NOT_FOUND` (404), `NOT_FOUND` (404, unknown
+extraction *or* unknown embeddings), `EXTRACTION_FAILED` (502), `INFRA_FAILURE`
+(503 when the run trigger is not configured).
 
 Shards land under `proc/{evaluationId}/` in the `REDLINE_BUCKET` bucket, e.g.
 `proc/eval-42/_manifest.parquet`, `proc/eval-42/tender.pdf.elements.parquet`. The
@@ -159,6 +163,47 @@ foreign key to `redline_evaluations`), so this service carries no DDL for it and
 the load needs an already-migrated database. Without `REDLINE_DATABASE_URL` the
 sidecars are still published and the load is skipped.
 
+## The run-trigger seam
+
+redline's **second seam to the womblex engine** (the first is object storage —
+the engine writes shards, the sidecar reads them). `run_trigger.py` triggers a
+run into the engine's job queue and reads its state, so a browser starts and
+watches a run without a terminal driving `enqueue` / `worker` / `run-stage` by
+hand. The TypeScript `IWomblexRunTrigger` / `HttpWomblexRunTrigger` adapter
+consumes the three `/runs` routes above.
+
+`RunTrigger` is a **thin runner**, not an orchestrator. `start` fires the fixed
+CLI sequence the operator otherwise fires by hand:
+
+1. extraction — `enqueue` the evaluation's staged inputs, then run a `worker`
+   until the run drains;
+2. the authored downstream stages — `run-stage --stage {chunk,embed,enrich,money}`
+   in the caller's order.
+
+The allow-listed stage **sequence** is authored per request (the Create Corpus
+surface's override over `redline.yaml`); the **dependency** (chunk before embed)
+is enforced here (`normalise_sequence`), not left to the specialist. Only
+`chunk` / `embed` / `enrich` / `money` are authorable — the structural stages
+(`link`, `pii`, …) are not run parameters, and a request naming one is refused
+with `INVALID_REQUEST` (see `design-principles.md`, the engine-config allow-list).
+
+redline does **not** reimplement batching, retry or scale-out — those stay the
+engine's (`cloud/worker.py`, its Postgres `womblex_jobs` queue). The status read
+layers the current downstream stage on top of the queue's own extraction stats
+(`womblex_jobs` tracks extraction batches only). **Resume is not its own logic:**
+womblex's `enqueue` is idempotent on `(run_id, batch_num)` and completed
+`run-stage` bases skip on their published outputs, so re-firing the same run picks
+up where it stopped.
+
+Run state is in-memory and process-local (like the ingest `RunRegistry`): a run's
+durable record is its shards in MinIO and its `womblex_jobs` rows. The trigger is
+wired only when the engine's queue DSN + store URI are configured
+(`WOMBLEX_DB_DSN`, `WOMBLEX_STORE_URI`); absent, the sidecar is a read-only seam
+and the `/runs` routes return `503`. The four engine operations are injected
+callables, so the sequencing logic is proven without a live Postgres, a real
+womblex or an Isaacus key (`tests/test_run_trigger.py`); `run_trigger_from_env`
+binds them to the real engine (womblex imported lazily, real lane only).
+
 ## Extraction modes & the womblex pod
 
 **womblex is a required subsystem of redline**, not an optional extra: the
@@ -222,6 +267,9 @@ the S3 target is fully config-driven — never a hardcoded Wayfinder endpoint):
 | `REDLINE_BUCKET`| `redline`    | bucket for shards (created on first use) |
 | `WOMBLEX_MODE`  | `stub`       | `stub` \| `real` |
 | `ISAACUS_API_KEY` | _(unset)_  | consumed by the **womblex pod** for the embed stage (`kanon-2-embedder`); required for retrieval |
+| `REDLINE_DATABASE_URL` | _(unset)_ | redline's own Postgres; when set, an ingest projects chunks + embeddings into `redline_chunks` and the money load writes `redline_money_spans` |
+| `WOMBLEX_DB_DSN` | _(unset)_ | the engine's `womblex_jobs` queue DSN; with `WOMBLEX_STORE_URI`, wires the run trigger (else `/runs` is `503`) |
+| `WOMBLEX_STORE_URI` | _(unset)_ | the engine's object-store base URI (e.g. `s3://redline`); the run trigger's `enqueue` / `worker` / `run-stage` target |
 
 ## Run
 

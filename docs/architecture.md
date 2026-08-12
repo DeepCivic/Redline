@@ -113,6 +113,7 @@ flowchart TB
 
     sidecar -->|reads Parquet| minio[("MinIO — redline-owned bucket<br/>proc/evaluationId/*.parquet")]
     sidecar -->|loads chunk rows + embeddings| pg
+    sidecar -->|triggers a run: enqueue + worker + run-stage| engine
     engine["services/womblex — SUBMODULE @ f283969<br/>the real engine: extract, then run-stage for chunk → embed"]
     engine -->|writes shards| minio
     engine -->|embed stage only| isaacus(["Isaacus API<br/>ISAACUS_API_KEY"])
@@ -150,7 +151,8 @@ flowchart TB
 - **`packages/redline-domain`** — entities plus the ports:
   `IProcurementExtractionReader`, `IChunkStore`, `IProcurementClassifier`,
   `IClassificationLensReader`, `IClassificationLensWriter`, `IFinancialExtractor`,
-  `IMoneySpanStore`, `IStagedCorpusReader`, `IStagedCorpusWriter`, `IAdjudicator`,
+  `IMoneySpanStore`, `IStagedCorpusReader`, `IStagedCorpusWriter`,
+  `IWomblexRunTrigger`, `IAdjudicator`,
   `ILanguageModel`, `IEvaluationRepository`.
   The lens seam's adapters are `DrizzleClassificationLensReader` and
   `DrizzleClassificationLensWriter`, both over the four lens tables.
@@ -410,6 +412,9 @@ no sidecars at all is left untouched: that is "the stage never ran here", not
 | `GET /extractions/{eval}/{doc}` | `{ documentId, elements[], chunks[], tableCells[] }` |
 | `GET /embeddings/{eval}/{doc}` | `{ documentId, model, dimensions, vectors[] }` |
 | `POST /embeddings/query {text}` | `{ model, dimensions, values[] }` (query vector) |
+| `POST /runs {evaluationId, stageSequence}` | the run-trigger seam (§5 invariant 2): fires the fixed CLI sequence and returns a `runId`. Wired only when the engine's queue DSN + store URI are configured; else the route reports unavailable |
+| `GET /runs/{runId}` | `{ runId, evaluationId, phase, completedStages[], failedStage, resumable, error }` — the status a poller binds to |
+| `POST /runs/{runId}/resume` | re-fires the run (idempotent enqueue + skip-on-output) |
 
 Extraction provenance stays JSON. Bulk vectors do **not** cross to
 TypeScript for classification: at real corpus scale (~90k chunks) they are loaded
@@ -565,8 +570,27 @@ carried as provenance, not as part of the join key (see §7).
    engine's runner resolves its input from, so a browser upload reaches a run
    without a terminal `mc cp`. It stages bytes only: womblex still mints the
    `source_hash` identities when it extracts, and redline reads nothing back from
-   this path until the run drains. The *trigger* into the engine's job queue is a
-   separate, second engine seam, recorded when it is built.
+   this path until the run drains.
+
+   **The run trigger is the second engine seam, and it is built.** Until it,
+   object storage was the *only* coupling to the engine. `IWomblexRunTrigger` /
+   `HttpWomblexRunTrigger` adds the second: a trigger into the engine's job queue
+   and a read of run state, over the sidecar's `POST /runs` / `GET /runs/{runId}`
+   / `POST /runs/{runId}/resume` JSON endpoints. The sidecar's `run_trigger.py`
+   owns the sequencing — it fires the fixed CLI passes the seed script's operator
+   fires by hand (`enqueue` + `worker` for extraction, then `run-stage --stage
+   {chunk,embed,enrich,money}` in the caller-authored order) against the
+   UI-authored config, layering the current downstream stage on top of
+   `womblex_jobs` (which tracks extraction batches only) for the status read. The
+   allow-listed stage *sequence* is authored; the dependency (chunk before embed)
+   is enforced sidecar-side. What does **not** change: redline still does not
+   reimplement batching, retry or scale-out — those stay the engine's
+   (`cloud/worker.py`, its Postgres queue). redline drives and observes; it does
+   not wrap. Resume is not its own logic: womblex's `enqueue` is idempotent on
+   `(run_id, batch_num)` and completed `run-stage` bases skip on their published
+   outputs, so re-firing the same run picks up where it stopped. The trigger is
+   wired only when the engine's queue DSN + store URI are configured; absent, the
+   sidecar is a read-only seam and the `/runs` routes return unavailable.
 
 3. **Embeddings are loaded into the store as data and never cross to TypeScript.**
    At real corpus scale bulk vectors are projected into `redline_chunks`
@@ -757,7 +781,9 @@ redline/
 │   │   ├── src/womblex_ingest/    stub + real extractor, records (wire shape),
 │   │   │                          shard_reader (schema map), storage, embedding,
 │   │   │                          money_stage (the `money` op invocation) +
-│   │   │                          money_span_store[_postgres] (the span load)
+│   │   │                          money_span_store[_postgres] (the span load),
+│   │   │                          run_trigger (the run-trigger seam: fires the
+│   │   │                          fixed CLI sequence, reads run state)
 │   │   └── Dockerfile             `sidecar` (light) + `womblex` (money) targets
 │   ├── numbatch/                  ◄ SUBMODULE: the Numbatch fork @ 72bcead
 │   ├── numbatch-extension/        redline's additive overlay (financial_extension
@@ -1044,7 +1070,8 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
   `services/womblex/docs/dataflow.md`, `services/womblex/docs/architecture.md`
   (the submodule's own docs — authoritative for the engine).
 - **The wire shape redline serves:** `services/womblex-ingest/src/womblex_ingest/`
-  (`records.py` = DTOs, `shard_reader.py` = the schema map, `real_extractor.py`).
+  (`records.py` = DTOs, `shard_reader.py` = the schema map, `real_extractor.py`,
+  `run_trigger.py` = the run-trigger seam behind `POST /runs` / `GET /runs/{id}`).
 - **Outstanding work:** [`delivery-plan.md`](./delivery-plan.md) — the only
   document that tracks what is left to build.
 - **Design rationale (durable, non-tracking):** [`design-principles.md`](./design-principles.md)
