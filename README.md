@@ -109,3 +109,18 @@ WAYFINDER_DIR=/path/to/wayfinder scripts/podman-run.sh "pnpm typecheck"
 # widen the vendored Wayfinder set when later work needs more packages:
 WAYFINDER_PACKAGES="domain shared" scripts/podman-run.sh
 ```
+
+## User guides
+
+How to drive the surfaces the fork serves, written for the people who use them
+rather than the people who build them:
+
+- [Creating a corpus and firing its run](./docs/guides/create-a-corpus.md) — the
+  **Create Corpus** screen: pick a staged corpus, author the run, watch it land.
+- [Creating an evaluation](./docs/guides/create-an-evaluation.md) — the **New
+  evaluation** screen: compose an evaluation over a corpus that has already been
+  run.
+
+Operator runbooks live beside them:
+[running both stacks locally](./docs/guides/two-stack-local-run.md) and
+[local dev and validation](./docs/guides/local-dev-and-validation.md).
