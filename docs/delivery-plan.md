@@ -302,9 +302,28 @@ a per-corpus choice: the embed model and `task` (the vectors must pair with the
 sidecar's query embeddings) and the Isaacus gate. `design-principles.md` carries
 the amended decision.
 
+**Create Corpus is an ingest surface, in code but not yet pinned.** Both commits
+are written. redline-web's view model carries the run name and the pending
+uploads instead of the staged-corpus picker, and `CreateCorpusController` has no
+create seam at all — `createCorpus` stages then fires, refusing a nameless or
+document-less run before staging anything. The fork's tab uploads raw documents
+through one `evaluation.createCorpus` procedure (base64 into a Buffer, following
+`extraction.uploadDraftDocuments`), asks for no brands or fields, and its tracker
+hands over to `/evaluations/new` on `done`. `evaluation.startRun` is gone,
+replaced by that one procedure, because staging and firing must not be two
+mutations a React component sequences: the ordering is the guarantee.
+
+**What is left is a merge, not a build.** The fork commit sits on
+`johntooth/wayfinder`'s `claude/next-build-delivery-plan-ozbyl3`, not on its
+`main`, so the gitlink and `wayfinder.pin` cannot move yet — `validate.sh` #15(a)
+fails unless the submodule sits on the fork `main`'s commit, which is the forced
+ordering the build-step contract's fork rule describes. Merge the fork branch to
+`main`, then move both refs here in one commit. Until that happens redline
+typechecks and tests against the fork mount as it was, and the live half of
+`redline-create-corpus.spec.ts` cannot run.
+
 | Step | Package(s) | What it is |
 |---|---|---|
-| Create Corpus becomes an ingest surface | redline-web + wayfinder (two commits) | Drop the brand/field half and the `CreateEvaluation` call; add the run name and the document upload over the built `IStagedCorpusWriter`, following the fork's existing upload procedure (`extraction.uploadDraftDocuments` — base64 through tRPC, `storage.put` under a per-flow key). On `done` the tracker links to `/evaluations/new`. The load step above is done, so the corpus a run makes is visible to the picker. _Exit: `redline-create-corpus.spec.ts` names a run, uploads a document to it, fires, and the corpus appears in `/evaluations/new`'s picker once it settles._ |
 | Widen the authorable config for a first run | domain + womblex-ingest | Extraction and OCR settings join the override shape, refused on a run over a corpus that already has shards. _Exit: a first run authored with a non-default OCR engine extracts against that engine; the same override against a corpus with existing shards is refused._ |
 
 **The allow-listed override is authored but never applied.** The form composes it,
@@ -516,9 +535,10 @@ start leads**.
 1. **A finished run loads its own shards** — done. A run's completion projects
    its published shards into `redline_chunks`, so the two screens have something
    to hand between them; without it a run published shards no screen could see.
-2. **Create Corpus becomes an ingest surface.** The case the engine is built for.
-   It unblocks every later step's ability to be tested over a corpus the browser
-   made, and it removes the brand/field duplication rather than adding to it.
+2. **Create Corpus becomes an ingest surface** — built in both repos, awaiting
+   the fork merge and the pin bump (above). The case the engine is built for. It
+   unblocks every later step's ability to be tested over a corpus the browser
+   made, and it removed the brand/field duplication rather than adding to it.
 3. **The override reaches the engine**, which is what makes that surface worth
    having, and the wider first-run config with it.
 4. **Post-run population**, now against `/evaluations/new` rather than Create
