@@ -63,6 +63,17 @@ redline. What redline is for is the step after — assembling those addressable,
 provenance-tagged facts into something a procurement specialist hands to a
 delegate.
 
+**We track womblex latest.** The engine is consumed for capabilities redline does
+not reimplement, so the submodule follows womblex's `main` rather than sitting on
+an older commit — currently `d6850de`, declared version `0.4.0`, which is
+`origin/main`. Lagging it means going without a capability or growing a
+redline-side substitute, which is the duplication the submodule discipline exists
+to prevent. Two things move with it: the sidecar's `[womblex]` extra
+(`womblex==0.4.0`), which `validate.sh` #13 asserts agrees with the submodule's
+declared version, and any claim in the docs that names a specific commit. The
+discipline itself is in `architecture.md`; what belongs here is that a bump is
+ordinary work, not a decision to relitigate.
+
 **Numbatch is not on this path.** Classification runs cold-start over womblex
 extraction: hard rules + LLM adjudication navigating the store's
 chunks/provenance. Financial facts come from womblex's own value-typed table
