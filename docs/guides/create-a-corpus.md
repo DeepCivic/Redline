@@ -13,10 +13,9 @@ Deciding what to *read out of* the corpus happens afterwards, on
 people, which is why they are two screens — and if someone else has already run
 the documents, you do not need this screen at all.
 
-> **Status.** The screen now does what this guide describes. One thing is not
-> offered yet — extraction and OCR settings — and one caveat applies to which
-> build you are running: see [What is not there yet](#what-is-not-there-yet) at
-> the end.
+> **Status.** The screen does what this guide describes. One thing is not offered
+> yet — extraction and OCR settings — see
+> [What is not there yet](#what-is-not-there-yet) at the end.
 
 The screen is served by the forked Wayfinder, not by a standalone redline app.
 See [Running both stacks locally](./two-stack-local-run.md) for how to get it up.
@@ -89,17 +88,13 @@ are not run parameters and the engine refuses them.
 Everything here inherits the corpus profile's default when you leave it alone.
 The editors only appear once you switch a group on.
 
-**Extraction and OCR** — available on a first run, which is this one. The OCR
-engine is the setting that matters: the default (`paddleocr`) detects regions,
-which is what lets the engine reconstruct table cells on a scanned page. A
-vision-language engine returns prose with no regions, so it deletes every table
-cell on a scanned page — and with them all the pricing on a scanned tender.
-Change it only if you know your documents are not scanned, and know what you are
-giving up.
-
-You get these on a first run because there is nothing yet to break. Re-running a
-corpus that already has results is different: changing extraction there
-invalidates everything built on top of it, so the screen refuses it.
+**Extraction and OCR** — *not offered yet* (see
+[What is not there yet](#what-is-not-there-yet)). A run extracts with whatever
+the corpus profile sets, which for scanned documents is the setting that matters
+most: the default `paddleocr` detects regions, which is what lets the engine
+reconstruct table cells on a scanned page. A vision-language engine returns prose
+with no regions, so it deletes every table cell on a scanned page — and with them
+all the pricing on a scanned tender.
 
 **Chunk mode**
 
@@ -176,10 +171,3 @@ built appears in the picker and you say what you want answered about it.
   [Creating an evaluation](./create-an-evaluation.md). `POST /ingest` still
   loads a corpus extracted outside a browser-fired run; a run fired *here* loads
   its own shards when it finishes, so no separate ingest step is needed.
-
-> **Which build you are running.** The split above is committed but the forked
-> Wayfinder mount it lives in has not been pinned into redline yet (the fork
-> branch has to merge to the fork's `main` first). A deployment built from
-> redline's current pin still serves the older screen, which asks for brands and
-> fields and picks a corpus rather than naming one. The delivery plan tracks the
-> pin.

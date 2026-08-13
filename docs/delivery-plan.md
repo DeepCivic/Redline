@@ -305,35 +305,17 @@ a per-corpus choice: the embed model and `task` (the vectors must pair with the
 sidecar's query embeddings) and the Isaacus gate. `design-principles.md` carries
 the amended decision.
 
-**Create Corpus is an ingest surface, in code but not yet pinned.** Both commits
-are written. redline-web's view model carries the run name and the pending
-uploads instead of the staged-corpus picker, and `CreateCorpusController` has no
-create seam at all — `createCorpus` stages then fires, refusing a nameless or
-document-less run before staging anything. The fork's tab uploads raw documents
-through one `evaluation.createCorpus` procedure (base64 into a Buffer, following
-`extraction.uploadDraftDocuments`), asks for no brands or fields, and its tracker
-hands over to `/evaluations/new` on `done`. `evaluation.startRun` is gone,
-replaced by that one procedure, because staging and firing must not be two
-mutations a React component sequences: the ordering is the guarantee.
-
-**What is left is a merge, not a build.** The fork commit sits on
-`johntooth/wayfinder`'s `claude/next-build-delivery-plan-ozbyl3`, not on its
-`main`, so the gitlink and `wayfinder.pin` cannot move yet — `validate.sh` #15(a)
-fails unless the submodule sits on the fork `main`'s commit, which is the forced
-ordering the build-step contract's fork rule describes. Merge the fork branch to
-`main`, then move both refs here in one commit. Until that happens redline
-typechecks and tests against the fork mount as it was, and the live half of
-`redline-create-corpus.spec.ts` cannot run.
-
-**Widening the config for a first run is two steps, not one.** It was written as
-one, and it breaks the contract in §1: its exit test joined two independently
-testable behaviours (an override that *reaches extraction*, and a refusal that
-depends on *whether the corpus already has shards*), and it spanned TypeScript and
-Python. Split as below. The first is a straight extension of the seam just built;
-the second needs something that does not exist yet — a first-run test, which is an
-object-store read (`proc/{id}/runs/**` empty or not), so it also decides where
-that question is answered. Put it in the sidecar: it already holds the store URI
-and the engine knowledge, and a browser that asked would be racing its own upload.
+**Create Corpus is an ingest surface, and it is pinned.** redline-web's view model
+carries the run name and the pending uploads instead of a staged-corpus picker,
+and `CreateCorpusController` has no create seam at all — `createCorpus` stages
+then fires, refusing a nameless or document-less run before staging anything. The
+fork's tab uploads raw documents through one `evaluation.createCorpus` procedure
+(base64 into a Buffer, following `extraction.uploadDraftDocuments`), asks for no
+brands or fields, and its tracker hands over to `/evaluations/new` on `done`.
+`evaluation.startRun` is gone, replaced by that one procedure, because staging and
+firing must not be two mutations a React component sequences: the ordering is the
+guarantee. The fork commit is on `johntooth/wayfinder`'s `main` and both the
+gitlink and `wayfinder.pin` record it (`56d457b`).
 
 | Step | Package(s) | What it is |
 |---|---|---|
@@ -555,10 +537,10 @@ start leads**.
 1. **A finished run loads its own shards** — done. A run's completion projects
    its published shards into `redline_chunks`, so the two screens have something
    to hand between them; without it a run published shards no screen could see.
-2. **Create Corpus becomes an ingest surface** — built in both repos, awaiting
-   the fork merge and the pin bump (above). The case the engine is built for. It
-   unblocks every later step's ability to be tested over a corpus the browser
-   made, and it removed the brand/field duplication rather than adding to it.
+2. **Create Corpus becomes an ingest surface** — done, and pinned. The case the
+   engine is built for. It unblocks every later step's ability to be tested over
+   a corpus the browser made, and it removed the brand/field duplication rather
+   than adding to it.
 3. **The override reaches the engine** — done. What made that surface worth
    having: an authored chunk mode or money vocabulary now changes the run rather
    than being discarded on the wire.

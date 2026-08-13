@@ -406,7 +406,14 @@ if ! command -v git >/dev/null 2>&1; then
   skip "wayfinder.pin ↔ gitlink — git unavailable"
 else
   WF_PIN_REF="$(sed -n 's/^ref=\([0-9a-f]\{7,40\}\)$/\1/p' wayfinder.pin 2>/dev/null | head -1)"
-  WF_GITLINK="$(git ls-tree HEAD services/wayfinder 2>/dev/null | awk '$2 == "commit" { print $3 }')"
+  # Both sides must come from the same place or a bump reads as a failure while
+  # it is being made: wayfinder.pin is read from the worktree, so prefer the
+  # submodule's actual HEAD and fall back to the committed gitlink only when the
+  # submodule is not checked out (a clean clone, where HEAD is all there is).
+  WF_GITLINK="$(git -C services/wayfinder rev-parse HEAD 2>/dev/null)"
+  if [ -z "$WF_GITLINK" ]; then
+    WF_GITLINK="$(git ls-tree HEAD services/wayfinder 2>/dev/null | awk '$2 == "commit" { print $3 }')"
+  fi
   if [ -z "$WF_PIN_REF" ] || [ -z "$WF_GITLINK" ]; then
     skip "wayfinder.pin ↔ gitlink — no ref in wayfinder.pin or no services/wayfinder gitlink in HEAD"
   elif [ "$WF_PIN_REF" != "$WF_GITLINK" ]; then
