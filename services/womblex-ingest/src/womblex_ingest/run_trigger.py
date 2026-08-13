@@ -60,7 +60,7 @@ RunPhase = Literal["extracting", "staging", "done", "errored"]
 # status reduction (run-scoped, so it needs only the run id).
 EnqueueFn = Callable[[str, str], int]
 RunWorkerFn = Callable[[str, str], None]
-RunStageFn = Callable[[str, str, str], None]
+RunStageFn = Callable[[str, str, str, Optional["ConfigOverride"]], None]
 StatsFn = Callable[[str], Dict[str, int]]
 
 # The load projection, injected like the four engine operations. It reads the
@@ -74,8 +74,99 @@ StatsFn = Callable[[str], Dict[str, int]]
 LoadFn = Callable[[str, str], None]
 
 
+@dataclass(frozen=True)
+class ChunkModeOverride:
+    """The authored chunk-mode group. An unset field inherits the file's value."""
+
+    chunk_size: Optional[int] = None
+    chunk_tables: Optional[bool] = None
+    chunking_model: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class MoneyVocabularyOverride:
+    """The authored money-vocabulary group.
+
+    The two term lists hang off `MoneyColumnsConfig`, not off `MoneyConfig` —
+    verified against the pinned engine. An override written from the short names
+    would set them one level too high and silently do nothing.
+    """
+
+    extra_header_terms: Optional[List[str]] = None
+    extra_veto_terms: Optional[List[str]] = None
+    default_currency: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class ConfigOverride:
+    """The allow-listed slice of the engine config a run may author.
+
+    The allow-list is the safety, not this shape: the structural keys that would
+    orphan vectors, delete table cells or empty the graph are unreachable because
+    there is nowhere here to put them.
+    """
+
+    chunk_mode: Optional[ChunkModeOverride] = None
+    money_vocabulary: Optional[MoneyVocabularyOverride] = None
+
+
 class UnknownStage(Exception):
     """A requested stage is not in the authorable allow-list."""
+
+
+class UnsupportedOverride(Exception):
+    """An authored override is refused rather than silently dropped."""
+
+
+def validate_config_override(override: Optional[ConfigOverride]) -> None:
+    """Refuse an override the engine cannot honour, before a run is fired."""
+    if override is None or override.chunk_mode is None:
+        return
+    if override.chunk_mode.chunking_model is None:
+        return
+    # Setting chunking_model switches chunking to a per-document Isaacus call and
+    # auto-enables enrichment.persist_document, which then requires enrich to run
+    # BEFORE chunk or the document is enriched twice at double cost. The authorable
+    # stage sequence cannot express that ordering (the sidecar normalises chunk
+    # before embed and leaves enrich where it was authored), so accepting this
+    # would sell an API bill from a checkbox with no way to avoid the double
+    # charge. Refused, not dropped — a silent drop is the defect this seam closes.
+    raise UnsupportedOverride(
+        "chunking_model is not authorable: AI chunking requires enrich to run "
+        "before chunk, which the authorable stage sequence cannot express"
+    )
+
+
+def apply_config_override(config, override: Optional[ConfigOverride]):  # type: ignore[no-untyped-def]
+    """Layer an authored override over the loaded config, returning a new one.
+
+    The loaded file config is never mutated — a second run in the same process
+    must not inherit the first run's overrides. An unset field inherits rather
+    than clearing, so a blank form field means "the default we defined".
+    """
+    if override is None:
+        return config
+
+    validate_config_override(override)
+    chunk_mode = override.chunk_mode
+    applied = config.model_copy(deep=True)
+
+    if chunk_mode is not None:
+        if chunk_mode.chunk_size is not None:
+            applied.chunking.chunk_size = chunk_mode.chunk_size
+        if chunk_mode.chunk_tables is not None:
+            applied.chunking.chunk_tables = chunk_mode.chunk_tables
+
+    money = override.money_vocabulary
+    if money is not None:
+        if money.default_currency is not None:
+            applied.money.default_currency = money.default_currency
+        if money.extra_header_terms is not None:
+            applied.money.columns.extra_header_terms = list(money.extra_header_terms)
+        if money.extra_veto_terms is not None:
+            applied.money.columns.extra_veto_terms = list(money.extra_veto_terms)
+
+    return applied
 
 
 class StageError(Exception):
@@ -102,6 +193,7 @@ class RunPlan:
 
     evaluation_id: str
     stage_sequence: List[str]
+    config_override: Optional[ConfigOverride] = None
 
 
 @dataclass
@@ -109,6 +201,7 @@ class _RunState:
     run_id: str
     evaluation_id: str
     sequence: List[str]
+    config_override: Optional[ConfigOverride] = None
     phase: RunPhase = "extracting"
     completed_stages: List[str] = field(default_factory=list)
     failed_stage: Optional[str] = None
@@ -156,11 +249,19 @@ class RunTrigger:
         self._lock = threading.Lock()
 
     def start(self, plan: RunPlan) -> dict:
-        """Begin a run: validate the sequence, then fire extraction + stages."""
+        """Begin a run: validate the sequence and override, then fire it.
+
+        The override is checked here rather than at the first stage that reads it,
+        so a refused one fails the request instead of a run already extracting.
+        """
         sequence = normalise_sequence(plan.stage_sequence)
+        validate_config_override(plan.config_override)
         run_id = str(uuid.uuid4())
         state = _RunState(
-            run_id=run_id, evaluation_id=plan.evaluation_id, sequence=sequence
+            run_id=run_id,
+            evaluation_id=plan.evaluation_id,
+            sequence=sequence,
+            config_override=plan.config_override,
         )
         with self._lock:
             self._runs[run_id] = state
@@ -224,7 +325,9 @@ class RunTrigger:
             with self._lock:
                 state.phase = "staging"
             for stage in state.sequence:
-                self._run_stage(state.run_id, state.evaluation_id, stage)
+                self._run_stage(
+                    state.run_id, state.evaluation_id, stage, state.config_override
+                )
                 with self._lock:
                     state.completed_stages.append(stage)
             # Project the run's published shards into redline's own store — the
@@ -353,7 +456,12 @@ def _engine_run_worker(dsn: str, store_uri: str, config_path: Optional[str]) -> 
 
 
 def _engine_run_stage(dsn: str, store_uri: str, config_path: Optional[str]) -> RunStageFn:
-    def run_stage(run_id: str, evaluation_id: str, stage: str) -> None:
+    def run_stage(
+        run_id: str,
+        evaluation_id: str,
+        stage: str,
+        override: Optional[ConfigOverride] = None,
+    ) -> None:
         from womblex.cloud.stage_contracts import STAGE_CONTRACTS, RunContext
         from womblex.cloud.stage_runner import run_stage_remote
         from womblex.store.remote import RemoteStore
@@ -361,7 +469,10 @@ def _engine_run_stage(dsn: str, store_uri: str, config_path: Optional[str]) -> R
         from womblex.utils.isaacus_client import make_isaacus_client
 
         contract = STAGE_CONTRACTS[stage]
-        config = _load_config(config_path)
+        # The authored override is layered over the file default here, per stage,
+        # so preflight and the pass itself both see the config the specialist
+        # authored rather than the one on disk.
+        config = apply_config_override(_load_config(config_path), override)
         if contract.preflight is not None:
             contract.preflight(config)
         ctx = RunContext()

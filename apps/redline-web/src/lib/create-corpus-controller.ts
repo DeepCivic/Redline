@@ -1,9 +1,10 @@
 import {
   isErr,
   ok,
+  err,
+  domainError,
   makeRunConfigOverride,
   type AuthorableStage,
-  type Evaluation,
   type IStagedCorpusWriter,
   type IWomblexRunTrigger,
   type Result,
@@ -11,36 +12,30 @@ import {
   type RunConfigOverrideInput,
   type StagedUpload,
 } from "@redline/redline-domain";
-import type { CreateEvaluationInput } from "@redline/redline-application";
 
-// CreateCorpusController — the Create Corpus surface's write brain (delivery-plan
-// §2 item 1; matching WorkflowController / RunStatusController — wiring stays in
-// container.ts, the controller drives its seams and returns Results). It owns the
-// two write seams the served container gained: the object-store writer
-// (IStagedCorpusWriter, putting a specialist's chosen bytes under the
-// evaluation's input prefix) and the run trigger (IWomblexRunTrigger, firing the
-// pass sequence against the authored config).
+// CreateCorpusController — the Create Corpus surface's write brain (matching
+// WorkflowController / RunStatusController — wiring stays in container.ts, the
+// controller drives its seams and returns Results). It owns the two write seams
+// the served container gained: the object-store writer (IStagedCorpusWriter,
+// putting a specialist's chosen bytes under the run's input prefix) and the run
+// trigger (IWomblexRunTrigger, firing the pass sequence against the authored
+// config).
 //
-// `createCorpus` is the seed script's middle, minus the manifest: stage every
-// chosen document, create the evaluation, then trigger the run that ingest → lens
-// → grouping → build hangs off. The three steps are also exposed individually so
-// a surface that stages incrementally (an upload at a time) can drive them one by
-// one. Every seam error returns as a Result — nothing throws across the boundary,
-// and a step never runs on a failed prior step (a failed stage never creates an
-// evaluation the operator cannot retry over, per CreateEvaluation's own posture).
-
-// The create use-case as a shape rather than the concrete class, so the
-// controller is testable with a fake and the container injects the real
-// CreateEvaluation. The application layer owns the blank-name / unknown-document
-// / already-claimed rules; this controller does not re-check them.
-export interface CreateEvaluationUseCase {
-  execute(input: CreateEvaluationInput): Promise<Result<Evaluation>>;
-}
+// `createCorpus` is the cold-start sequence: stage every chosen document under
+// the run's own name, then fire the run. The two steps are also exposed
+// individually so a surface that stages incrementally (an upload at a time) can
+// drive them one by one. Every seam error returns as a Result — nothing throws
+// across the boundary, and the run never fires on a failed stage, because a run
+// over a half-staged prefix extracts part of the corpus and reports success.
+//
+// There is deliberately no create-evaluation seam here. womblex is a cold-start
+// engine: it mints each document's source_hash when it extracts, so brands and
+// fields cannot be named against documents until the run has drained.
+// /evaluations/new composes the evaluation over the finished corpus.
 
 export interface CreateCorpusControllerParts {
   readonly writer: IStagedCorpusWriter;
   readonly runTrigger: IWomblexRunTrigger;
-  readonly createEvaluation: CreateEvaluationUseCase;
 }
 
 export interface StageDocumentInput {
@@ -61,15 +56,18 @@ export interface StartRunInput {
   readonly configOverride?: RunConfigOverrideInput;
 }
 
+// The run as the ingest surface authors it. `runName` is what the specialist
+// typed: it is the womblex run, the object-store prefix and the corpus id the
+// evaluation is later composed over — one identity, minted by nobody here.
 export interface CreateCorpusInput {
-  readonly evaluation: CreateEvaluationInput;
+  readonly runName: string;
   readonly uploads: readonly StagedUpload[];
   readonly stageSequence: readonly AuthorableStage[];
   readonly configOverride?: RunConfigOverrideInput;
 }
 
 export interface CreateCorpusResult {
-  readonly evaluationId: string;
+  readonly corpusId: string;
   readonly runId: string;
 }
 
@@ -85,12 +83,10 @@ const attachedOverride = (
 export class CreateCorpusController {
   private readonly writer: IStagedCorpusWriter;
   private readonly runTrigger: IWomblexRunTrigger;
-  private readonly createEvaluationUseCase: CreateEvaluationUseCase;
 
   constructor(parts: CreateCorpusControllerParts) {
     this.writer = parts.writer;
     this.runTrigger = parts.runTrigger;
-    this.createEvaluationUseCase = parts.createEvaluation;
   }
 
   // Put one document's bytes under the evaluation's input prefix. The key it
@@ -98,12 +94,6 @@ export class CreateCorpusController {
   // not happened.
   stageDocument(input: StageDocumentInput): Promise<Result<{ readonly key: string }>> {
     return this.writer.stage(input.evaluationId, input.upload);
-  }
-
-  // Compose and persist the evaluation over the chosen corpus. Pure pass-through
-  // to the use-case, which owns every rule.
-  createEvaluation(input: CreateEvaluationInput): Promise<Result<Evaluation>> {
-    return this.createEvaluationUseCase.execute(input);
   }
 
   // Fire the authored pass sequence (and any config override) for the
@@ -124,34 +114,37 @@ export class CreateCorpusController {
     });
   }
 
-  // The whole create sequence: validate the override, stage every document,
-  // create the evaluation, then trigger the run. The override is checked first,
-  // so a malformed one stops before anything is staged — nothing half-composed is
-  // left behind for a run that could never fire. A failed stage then stops before
-  // create, and a failed create stops before trigger — the ordering
-  // CreateEvaluation's upsert posture requires, so a half-composed corpus never
-  // leaves a run firing over bytes an evaluation cannot read.
+  // The whole ingest sequence: check the run is nameable and has documents,
+  // validate the override, stage every document under the run's prefix, then fire
+  // the run. The checks come first, so a malformed request stages nothing — a
+  // half-staged prefix is worse than an unstarted run, because the engine would
+  // extract part of the corpus and report success over it.
   async createCorpus(input: CreateCorpusInput): Promise<Result<CreateCorpusResult>> {
-    const evaluationId = input.evaluation.corpusId;
+    const corpusId = input.runName.trim();
+    if (corpusId === "") {
+      return err(domainError("VALIDATION_FAILED", "a run needs a name"));
+    }
+    if (input.uploads.length === 0) {
+      return err(
+        domainError("VALIDATION_FAILED", "a run needs at least one document to extract"),
+      );
+    }
 
     const override = makeRunConfigOverride(input.configOverride ?? {});
     if (isErr(override)) return override;
 
     for (const upload of input.uploads) {
-      const staged = await this.writer.stage(evaluationId, upload);
+      const staged = await this.writer.stage(corpusId, upload);
       if (isErr(staged)) return staged;
     }
 
-    const created = await this.createEvaluationUseCase.execute(input.evaluation);
-    if (isErr(created)) return created;
-
     const started = await this.runTrigger.start({
-      evaluationId,
+      evaluationId: corpusId,
       stageSequence: input.stageSequence,
       configOverride: attachedOverride(override.data),
     });
     if (isErr(started)) return started;
 
-    return ok({ evaluationId, runId: started.data.runId });
+    return ok({ corpusId, runId: started.data.runId });
   }
 }

@@ -351,6 +351,12 @@ fi
 #
 # SKIPs (never fails) on a clone without the submodule initialised, matching
 # #13's clean-clone posture.
+#
+# (b) below does NOT skip on such a clone, deliberately — it reads the gitlink
+# out of the superproject's own tree, which needs no submodule checkout. The
+# gitlink and wayfinder.pin drifting apart went unnoticed for three fork commits
+# precisely because (a) is the only half that was checked and (a) is the half
+# that skips here.
 section "15. Wayfinder fork checkout is on the branch .gitmodules names"
 if [ ! -d services/wayfinder/.git ] && [ ! -f services/wayfinder/.git ]; then
   skip "wayfinder fork — services/wayfinder not initialised (git submodule update --init)"
@@ -387,6 +393,33 @@ else
     fail "wayfinder fork: checkout is not on '${WF_CONFIGURED_BRANCH}' (redline's mount must live only there). Run 'git submodule update --init' or 'git -C services/wayfinder checkout ${WF_CONFIGURED_BRANCH}'"
   else
     pass "wayfinder fork on ${WF_CONFIGURED_BRANCH}"
+  fi
+fi
+
+# (b) The two Wayfinder seams must name the same commit. The runtime mount reads
+# the gitlink; the build-time typed-reuse seam reads wayfinder.pin's ref. When
+# they disagree redline typechecks against one @rbrasier/domain and runs against
+# another, which is how it once typechecked against a package the fork had moved
+# past. Read the gitlink from the superproject tree rather than the checkout, so
+# this holds on a clone with no submodule initialised.
+if ! command -v git >/dev/null 2>&1; then
+  skip "wayfinder.pin ↔ gitlink — git unavailable"
+else
+  WF_PIN_REF="$(sed -n 's/^ref=\([0-9a-f]\{7,40\}\)$/\1/p' wayfinder.pin 2>/dev/null | head -1)"
+  # Both sides must come from the same place or a bump reads as a failure while
+  # it is being made: wayfinder.pin is read from the worktree, so prefer the
+  # submodule's actual HEAD and fall back to the committed gitlink only when the
+  # submodule is not checked out (a clean clone, where HEAD is all there is).
+  WF_GITLINK="$(git -C services/wayfinder rev-parse HEAD 2>/dev/null)"
+  if [ -z "$WF_GITLINK" ]; then
+    WF_GITLINK="$(git ls-tree HEAD services/wayfinder 2>/dev/null | awk '$2 == "commit" { print $3 }')"
+  fi
+  if [ -z "$WF_PIN_REF" ] || [ -z "$WF_GITLINK" ]; then
+    skip "wayfinder.pin ↔ gitlink — no ref in wayfinder.pin or no services/wayfinder gitlink in HEAD"
+  elif [ "$WF_PIN_REF" != "$WF_GITLINK" ]; then
+    fail "wayfinder.pin ref (${WF_PIN_REF}) is not the services/wayfinder gitlink (${WF_GITLINK}) — the fork tracks its latest main and both seams move to it in step (see docs/architecture.md, 'Vendoring / pinning discipline')"
+  else
+    pass "wayfinder.pin ref matches the services/wayfinder gitlink"
   fi
 fi
 

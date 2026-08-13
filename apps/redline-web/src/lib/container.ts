@@ -98,7 +98,6 @@ export class WorkflowController {
     this.createCorpusController = new CreateCorpusController({
       writer: container.stagedCorpusWriter,
       runTrigger: container.runTrigger,
-      createEvaluation: this.createEvaluationUseCase,
     });
     this.runStatusController = new RunStatusController({ runTrigger: container.runTrigger });
     this.assignDocumentsToGroups = new AssignDocumentsToGroups({
@@ -129,10 +128,11 @@ export class WorkflowController {
     return this.createEvaluationUseCase.execute(input);
   }
 
-  // The create-and-run surface (delivery-plan §2 item 1). Reached through the
-  // workflow controller so the served router holds one object, not three: the
-  // corpus controller drives staging + create + trigger, and the status
-  // controller polls and resumes the run the trigger returned.
+  // The ingest-and-run surface. Reached through the workflow controller so the
+  // served router holds one object, not three: the corpus controller stages the
+  // uploaded bytes and fires the run, and the status controller polls and
+  // resumes the run the trigger returned. Composing the evaluation over the
+  // finished corpus is /evaluations/new's job, through createEvaluation above.
   corpus(): CreateCorpusController {
     return this.createCorpusController;
   }
