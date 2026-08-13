@@ -3,14 +3,15 @@
 **Who this is for:** whoever holds the documents — the person who has a tender's
 responses and needs them read.
 
-This is the guide to the **Create Corpus** screen. It does one job: it takes raw
-documents and runs them through the engine. Name the run, upload the documents,
-say how they should be processed, start it, and watch it land. When it finishes
-you have an extracted corpus, and you go on to
-[create an evaluation](./create-an-evaluation.md) over it.
+This is the guide to the **Create Corpus** screen. It does one job: **it builds
+the dataset.** Upload the documents, pick the extraction parameters and the
+stages the engine puts them through, name it if you want, click go.
 
-Those are two jobs for two people, which is why they are two screens. If someone
-else has already run the documents, you do not need this screen at all.
+There is no field selection here and nothing to decide about the tender itself.
+Deciding what to *read out of* the corpus happens afterwards, on
+[Creating an evaluation](./create-an-evaluation.md). Two jobs, usually two
+people, which is why they are two screens — and if someone else has already run
+the documents, you do not need this screen at all.
 
 > **Status.** This describes the intended flow, which the delivery plan calls the
 > Create Corpus split. The deployed build still asks for brands and fields on
@@ -149,10 +150,11 @@ forever.
 
 ## What happens next
 
-A finished run leaves an extracted corpus. Nothing has been evaluated yet — no
-brands, no fields, no grid. The tracker offers the way on to
+A finished run leaves a dataset: the documents extracted, chunked and processed
+through whichever stages you chose. Nothing has been evaluated — no brands, no
+fields, no report. The tracker offers the way on to
 [Creating an evaluation](./create-an-evaluation.md), where the corpus you just
-ran appears in the picker and you say what should be read out of it.
+built appears in the picker and you say what you want answered about it.
 
 ---
 
