@@ -81,14 +81,19 @@ against that rule, and `MoneySpanFinancialExtractor`'s contract (one AUD figure
 per (document, requirement)) is one reading above it — a narrowing to hold at
 arm's length rather than entrench.
 
-**The run is on the script today; a browser-driven run is the Create Corpus
-programme below.** `IngestDocuments`, `AssignDocumentsToGroups`, the cold-start
-classifier and `BuildEvaluationTable` are all built and wired in
-`container-redline.ts`, but nothing served calls them —
-`apps/web/scripts/seed-redline-evaluation.ts` drives the pipeline from a terminal
-and remains the only path that does. The programme brings staging, the run and
-its progress into the browser; the reasoning for retiring the old descope is
-under "Superseded decisions."
+**The browser now starts a run, but it does not yet finish one.** The served
+Create Corpus tab creates the evaluation and fires the womblex run, and the
+tracker follows that run to `done` — so the engine half is no longer terminal-only.
+redline's *own* post-run sequence is: `IngestDocuments`,
+`AssignDocumentsToGroups`, the cold-start classifier and `BuildEvaluationTable`
+are built and wired in `container-redline.ts`, but no served route calls them.
+`resolveRedlineSeedDependencies` hands them to
+`apps/web/scripts/seed-redline-evaluation.ts`, which remains the only path that
+runs them. A specialist who follows "Open the evaluation" today therefore lands
+on an evaluation with documents and no responses: `openReviewGrid` and
+`openPricingPivot` both read persisted responses and neither builds them. Closing
+that is the outstanding half of the programme below; the reasoning for retiring
+the old descope is under "Superseded decisions."
 
 **The fixture corpus is a test fixture and will grow heterogeneous.** It is not
 what redline is built against and it is not a scope boundary. Documents that are
@@ -141,7 +146,10 @@ plausibly differ as corpus nature changes — the **stage sequence** (which of
 chunk/embed/enrich/money run, in what order), the **chunk mode**
 (`chunking.chunking_model` null for offline token chunking vs set for AI/semantic
 chunking, plus `chunk_size` / `chunk_tables`), and the **money vocabulary**
-(`extra_header_terms` / `extra_veto_terms` / `default_currency`). What stays
+(`money.columns.extra_header_terms` / `money.columns.extra_veto_terms` and
+`money.default_currency` — the two term lists hang off `MoneyColumnsConfig`, not
+off `MoneyConfig`, which is where a merge written from the short names would put
+them). What stays
 fixed in the file regardless of what a form submits: the **structural / identity
 keys** — the embed model and `task`, the OCR `engine`, `enrichment.enabled` where
 the report graph depends on it, the Isaacus gate. Changing one of those does not
@@ -179,13 +187,89 @@ reducing a minutes-long run to the four states the surface must show — **start
 owning `shouldKeepPolling` so a failed stage names itself and offers resume
 rather than spinning forever. The controller drives the seam (start, poll into
 the view model, resume by re-firing the same trigger) and returns seam errors as
-`Result`s rather than throwing across the boundary. Polled, not streamed. The
-remaining steps:
+`Result`s rather than throwing across the boundary. Polled, not streamed.
+
+The surface and its fork mount are built: `renderCreateCorpusView` /
+`CreateCorpusController` (redline-web) own the readiness rule and the write
+seams, and `johntooth/wayfinder`'s standalone `/create-corpus` tab binds them —
+the staged-corpus picker, the name field, documents-and-brands, the fields, the
+stage sequence, the allow-listed override editors and the run tracker — behind
+`evaluation:create` on the route, the procedures and the sidebar entry alike.
+`docs/guides/create-a-corpus.md` is the user-facing description of what it does.
+
+Three things are outstanding, and the first two are why a run that reports
+success does not yet produce a usable evaluation.
+
+**The allow-listed override is authored but never applied.** The form composes it,
+`makeRunConfigOverride` validates it, and `HttpWomblexRunTrigger` puts it on the
+wire — then the sidecar drops it. `TriggerRunRequest` in
+`services/womblex-ingest/src/womblex_ingest/main.py` declares only `evaluationId`
+and `stageSequence`, and `RunPlan` carries the same two, so pydantic discards the
+extra key without complaint and every run uses the `redline.yaml` default. The
+allow-list is decided and built; only its last leg is missing. Silently ignoring
+an override a specialist typed is worse than refusing it, so this is a defect in
+the seam rather than a deferral.
+
+The one group to think twice about before wiring is `chunking_model`. Setting it
+switches chunking from the vendored offline tokeniser to a per-document Isaacus
+call, and `WomblexConfig._wire_ai_chunking_reuse` then auto-enables
+`enrichment.persist_document` and warns that `enrich` must run *before* `chunk`
+or the document is enriched twice — at double cost. The Create Corpus stage
+toggles cannot express that ordering (the sidecar normalises chunk before embed
+and leaves enrich where it was authored), so a specialist ticking an AI model
+would buy an API bill from a checkbox with no way to avoid the double charge.
+Either carry only `chunk_size` / `chunk_tables` in the wire shape, or make the
+ordering the model implies part of what the override sets.
+
+**Nothing runs redline's own passes when the engine's finish.** The tracker's
+"Open the evaluation" is the end of the served path; `IngestDocuments`, grouping,
+classification and `BuildEvaluationTable` still only run from the seed script, so
+the grid and pivots read an empty response set. This is the seed script's second
+half, and it is two steps because the fork rule makes it two commits anyway.
 
 | Step | Package(s) | What it is |
 |---|---|---|
-| Create Corpus surface | redline-web | The document picker (from a **staged corpus** via the existing `IStagedCorpusReader`, lead with this; raw-bucket browse is deferred), the evaluation name/id field, the **allow-listed config overrides** (stage sequence, chunk mode, money vocabulary — blank inherits the `redline.yaml` default), and the trigger. On completion it drives the already-built ingest → lens → grouping → build sequence — the seed script's middle, minus the manifest. |
-| Fork mount: standalone tab + procedures + gate | wayfinder (two commits) | A **standalone Create Corpus tab** in `johntooth/wayfinder` (not a change to `/evaluations/new` — ingest and evaluation are different users), its tRPC procedures (trigger, poll status) behind `evaluation:create`, and the sidebar entry. If it touches `@rbrasier/domain`, the contract test and `wayfinder.pin` bump come in step. |
+| Apply the run-config override below the seam | womblex-ingest | `TriggerRunRequest` and `RunPlan` accept the allow-listed `configOverride`, and the runner layers it over `redline.yaml` before firing the passes. The groups are the ones already decided (chunk mode, money vocabulary); the fixed structural keys stay unreachable because the shape cannot express them. _Exit: a `POST /runs` carrying a chunk-mode and money-vocabulary override fires its stage sequence against a config whose `chunk_size` and `default_currency` are the request's, not the file's._ |
+| Post-run population, brains half | redline-web | A controller method that takes a settled evaluation through the sequence the seed script drives — `IngestDocuments`, then `openWorkflow` → `advance` → `buildTable` — returning `Result`s and re-runnable over an evaluation already populated (a resumed run must not double-write responses). _Exit: over a fake extraction reader and an in-memory repository, running it against an evaluation with staged documents and no responses leaves the response set the review grid reads, and running it a second time leaves the same set rather than a doubled one._ |
+| Post-run population, fork mount | wayfinder (two commits) | The tRPC procedure behind `evaluation:create` and the tracker calling it when the run reaches `done`, so "Open the evaluation" lands on a populated grid. The failure needs its own state — population failing after a successful engine run is not the same thing as a failed stage, and must not present as one. _Exit: `redline-create-corpus.spec.ts`'s live test reaches the review grid with rows, rather than an evaluation with documents and none._ |
+
+**A corpus can only be started from the browser if it has already been
+extracted, which is not what the programme's goal says.** The three steps above
+close the *re-run* path, not the cold-start one, and the block is an ordering
+problem rather than a missing wire:
+
+- The picker lists corpora from `redline_chunks` (`DrizzleStagedCorpusReader`),
+  which only the sidecar's `POST /ingest` load path writes. Documents uploaded to
+  `proc/{evaluationId}/inputs/` are invisible to it — that is the deferred
+  browse half, and it is load-bearing rather than cosmetic.
+- `CreateEvaluation.assertDocumentsStaged` refuses any document the reader does
+  not list, so even a hand-typed fresh corpus is rejected.
+- The tab creates the evaluation *before* firing the run, but the document ids an
+  evaluation is composed from are womblex's `source_hash`es, which only exist
+  *after* extraction. A corpus with no prior extraction therefore cannot be
+  composed into an evaluation at the moment the surface needs to compose one.
+
+The engine half is not the obstacle: `_engine_enqueue` reads exactly
+`proc/{evaluationId}/inputs` and refuses an empty prefix, so a run over freshly
+staged bytes would extract them. What is missing is a composition order that does
+not require identities the run has not minted yet — create-then-compose (an
+evaluation that starts document-less and gains its documents when the run lands)
+or an extract-first step ahead of the create. Deciding that is a design question
+and belongs before the three steps above are built, because the second and third
+of them are where the documents would be attached. Until it is settled, the
+browser path is testable only over a corpus something else has already extracted.
+
+**The fork gitlink and `wayfinder.pin` have not been moved.** The build-step
+contract's fork rule wants both moved in step with the fork commit; today
+`services/wayfinder` records `f32ebc4` and `wayfinder.pin`'s `ref` is `8c9d9b8`,
+while the fork's `main` is at `06f0b76` (the Create Corpus mount). The two
+disagree with each other as well as with the fork, which is the exact drift the
+rule exists to prevent. `validate.sh` #15 catches the gitlink half of it — but
+only on a checkout where the fork's branch ref resolves; it skips on a clone with
+no submodule (this one) and on the shallow checkout that carries no branch refs,
+which is why the drift has gone unnoticed. Nothing checks `wayfinder.pin`'s `ref`
+against the gitlink at all. Moving both is not a build step and needs no test of
+its own; do it with the next fork-side commit at the latest.
 
 **The synthesis document-picker is deferred with the document-selection half.**
 UAT also asked that Wayfinder's own "Synthesise Information" flow let a user
@@ -342,10 +426,13 @@ Deferred until the lean vertical is complete. In dependency order:
 **The order is: lean vertical (done) → Create Corpus programme → housekeeping in
 dependency order → workspace extraction and release.**
 
-The Create Corpus programme's steps have their own internal ordering (the run
-seam before the surface, over the built write port); the run surface leads over
-the staged-corpus path, and the document-selection half (raw-bucket browse,
-upload transport, the synthesis picker) is deferred behind it.
+The Create Corpus programme's steps have their own internal ordering. The seams
+and the surface are built; what is left is the two ends the surface does not yet
+reach — the override applied below the seam, and the post-run passes that
+populate the evaluation. The two population steps are ordered (brains, then the
+fork mount that calls them); the override step is independent of both and can go
+first or last. The document-selection half (raw-bucket browse, upload transport,
+the synthesis picker) stays deferred behind all of them.
 
 ### Superseded decisions
 
