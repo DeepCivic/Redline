@@ -284,12 +284,20 @@ adjudication.
 
 The create half (`stagedCorpusReader`, `lensWriter`) is therefore **on**
 `RedlineModule`, reversing the earlier decision to keep every write part off it.
-What is still script-only is the *run*: `scripts/seed-redline-evaluation.ts`
-reads a corpus manifest and drives `IngestDocuments` → `saveLens` →
+The *run's own reading passes* now have one served brain too:
+`WorkflowController.populate` (redline-web) takes a settled evaluation — created
+over a finished corpus, its groups and lens persisted but no responses — through
+`IngestDocuments` → `AssignDocumentsToGroups` (over the persisted groups) →
+`BuildEvaluationTable`, and is re-runnable, returning an existing response set
+untouched rather than double-writing it when a resumed run finds one already
+built. What is still script-only is the *mount*: no tRPC procedure calls
+`populate` on create yet, so `scripts/seed-redline-evaluation.ts` — which reads a
+corpus manifest and drives `IngestDocuments` → `saveLens` →
 `AssignDocumentsToGroups` → `BuildEvaluationTable`, printing the evaluation id
-that opens the review grid and feeds `E2E_REDLINE_EVALUATION_ID`. It stays the
-only path that can write a lens *with* hard rules, and the deliberate fallback
-for de-risking a live run without a browser.
+that opens the review grid and feeds `E2E_REDLINE_EVALUATION_ID` — stays the only
+path that populates a served evaluation end to end. It is also the only path that
+can write a lens *with* hard rules, and the deliberate fallback for de-risking a
+live run without a browser.
 
 ### Why womblex is split into a pod + a sidecar
 
@@ -414,7 +422,7 @@ no sidecars at all is left untouched: that is "the stage never ran here", not
 | `GET /extractions/{eval}/{doc}` | `{ documentId, elements[], chunks[], tableCells[] }` |
 | `GET /embeddings/{eval}/{doc}` | `{ documentId, model, dimensions, vectors[] }` |
 | `POST /embeddings/query {text}` | `{ model, dimensions, values[] }` (query vector) |
-| `POST /runs {evaluationId, stageSequence, configOverride?}` | the run-trigger seam (§5 invariant 2): fires the fixed CLI sequence against the allow-listed config the caller authored — the chunk mode, the money vocabulary and the extraction/OCR settings (`extraction.ocr.engine` / `.dpi`), the last layered at the extraction worker because that is the only pass that reads them (absent inherits `redline.yaml`; an unset field within a group inherits too) — then projects the run's shards into `redline_chunks` (the same load `POST /ingest` drives) on completion, and returns a `runId`. A `chunkMode.chunkingModel` is refused 422, not applied — AI chunking requires enrich before chunk, which the authorable stage sequence cannot express. Wired only when the engine's queue DSN + store URI are configured; else the route reports unavailable |
+| `POST /runs {evaluationId, stageSequence}` | the run-trigger seam (§5 invariant 2): fires the fixed CLI sequence, then projects the run's shards into `redline_chunks` (the same load `POST /ingest` drives) on completion, and returns a `runId`. Wired only when the engine's queue DSN + store URI are configured; else the route reports unavailable |
 | `GET /runs/{runId}` | `{ runId, evaluationId, phase, completedStages[], failedStage, resumable, error }` — the status a poller binds to |
 | `POST /runs/{runId}/resume` | re-fires the run (idempotent enqueue + skip-on-output) |
 
@@ -591,16 +599,7 @@ carried as provenance, not as part of the join key (see §7).
    flow needs. The load runs only after every stage completed and fails the run
    loudly on a store error. The
    allow-listed stage *sequence* is authored; the dependency (chunk before embed)
-   is enforced sidecar-side. So is the allow-listed **config**: the override the
-   surface composes is layered over `redline.yaml` at the extraction worker *and*
-   per downstream stage, on a deep copy, so a second run in the same process
-   cannot inherit the first run's values, and preflight sees the authored config
-   rather than the file's. Both sites are needed, not one: extraction is the only
-   pass that reads `extraction.ocr.*`, so an override applied to the stages alone
-   would leave the authored OCR engine inert. An override the
-   engine cannot honour is refused at `start()` — before a run is extracting —
-   rather than dropped, because a silently ignored setting is worse than a refused
-   one. What does **not** change: redline still does not
+   is enforced sidecar-side. What does **not** change: redline still does not
    reimplement batching, retry or scale-out — those stay the engine's
    (`cloud/worker.py`, its Postgres queue). redline drives and observes; it does
    not wrap. Resume is not its own logic: womblex's `enqueue` is idempotent on
@@ -878,16 +877,8 @@ redline/
   This reverses an earlier choice of a build-time pin for consistency with
   Wayfinder; Wayfinder's pin exists because a submodule drags its package set into
   the pnpm workspace, which is a JavaScript problem Numbatch does not have.
-- **Wayfinder** — the fork tracks its **latest `main`**, the same policy womblex
-  carries above and for a stronger reason: `johntooth/wayfinder` is redline's
-  *own* fork, so its `main` moves because redline moved it. A lagging pin is
-  never a decision to consume an older Wayfinder — it is redline failing to pick
-  up work it just did, and it typechecks against a `@rbrasier/domain` the mount
-  has already moved past. Whoever moves the fork's `main` moves both refs below
-  in the same step (the delivery plan's fork rule: a fork-side step is two
-  commits). `validate.sh` #15(b) asserts the two agree.
-
-  Consumed through **two** distinct seams, mechanism following runtime:
+- **Wayfinder** — consumed through **two** distinct seams, mechanism following
+  runtime:
   - the **build-time typed-reuse seam** — materialised read-only from
     `wayfinder.pin` into `vendor/wayfinder`, never committed;
   - the **runtime UI-mount seam** — the Wayfinder **fork** as a submodule at
@@ -895,7 +886,7 @@ redline/
     submodule redline *runs and edits* (unlike the byte-identical
     womblex/numbatch submodules): the review UI mounts into the fork's `apps/web`,
     which resolves redline's `@redline/*` packages as workspace members. The
-    invariant that replaces "never modified" is enforced by `validate.sh` #15(a):
+    invariant that replaces "never modified" is enforced by `validate.sh` #15:
     the checkout stays on the branch `.gitmodules` names (the fork's `main`). The
     check once also asserted the fork's `main` never diverged from rbrasier,
     protecting a clean upstreaming diff; redline builds against johntooth/wayfinder

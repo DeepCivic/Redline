@@ -366,6 +366,127 @@ describe("WorkflowController — document provenance", () => {
   });
 });
 
+// Post-run population (delivery-plan §2 item 1, brains half). populate takes a
+// settled evaluation — created over a staged corpus, its groups and lens
+// persisted but no responses — through the seed script's reading passes
+// (IngestDocuments → openWorkflow → advance → buildTable). It must be
+// re-runnable: a resumed run over an already-populated evaluation leaves the
+// same response set the review grid reads, not a doubled one.
+describe("WorkflowController — post-run population", () => {
+  const settledController = async () => {
+    const repository = new InMemoryRepository();
+    const controller = new WorkflowController({
+      repository,
+      classifier,
+      financialExtractor,
+      extractionReader,
+      languageModel,
+      stagedCorpusReader,
+      lensWriter,
+      stagedCorpusWriter,
+      runTrigger,
+      productName: "Platform",
+    });
+    const created = await controller.createEvaluation({
+      corpusId: "tender-2026",
+      name: "Panel 2026",
+      documents: [
+        { documentId: "doc-1", brand: "Acme" },
+        { documentId: "doc-2", brand: "Beta" },
+      ],
+      fields: [{ name: "Warranty", definition: "The warranty offered." }],
+    });
+    if (!isOk(created)) throw new Error("create failed");
+    return { repository, controller };
+  };
+
+  it("runs the reading passes and leaves the response set the review grid reads", async () => {
+    const { repository, controller } = await settledController();
+
+    const before = await repository.listResponses("tender-2026");
+    if (!isOk(before)) throw new Error("list failed");
+    expect(before.data).toEqual([]);
+
+    const populated = await controller.populate({ evaluationId: "tender-2026" });
+    expect(isOk(populated)).toBe(true);
+    if (!isOk(populated)) return;
+    expect(populated.data.length).toBeGreaterThan(0);
+
+    const grid = await controller.openReviewGrid({ evaluationId: "tender-2026" });
+    if (!isOk(grid)) throw new Error("grid failed");
+    expect(grid.data.all()).toHaveLength(populated.data.length);
+
+    const evaluation = await repository.findEvaluation("tender-2026");
+    if (!isOk(evaluation)) throw new Error("gone");
+    expect(evaluation.data.stage).toBe("review");
+  });
+
+  it("is re-runnable: a second run leaves the same set, not a doubled one", async () => {
+    const { repository, controller } = await settledController();
+
+    const first = await controller.populate({ evaluationId: "tender-2026" });
+    if (!isOk(first)) throw new Error("first populate failed");
+
+    const second = await controller.populate({ evaluationId: "tender-2026" });
+    expect(isOk(second)).toBe(true);
+    if (!isOk(second)) return;
+    // The very rows the first run built, not a doubled set: same count and the
+    // same set is returned untouched.
+    expect(second.data).toEqual(first.data);
+
+    const stored = await repository.listResponses("tender-2026");
+    if (!isOk(stored)) throw new Error("list failed");
+    expect(stored.data).toHaveLength(first.data.length);
+  });
+
+  it("resumes a run that crashed after grouping but before responses were built", async () => {
+    const { repository, controller } = await settledController();
+
+    // The mid-flight state a crash after AssignDocumentsToGroups leaves: the
+    // evaluation is at `classifying`, its vendors and groups are persisted (the
+    // create step wrote them), but no responses exist yet because
+    // BuildEvaluationTable never got to persist them.
+    await repository.saveEvaluation({ id: "tender-2026", name: "Panel 2026", stage: "classifying" });
+    const midFlight = await repository.listResponses("tender-2026");
+    if (!isOk(midFlight)) throw new Error("list failed");
+    expect(midFlight.data).toEqual([]);
+
+    const resumed = await controller.populate({ evaluationId: "tender-2026" });
+    expect(isOk(resumed)).toBe(true);
+    if (!isOk(resumed)) return;
+    expect(resumed.data.length).toBeGreaterThan(0);
+
+    const evaluation = await repository.findEvaluation("tender-2026");
+    if (!isOk(evaluation)) throw new Error("gone");
+    expect(evaluation.data.stage).toBe("review");
+
+    const stored = await repository.listResponses("tender-2026");
+    if (!isOk(stored)) throw new Error("list failed");
+    expect(stored.data).toHaveLength(resumed.data.length);
+  });
+
+  it("surfaces the repository's failure rather than throwing across the port", async () => {
+    const repository = new InMemoryRepository();
+    const controller = new WorkflowController({
+      repository,
+      classifier,
+      financialExtractor,
+      extractionReader,
+      languageModel,
+      stagedCorpusReader,
+      lensWriter,
+      stagedCorpusWriter,
+      runTrigger,
+      productName: "Platform",
+    });
+
+    const populated = await controller.populate({ evaluationId: "never-created" });
+    expect(isErr(populated)).toBe(true);
+    if (!isErr(populated)) return;
+    expect(populated.error.code).toBe("NOT_FOUND");
+  });
+});
+
 describe("WorkflowController — creating an evaluation from a staged corpus", () => {
   const emptyController = () =>
     new WorkflowController({
