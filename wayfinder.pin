@@ -20,10 +20,13 @@
 # (.github/workflows/ci.yml checks out `repo` @ `ref`), so they are a live
 # source, not a label.
 #
-# The ref tracks the fork's `main`, so the vendored @rbrasier/domain is the
-# one the app we mount into actually runs. Keep it in step with the
-# services/wayfinder gitlink; the two drifting apart is what let redline
-# typecheck against a domain package the fork had already moved past.
+# The ref tracks the fork's LATEST `main` — not a held-back pin. redline owns
+# this fork, so its `main` moves because redline moved it; sitting on an older
+# commit is not a choice to consume an older Wayfinder, it is failing to pick up
+# work we just did. Move this ref and the services/wayfinder gitlink together in
+# the same step; the two drifting apart is what let redline typecheck against a
+# domain package the fork had already moved past. validate.sh #15(b) fails when
+# they disagree, and it does not skip on a clone with no submodule.
 #
 # To bump: change ref below, re-run scripts/vendor-wayfinder.sh, then
 # `pnpm install && ./validate.sh`. The drift check

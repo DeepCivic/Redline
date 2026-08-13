@@ -340,17 +340,17 @@ half, and it is two steps because the fork rule makes it two commits anyway.
 | Post-run population, brains half | redline-web | A controller method that takes a settled evaluation through the sequence the seed script drives — `IngestDocuments`, then `openWorkflow` → `advance` → `buildTable` — returning `Result`s and re-runnable over an evaluation already populated (a resumed run must not double-write responses). _Exit: over a fake extraction reader and an in-memory repository, running it against an evaluation with staged documents and no responses leaves the response set the review grid reads, and running it a second time leaves the same set rather than a doubled one._ |
 | Post-run population, fork mount | wayfinder (two commits) | The tRPC procedure behind `evaluation:create` that runs the reading passes on create, so an evaluation arrives with its fields resolved against the corpus and the report tools have anchored findings to be pointed at. The failure needs its own state — reading failing over a successfully extracted corpus is not a failed stage and must not present as one. _Exit: the create spec's live test reaches an evaluation whose responses carry source anchors, rather than one with documents and none._ |
 
-**The fork gitlink and `wayfinder.pin` have not been moved.** The build-step
-contract's fork rule wants both moved in step with the fork commit; today
-`services/wayfinder` records `f32ebc4` and `wayfinder.pin`'s `ref` is `8c9d9b8`,
-while the fork's `main` is at `06f0b76` (the Create Corpus mount). The two
-disagree with each other as well as with the fork, which is the exact drift the
-rule exists to prevent. `validate.sh` #15 catches the gitlink half of it — but
-only on a checkout where the fork's branch ref resolves; it skips on a clone with
-no submodule (this one) and on the shallow checkout that carries no branch refs,
-which is why the drift has gone unnoticed. Nothing checks `wayfinder.pin`'s `ref`
-against the gitlink at all. Moving both is not a build step and needs no test of
-its own; do it with the next fork-side commit at the latest.
+**The fork tracks its latest `main`, and both refs are there.** The gitlink and
+`wayfinder.pin` both record `06f0b76`, which is `johntooth/wayfinder`'s `main`
+(the Create Corpus mount). They had drifted — the gitlink on `f32ebc4`, the pin
+on `8c9d9b8` — and that went unnoticed because `validate.sh` #15 only checked the
+gitlink half, skipping on a clone with no submodule and on the shallow checkout
+that carries no branch refs, while nothing compared the pin to the gitlink at
+all. #15(b) now makes that comparison against the superproject's own tree, so it
+holds without a submodule checkout. The latest-tracking policy is durable and
+lives in `architecture.md`; what belongs here is that moving both with the
+fork-side commit is ordinary work, not a build step, and needs no test of its
+own.
 
 **The synthesis document-picker is deferred with the document-selection half.**
 UAT also asked that Wayfinder's own "Synthesise Information" flow let a user

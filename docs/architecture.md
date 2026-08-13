@@ -869,8 +869,16 @@ redline/
   This reverses an earlier choice of a build-time pin for consistency with
   Wayfinder; Wayfinder's pin exists because a submodule drags its package set into
   the pnpm workspace, which is a JavaScript problem Numbatch does not have.
-- **Wayfinder** — consumed through **two** distinct seams, mechanism following
-  runtime:
+- **Wayfinder** — the fork tracks its **latest `main`**, the same policy womblex
+  carries above and for a stronger reason: `johntooth/wayfinder` is redline's
+  *own* fork, so its `main` moves because redline moved it. A lagging pin is
+  never a decision to consume an older Wayfinder — it is redline failing to pick
+  up work it just did, and it typechecks against a `@rbrasier/domain` the mount
+  has already moved past. Whoever moves the fork's `main` moves both refs below
+  in the same step (the delivery plan's fork rule: a fork-side step is two
+  commits). `validate.sh` #15(b) asserts the two agree.
+
+  Consumed through **two** distinct seams, mechanism following runtime:
   - the **build-time typed-reuse seam** — materialised read-only from
     `wayfinder.pin` into `vendor/wayfinder`, never committed;
   - the **runtime UI-mount seam** — the Wayfinder **fork** as a submodule at
@@ -878,7 +886,7 @@ redline/
     submodule redline *runs and edits* (unlike the byte-identical
     womblex/numbatch submodules): the review UI mounts into the fork's `apps/web`,
     which resolves redline's `@redline/*` packages as workspace members. The
-    invariant that replaces "never modified" is enforced by `validate.sh` #15:
+    invariant that replaces "never modified" is enforced by `validate.sh` #15(a):
     the checkout stays on the branch `.gitmodules` names (the fork's `main`). The
     check once also asserted the fork's `main` never diverged from rbrasier,
     protecting a clean upstreaming diff; redline builds against johntooth/wayfinder
