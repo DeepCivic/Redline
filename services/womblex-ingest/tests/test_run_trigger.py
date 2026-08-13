@@ -33,6 +33,7 @@ from womblex_ingest.main import build_app
 from womblex_ingest.run_trigger import (
     ChunkModeOverride,
     ConfigOverride,
+    ExtractionOverride,
     MoneyVocabularyOverride,
     RunPlan,
     RunTrigger,
@@ -55,6 +56,7 @@ class FakeQueue:
     def __init__(self) -> None:
         self.enqueued: List[str] = []
         self.worker_runs: List[str] = []
+        self.worker_overrides: List[ConfigOverride | None] = []
         # run_id -> {status: count}
         self._stats: Dict[str, Dict[str, int]] = {}
 
@@ -67,8 +69,18 @@ class FakeQueue:
         self._stats.setdefault(run_id, {"pending": 1})
         return 1
 
-    def run_worker(self, run_id: str, evaluation_id: str) -> None:
+    def run_worker(
+        self,
+        run_id: str,
+        evaluation_id: str,
+        override: ConfigOverride | None = None,
+    ) -> None:
         self.worker_runs.append(run_id)
+        # Extraction is the only pass that reads `extraction.ocr.*`, so the
+        # override has to reach the worker — recording it is how the extraction
+        # half of the allow-list is proven, the way `FakeStages` proves the
+        # downstream half.
+        self.worker_overrides.append(override)
         self._stats[run_id] = {"done": 1}
 
     def stats(self, run_id: str) -> Dict[str, int]:
@@ -514,12 +526,33 @@ class StubMoney:
         self.columns = StubColumns()
 
 
+class StubOcrSettings:
+    def __init__(self) -> None:
+        self.engine = "paddleocr"
+        self.dpi = 300
+
+
+class StubExtractionSettings:
+    """Mirrors `womblex.config.ExtractionConfig` — the `ocr` half of it.
+
+    `extraction.native.include_tables` is deliberately absent: the pinned engine
+    (0.4.0, d6850de) never reads that field — `run_extraction` threads only
+    `ocr.dpi`, `ocr.lang`, `ocr.engine`, `ocr.engine_options` and
+    `native.spreadsheet_print` into `extract_text`. An override for it would be a
+    knob that does nothing.
+    """
+
+    def __init__(self) -> None:
+        self.ocr = StubOcrSettings()
+
+
 class StubConfig:
     """Stands in for `WomblexConfig` — only the keys the allow-list can reach."""
 
     def __init__(self) -> None:
         self.chunking = StubChunking()
         self.money = StubMoney()
+        self.extraction = StubExtractionSettings()
 
     def model_copy(self, deep: bool = False) -> "StubConfig":
         return copy.deepcopy(self)
@@ -567,6 +600,79 @@ def test_money_vocabulary_override_reaches_the_columns_config() -> None:
     assert applied.money.columns.extra_veto_terms == ["page"]
     assert applied.money.default_currency == "NZD"
     assert config.money.columns.extra_header_terms == []
+
+
+# --- The extraction group ----------------------------------------------------
+#
+# `redline.yaml` marks `extraction.ocr.engine: paddleocr` LOAD-BEARING: only
+# region-based engines supply the per-detection quads table-cell reconstruction
+# bins into rows and columns, so a VLM engine returns markdown with no regions
+# and deletes every table cell on a scanned page — which is where a scanned
+# tender keeps its pricing. That makes it the setting a first run most needs to
+# reach, and a first run has nothing to orphan by changing it.
+
+
+def test_extraction_override_sets_the_ocr_engine_and_dpi_on_a_copy() -> None:
+    config = StubConfig()
+    override = ConfigOverride(
+        extraction=ExtractionOverride(ocr_engine="mistral-ocr", ocr_dpi=400)
+    )
+
+    applied = apply_config_override(config, override)
+
+    assert applied.extraction.ocr.engine == "mistral-ocr"
+    assert applied.extraction.ocr.dpi == 400
+    # The loaded file config is never mutated — the same rule the other groups keep.
+    assert config.extraction.ocr.engine == "paddleocr"
+    assert config.extraction.ocr.dpi == 300
+
+
+def test_an_unset_extraction_field_inherits_rather_than_nulling() -> None:
+    config = StubConfig()
+    override = ConfigOverride(extraction=ExtractionOverride(ocr_engine="ollama"))
+
+    applied = apply_config_override(config, override)
+
+    assert applied.extraction.ocr.engine == "ollama"
+    # dpi was not authored, so it keeps the file's 300 rather than becoming None.
+    assert applied.extraction.ocr.dpi == 300
+
+
+def test_the_worker_runs_extraction_against_the_authored_override() -> None:
+    # Extraction is `enqueue` + `worker`, and the worker is the only pass that
+    # reads `extraction.ocr.*`. An override that reached the downstream stages
+    # but not the worker would leave the engine setting inert — the silent drop
+    # this seam exists to close.
+    queue = FakeQueue()
+    stages = FakeStages()
+    trigger = _build(queue, stages)
+    override = ConfigOverride(
+        extraction=ExtractionOverride(ocr_engine="mistral-ocr", ocr_dpi=400)
+    )
+
+    started = trigger.start(
+        RunPlan(
+            evaluation_id="eval-ocr",
+            stage_sequence=["chunk"],
+            config_override=override,
+        )
+    )
+    _wait_terminal(trigger, started["runId"])
+
+    assert queue.worker_overrides == [override]
+
+
+def test_a_run_with_no_override_passes_none_to_the_worker() -> None:
+    queue = FakeQueue()
+    stages = FakeStages()
+    trigger = _build(queue, stages)
+
+    started = trigger.start(
+        RunPlan(evaluation_id="eval-worker-default", stage_sequence=["chunk"])
+    )
+    _wait_terminal(trigger, started["runId"])
+
+    assert queue.worker_overrides == [None]
 
 
 def test_an_unset_field_within_a_group_inherits_rather_than_nulling() -> None:
@@ -682,6 +788,38 @@ def test_post_runs_without_an_override_still_fires_on_the_file_default() -> None
     assert stages.overrides == [None]
 
 
+# The exit test: a `POST /runs` carrying an OCR-engine override runs extraction
+# against a config whose engine is the request's, not the file's. Both halves are
+# asserted where they meet — the override reaches the worker (the only pass that
+# reads `extraction.ocr.*`), and layering it over a file config yields the
+# request's engine rather than the file's `paddleocr`.
+def test_post_runs_runs_extraction_against_the_requested_ocr_engine() -> None:
+    queue = FakeQueue()
+    stages = FakeStages()
+    client = _client(queue, stages)
+
+    response = client.post(
+        "/runs",
+        json={
+            "evaluationId": "eval-ocr-wire",
+            "stageSequence": ["chunk"],
+            "configOverride": {"extraction": {"ocrEngine": "mistral-ocr", "ocrDpi": 400}},
+        },
+    )
+
+    assert response.status_code == 202
+    carried = queue.worker_overrides[0]
+    assert carried is not None
+    assert carried.extraction is not None
+    assert carried.extraction.ocr_engine == "mistral-ocr"
+
+    file_config = StubConfig()
+    assert file_config.extraction.ocr.engine == "paddleocr"
+    extracted_with = apply_config_override(file_config, carried)
+    assert extracted_with.extraction.ocr.engine == "mistral-ocr"
+    assert extracted_with.extraction.ocr.dpi == 400
+
+
 def test_post_runs_refuses_an_ai_chunking_model_rather_than_dropping_it() -> None:
     queue = FakeQueue()
     stages = FakeStages()
@@ -713,12 +851,14 @@ def test_the_override_matches_the_real_engine_config_shape() -> None:
     config = womblex_config.WomblexConfig.model_construct(
         chunking=womblex_config.ChunkingConfig(),
         money=womblex_config.MoneyConfig(),
+        extraction=womblex_config.ExtractionConfig(),
     )
     override = ConfigOverride(
         chunk_mode=ChunkModeOverride(chunk_size=640, chunk_tables=False),
         money_vocabulary=MoneyVocabularyOverride(
             extra_header_terms=["schedule of rates"], default_currency="NZD"
         ),
+        extraction=ExtractionOverride(ocr_engine="mistral-ocr", ocr_dpi=400),
     )
 
     applied = apply_config_override(config, override)
@@ -727,3 +867,7 @@ def test_the_override_matches_the_real_engine_config_shape() -> None:
     assert applied.chunking.chunk_tables is False
     assert applied.money.default_currency == "NZD"
     assert applied.money.columns.extra_header_terms == ["schedule of rates"]
+    # `extraction.ocr.engine` / `.dpi` are the real keys `run_extraction` threads
+    # into `extract_text` — verified against the pinned engine, not assumed.
+    assert applied.extraction.ocr.engine == "mistral-ocr"
+    assert applied.extraction.ocr.dpi == 400

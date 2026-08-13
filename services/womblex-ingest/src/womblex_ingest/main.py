@@ -27,6 +27,7 @@ from womblex_ingest.extraction import Extractor
 from womblex_ingest.run_trigger import (
     ChunkModeOverride,
     ConfigOverride,
+    ExtractionOverride,
     MoneyVocabularyOverride,
     RunPlan,
     RunTrigger,
@@ -76,9 +77,20 @@ class MoneyVocabularyOverrideRequest(BaseModel):
     defaultCurrency: Optional[str] = None
 
 
+# The extraction group is the OCR settings a first run needs — `redline.yaml`
+# marks `extraction.ocr.engine: paddleocr` LOAD-BEARING, and a scanned tender is
+# exactly the corpus that may need a different one. Only the two keys the engine
+# consumes; `native.include_tables` is absent because the pinned engine never
+# reads it.
+class ExtractionOverrideRequest(BaseModel):
+    ocrEngine: Optional[str] = None
+    ocrDpi: Optional[int] = None
+
+
 class ConfigOverrideRequest(BaseModel):
     chunkMode: Optional[ChunkModeOverrideRequest] = None
     moneyVocabulary: Optional[MoneyVocabularyOverrideRequest] = None
+    extraction: Optional[ExtractionOverrideRequest] = None
 
     def to_override(self) -> ConfigOverride:
         return ConfigOverride(
@@ -98,6 +110,14 @@ class ConfigOverrideRequest(BaseModel):
                     extra_header_terms=self.moneyVocabulary.extraHeaderTerms,
                     extra_veto_terms=self.moneyVocabulary.extraVetoTerms,
                     default_currency=self.moneyVocabulary.defaultCurrency,
+                )
+            ),
+            extraction=(
+                None
+                if self.extraction is None
+                else ExtractionOverride(
+                    ocr_engine=self.extraction.ocrEngine,
+                    ocr_dpi=self.extraction.ocrDpi,
                 )
             ),
         )

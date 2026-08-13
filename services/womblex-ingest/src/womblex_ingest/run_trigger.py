@@ -55,11 +55,13 @@ RunPhase = Literal["extracting", "staging", "done", "errored"]
 # object-store prefixes the real binding computes: `proc/{evaluationId}/inputs`
 # for input, `proc/{evaluationId}/runs/{run_id}` for output).
 # `enqueue(run_id, evaluation_id) -> batches inserted`; `run_worker(...)` drains
-# them; `run_stage(run_id, evaluation_id, stage)` runs one downstream pass and
+# them against the authored config (extraction is the only pass that reads
+# `extraction.ocr.*`, so the override reaches the worker, not just the stages);
+# `run_stage(run_id, evaluation_id, stage)` runs one downstream pass and
 # raises `StageError` on a failed pass; `stats(run_id)` is the queue's own
 # status reduction (run-scoped, so it needs only the run id).
 EnqueueFn = Callable[[str, str], int]
-RunWorkerFn = Callable[[str, str], None]
+RunWorkerFn = Callable[[str, str, Optional["ConfigOverride"]], None]
 RunStageFn = Callable[[str, str, str, Optional["ConfigOverride"]], None]
 StatsFn = Callable[[str], Dict[str, int]]
 
@@ -98,6 +100,21 @@ class MoneyVocabularyOverride:
 
 
 @dataclass(frozen=True)
+class ExtractionOverride:
+    """The authored extraction group — the OCR settings a first run needs.
+
+    Only the two keys the engine actually consumes:
+    `run_extraction` threads `extraction.ocr.engine` and `extraction.ocr.dpi`
+    into `extract_text`. `extraction.native.include_tables` is *not* here because
+    the pinned engine never reads it — an override for it would be a knob that
+    does nothing, the same defect the money term lists nearly shipped with.
+    """
+
+    ocr_engine: Optional[str] = None
+    ocr_dpi: Optional[int] = None
+
+
+@dataclass(frozen=True)
 class ConfigOverride:
     """The allow-listed slice of the engine config a run may author.
 
@@ -108,6 +125,7 @@ class ConfigOverride:
 
     chunk_mode: Optional[ChunkModeOverride] = None
     money_vocabulary: Optional[MoneyVocabularyOverride] = None
+    extraction: Optional[ExtractionOverride] = None
 
 
 class UnknownStage(Exception):
@@ -165,6 +183,13 @@ def apply_config_override(config, override: Optional[ConfigOverride]):  # type: 
             applied.money.columns.extra_header_terms = list(money.extra_header_terms)
         if money.extra_veto_terms is not None:
             applied.money.columns.extra_veto_terms = list(money.extra_veto_terms)
+
+    extraction = override.extraction
+    if extraction is not None:
+        if extraction.ocr_engine is not None:
+            applied.extraction.ocr.engine = extraction.ocr_engine
+        if extraction.ocr_dpi is not None:
+            applied.extraction.ocr.dpi = extraction.ocr_dpi
 
     return applied
 
@@ -321,7 +346,7 @@ class RunTrigger:
     def _run(self, state: _RunState) -> None:
         try:
             self._enqueue(state.run_id, state.evaluation_id)
-            self._run_worker(state.run_id, state.evaluation_id)
+            self._run_worker(state.run_id, state.evaluation_id, state.config_override)
             with self._lock:
                 state.phase = "staging"
             for stage in state.sequence:
@@ -443,10 +468,18 @@ def _engine_enqueue(dsn: str, store_uri: str, config_path: Optional[str]) -> Enq
 
 
 def _engine_run_worker(dsn: str, store_uri: str, config_path: Optional[str]) -> RunWorkerFn:
-    def run_worker(run_id: str, evaluation_id: str) -> None:
+    def run_worker(
+        run_id: str,
+        evaluation_id: str,
+        override: Optional[ConfigOverride] = None,
+    ) -> None:
         from womblex.cloud.worker import run_worker as engine_run_worker
 
-        config = _load_config(config_path)
+        # Extraction reads `extraction.ocr.engine` / `.dpi` off this config, so an
+        # authored OCR engine has to be layered here — the downstream stages never
+        # touch those keys, and a run whose stages honoured the override while its
+        # extraction did not would be the silent drop in a different place.
+        config = apply_config_override(_load_config(config_path), override)
         # `once=False, idle_timeout` drains this run then exits — the single-shot
         # lifecycle the trigger drives. Scale-out (many workers) stays the
         # deployment's, unchanged: this fires exactly the operator's `worker` pass.
