@@ -127,25 +127,44 @@ Recorded so they do not creep back thread by thread:
 - **No graph visualisations.** Unnecessary for the target use cases.
 - **No confidence scores in the UI.** Replaced by Clear/Ambiguous buckets.
 - **No lens orchestrator.** Explicitly rejected — womblex deleted theirs.
-- **Engine config is authored through a defined allow-list, not the whole file,
-  and never the structural keys.** The Create Corpus surface *may* author a
-  per-run override over `infra/womblex/redline.yaml`, which is the default layer:
-  a field left blank inherits the default we defined. But the overridable set is
-  a **defined allow-list** — the run parameters that plausibly differ as corpus
-  nature changes — not the whole config. In scope: the **stage sequence** (which
-  of chunk/embed/enrich/money run, in what order), the **chunk mode**
-  (`chunking.chunking_model` null for offline token chunking vs set for AI/
-  semantic chunking, plus `chunk_size` / `chunk_tables`), and the **money
-  vocabulary** (`extra_header_terms` / `extra_veto_terms` / `default_currency`,
-  which are corpus-specific by nature). Out of scope, and fixed in the file
-  regardless of what a form submits: the **structural / identity keys** — the
-  embed model and `task`, the OCR `engine`, `enrichment.enabled` where the report
-  graph depends on it, the Isaacus gate. Changing one of those does not tune a
-  run, it silently orphans the vectors, deletes table cells, or empties the
-  graph the report assembler navigates — a break that only surfaces stages later
-  as an empty grid. The mechanism is the override layer; the safety is the
-  allow-list. This supersedes the earlier flat "no engine tuning in UI" — some
-  tuning *is* a run-shape choice a user makes; the structural keys are not.
+- **Engine config is authored through a defined allow-list, and the list is
+  wider on a first run than on a re-run.** The Create Corpus surface *may* author
+  a per-run override over `infra/womblex/redline.yaml`, which is the default
+  layer: a field left blank inherits the default we defined. The overridable set
+  is a **defined allow-list**, not the whole config, but it is not one list. The
+  safety argument behind the narrow version — that changing a structural key
+  silently orphans the vectors, deletes table cells, or empties the graph the
+  report assembler navigates — needs *prior outputs to orphan*, so it is a
+  **re-run** argument and does not bind a corpus's first run.
+  **Always authorable:** the **stage sequence** (which of chunk/embed/enrich/
+  money run, in what order), the **chunk mode** (`chunking.chunking_model` null
+  for offline token chunking vs set for AI/semantic chunking, plus `chunk_size` /
+  `chunk_tables`), and the **money vocabulary**
+  (`money.columns.extra_header_terms` / `money.columns.extra_veto_terms` and
+  `money.default_currency`, corpus-specific by nature).
+  **Authorable on a first run only:** **extraction and OCR settings**, including
+  `extraction.ocr.engine`. A first run is where they matter — `redline.yaml`
+  marks `paddleocr` LOAD-BEARING because a VLM engine returns markdown with no
+  regions and so deletes every table cell on a scanned page, and a scanned tender
+  is made of those — and it is the run with nothing yet to orphan. Refused over a
+  corpus that already has shards.
+  **Never authorable:** the embed **model** and `task`, because the chunk vectors
+  must pair with the sidecar's query embeddings and that is not a per-corpus
+  choice, and the Isaacus gate.
+  The mechanism is the override layer; the safety is the split between those
+  three lists. This supersedes the earlier flat "no engine tuning in UI" and the
+  single-list version that followed it — some tuning *is* a run-shape choice a
+  user makes, and a first run is entitled to more of it than a re-run.
+- **A corpus is a womblex run, and the user names it.** womblex mints run ids
+  itself when none is given (`generate_run_id()` → `run-YYYYMMDDTHHMMSSZ`) and
+  accepts a caller-supplied one otherwise. They are engine identities that work
+  inside the engine and are optionally named. redline **consumes what it gets**:
+  it does not mint them, does not validate their shape, and does not curate them.
+  The name a specialist types on Create Corpus is the run, the object-store
+  prefix and later the evaluation id, because they are one identity. Rules that
+  treated the corpus id as an invariant redline had to protect — "pick, never
+  type" — are withdrawn: they produced a surface that could only re-run a corpus
+  something else had already extracted.
 - **Air-gap / offline operation.** Both the `chunk` and `embed` stages require
   Isaacus; a deployment that cannot reach it cannot build a corpus to read.
   (See `architecture.md` §2 and §7.1.)

@@ -142,27 +142,39 @@ retry or scale-out — those stay the engine's (`cloud/worker.py`, its Postgres
 queue). redline drives and observes; it does not wrap.
 
 **What is a specialist's to configure, and what is not — this is load-bearing.**
-The surface exposes **corpus composition** (which documents, the evaluation's
-name/id), reuses the existing create surface's **lens and grouping** (topics,
-definitions, brands — already `CreateEvaluation`'s inputs), and **may author a
-per-run override of the womblex config** over `infra/womblex/redline.yaml` as the
-default layer — a blank field inherits the default we defined. The overridable
-set is a **defined allow-list**, not the whole file: the run parameters that
-plausibly differ as corpus nature changes — the **stage sequence** (which of
-chunk/embed/enrich/money run, in what order), the **chunk mode**
-(`chunking.chunking_model` null for offline token chunking vs set for AI/semantic
-chunking, plus `chunk_size` / `chunk_tables`), and the **money vocabulary**
-(`money.columns.extra_header_terms` / `money.columns.extra_veto_terms` and
-`money.default_currency` — the two term lists hang off `MoneyColumnsConfig`, not
-off `MoneyConfig`, which is where a merge written from the short names would put
-them). What stays
-fixed in the file regardless of what a form submits: the **structural / identity
-keys** — the embed model and `task`, the OCR `engine`, `enrichment.enabled` where
-the report graph depends on it, the Isaacus gate. Changing one of those does not
-tune a run, it silently orphans the vectors, deletes table cells, or empties the
-graph — a break that surfaces stages later as an empty grid. The allow-list is
-the safety; the override layer is the mechanism. Recorded as a durable decision
-in `design-principles.md`.
+Two screens, two jobs. **Create Corpus** names the run, takes the documents and
+authors the engine config; **`/evaluations/new`** composes the evaluation over
+the result (brands, fields — already `CreateEvaluation`'s inputs). Neither screen
+mints or validates an identity: a corpus *is* a womblex run, womblex ids work
+inside womblex and are optionally named, and redline consumes what it gets.
+
+The config a run may author is a **per-run override** over
+`infra/womblex/redline.yaml` as the default layer — a blank field inherits the
+default we defined. The overridable set is **wider on a first run than on a
+re-run**, because the safety argument behind the narrow list is a re-run
+argument: changing a structural key orphans vectors, deletes table cells or
+empties the graph only where prior outputs exist to be orphaned.
+
+- **Always authorable:** the **stage sequence** (which of chunk/embed/enrich/money
+  run, in what order), the **chunk mode** (`chunking.chunking_model` null for
+  offline token chunking vs set for AI/semantic chunking, plus `chunk_size` /
+  `chunk_tables`), and the **money vocabulary**
+  (`money.columns.extra_header_terms` / `money.columns.extra_veto_terms` and
+  `money.default_currency` — the two term lists hang off `MoneyColumnsConfig`,
+  not off `MoneyConfig`, which is where a merge written from the short names
+  would put them).
+- **Authorable on a first run only:** **extraction and OCR settings**, including
+  `extraction.ocr.engine`. A first run has nothing to orphan, and it is the run
+  that needs them: `redline.yaml` marks `paddleocr` LOAD-BEARING because a VLM
+  engine returns markdown with no regions and so deletes every table cell on a
+  scanned page — which is what a scanned tender is made of. Refused over a corpus
+  that already has shards.
+- **Never authorable:** the embed **model** and `task` (the chunk vectors must
+  pair with the sidecar's query embeddings, which is not a per-corpus choice) and
+  the Isaacus gate.
+
+The mechanism is the override layer; the safety is the split between the three
+lists above. Recorded as a durable decision in `design-principles.md`.
 
 The programme is a set of build steps, each tests-first, in dependency order. The
 fork-side ones are two commits (the build-step contract's fork rule). Ordering
@@ -203,78 +215,70 @@ stage sequence, the allow-listed override editors and the run tracker — behind
 `evaluation:create` on the route, the procedures and the sidebar entry alike.
 `docs/guides/create-a-corpus.md` is the user-facing description of what it does.
 
-**The surface was built around the wrong case, and that is the finding to act on
-before anything below it.** womblex is a cold-start engine: `womblex run` and the
-cloud path both take *raw documents* from an input prefix and produce shards, and
-`_engine_enqueue` reads exactly `proc/{evaluationId}/inputs`, refusing an empty
-prefix with "stage the corpus before triggering a run". Cold start is the case
-the engine is designed around and the case redline exists to serve. The Create
-Corpus tab cannot do it — not because a seam is missing, but because of one
-self-inflicted coupling described under "Cold start" below. Every part it needs
-is already built. The remaining work is therefore smaller than the table below
-first suggests, and part of it is deletion.
+**The surface was built around the wrong case.** womblex is a cold-start engine:
+`womblex run` and the cloud path both take *raw documents* from an input prefix
+and produce shards, and `_engine_enqueue` reads exactly
+`proc/{evaluationId}/inputs`, refusing an empty prefix with "stage the corpus
+before triggering a run". Cold start is the case the engine is designed around
+and the case redline exists to serve. The tab cannot do it — not because a seam
+is missing, but because it calls `CreateEvaluation` before `startRun`. Every part
+it needs is already built. The remaining work is smaller than the tables below
+first suggest, and part of it is deletion.
 
-### Cold start — the coupling to remove
+### Cold start — settled
 
-**One line of ordering is what blocks the case the whole programme is for.** The
-Create Corpus tab calls `CreateEvaluation` and *then* `startRun`. An evaluation
-is composed from document ids, and a redline document id is womblex's
-`source_hash` — minted during extraction. So the surface asks a specialist to
-name brands and fields for documents that do not have identities yet, and
-`CreateEvaluation.assertDocumentsStaged` then refuses every one of them because
-`DrizzleStagedCorpusReader` lists only what the sidecar's load path has already
-written to `redline_chunks`. A corpus therefore has to be extracted before it can
-be started, which is a contradiction rather than a limitation.
+**A corpus is a womblex run, and the user names it.** womblex mints run ids
+itself when none is given (`generate_run_id()` → `run-YYYYMMDDTHHMMSSZ`) and
+takes a caller-supplied one otherwise (`--run-id` on every cloud subcommand).
+They are engine identities that work inside the engine, and they are optionally
+named. redline consumes what it gets: it does not mint them, does not validate
+their shape, and does not curate them. The name a specialist types on Create
+Corpus is the run, the object-store prefix (`proc/{name}/inputs`,
+`proc/{name}/runs/{runId}`) and later the evaluation id, because they are the
+same identity and always were.
 
-**The design already knew these were two jobs.** The fork's own route comment
-says it plainly — a standalone tab rather than a change to `/evaluations/new`,
-because "ingest and evaluation are different users". The tab then made one
-person do both jobs in one submit, and inherited the second job's prerequisite.
+**This settles what was previously written up here as an ordering problem.** The
+"pick, never type" rule and the `source_hash` chicken-and-egg both came from
+treating the corpus id as an invariant redline had to protect. It is not
+redline's to protect — it is the engine's, and the engine hands it over. There is
+no design question left: the specialist names the run, the documents go under its
+prefix, the run extracts them, and the evaluation is composed over the result.
 
-**Splitting them back apart removes code.** Create Corpus becomes what the user
-frustration correctly describes — a screen over the engine's config and CLI:
-name the corpus, upload the documents, author the config, pick the stages, fire,
-watch. No brands, no fields, no `CreateEvaluation` call, no `ALREADY_EXISTS`
-case, and no chicken-and-egg, because nothing on that screen needs a
-`source_hash`. When the run lands, `redline_chunks` is populated and
-`/evaluations/new` — which already assumes an extracted corpus and already works
-— composes the evaluation as originally intended. The brand/field half of the
-Create Corpus form is then duplicated logic to delete, not to fix.
+**What that leaves is a straight split of one screen into two.** Create Corpus
+calls `CreateEvaluation` before `startRun` today, which is what forces brands and
+fields to be named against documents the run has not yet extracted. Drop that
+call. Create Corpus becomes a screen over the engine's config and CLI — name the
+run, upload the documents, author the config, pick the stages, fire, watch — with
+nothing on it that needs a `source_hash`. `/evaluations/new` already assumes an
+extracted corpus and already works, so it composes the evaluation afterwards.
+The fork's own route comment already said these were two users; this is the tab
+catching up with it. The brand/field half of the Create Corpus form is code to
+delete, not to fix.
 
-**Nothing new has to be built for the upload.** `MinioStagedCorpusWriter` writes
-to `proc/{evaluationId}/inputs/`, which is byte-for-byte the prefix
-`_engine_enqueue` lists. The fork already ships a browser upload of exactly this
-shape — `extraction.uploadDraftDocuments` takes file bytes through a tRPC
-procedure into `objectStorage.put`, with progressive auto-save and archive
-handling. "Upload transport (through the app vs presigned direct-to-bucket)" is
-recorded above as an open decision; the fork settled it in practice, and the
-staged path can follow it rather than reopen it.
+**The upload needs nothing new.** `MinioStagedCorpusWriter` writes
+`proc/{evaluationId}/inputs/`, byte-for-byte the prefix `_engine_enqueue` lists
+and refuses when empty. The fork already ships a browser upload of this shape —
+`extraction.uploadDraftDocuments` takes file bytes through a tRPC procedure into
+`objectStorage.put`, with progressive auto-save and archive handling. Upload
+transport is therefore no longer an open decision; follow the fork's.
 
-**The corpus id stops being a trap on this screen.** The "pick, never type" rule
-exists because an evaluation's id must equal an existing corpus's id. When the
-screen's job is to *create* the corpus, naming it is the natural act and there is
-nothing yet to mismatch — the collision check moves to "does this corpus id
-already exist", which is a plain existence check rather than an invariant.
-
-**The allow-list was drawn for the wrong case too.** Its rationale is that
-changing a structural key "silently orphans the vectors, deletes table cells, or
-empties the graph" — every one of which is a *re-run* hazard, where prior outputs
-exist to be orphaned. On a first run there is nothing to orphan. Cold start also
-needs more of the config than a re-run does: `redline.yaml` marks
-`extraction.ocr.engine: paddleocr` LOAD-BEARING because switching to a VLM engine
-deletes every table cell on a scanned page, and scanned tenders are exactly what
-a first run meets. So the authorable set should be *wider* on a first run than on
-a re-run, and the current allow-list is the re-run one. Widening it is a decision
-to take deliberately, not a licence to expose the file wholesale.
+**The authorable config is wider on a first run than on a re-run.** The
+allow-list's safety argument is that changing a structural key "silently orphans
+the vectors, deletes table cells, or empties the graph" — every one of which
+needs prior outputs to orphan. A first run has none. It also *needs* more of the
+config than a re-run does: `redline.yaml` marks `extraction.ocr.engine:
+paddleocr` LOAD-BEARING because a VLM engine returns markdown with no regions and
+so deletes every table cell on a scanned page, and scanned tenders are exactly
+what a first run meets. So extraction and OCR settings join the authorable set on
+a first run. Two things stay fixed wherever they are authored, because neither is
+a per-corpus choice: the embed model and `task` (the vectors must pair with the
+sidecar's query embeddings) and the Isaacus gate. `design-principles.md` carries
+the amended decision.
 
 | Step | Package(s) | What it is |
 |---|---|---|
-| Create Corpus becomes an ingest surface | redline-web + wayfinder (two commits) | Drop the brand/field half and the `CreateEvaluation` call from the tab; add the corpus name and the document upload over the built `IStagedCorpusWriter`, following the fork's existing upload procedure shape. On `done` the tracker links to `/evaluations/new` rather than to an evaluation. _Exit: `redline-create-corpus.spec.ts` uploads a document to a corpus id no run has used, fires the run, and the corpus appears in `/evaluations/new`'s picker when it settles._ |
-| Widen the authorable config for a first run | domain + womblex-ingest | Decide which further keys a *first* run may author (the OCR engine and extraction settings are the candidates that matter; the embed model and task stay fixed because the retrieval pairing is not a per-corpus choice) and carry them through the same override shape. _Exit: a first run authored with a non-default OCR engine extracts against that engine, and a re-run over a corpus with existing shards still refuses it._ |
-
-With the split, the post-run population steps below stop being about Create
-Corpus at all: they belong to `/evaluations/new`, which is where an evaluation is
-composed, and they run when the specialist creates it over an extracted corpus.
+| Create Corpus becomes an ingest surface | redline-web + wayfinder (two commits) | Drop the brand/field half and the `CreateEvaluation` call; add the run name and the document upload over the built `IStagedCorpusWriter`, following the fork's existing upload procedure. On `done` the tracker links to `/evaluations/new`. _Exit: `redline-create-corpus.spec.ts` names a run, uploads a document to it, fires, and the corpus appears in `/evaluations/new`'s picker once it settles._ |
+| Widen the authorable config for a first run | domain + womblex-ingest | Extraction and OCR settings join the override shape, refused on a run over a corpus that already has shards. _Exit: a first run authored with a non-default OCR engine extracts against that engine; the same override against a corpus with existing shards is refused._ |
 
 **The allow-listed override is authored but never applied.** The form composes it,
 `makeRunConfigOverride` validates it, and `HttpWomblexRunTrigger` puts it on the
@@ -367,10 +371,13 @@ deferred.** How redline drives and watches the run is decided:
   so the existing create flow's "corpus already staged" assumption and its
   `ALREADY_EXISTS` behaviour stay untouched.
 
-**Deferred (the document-selection half).** Whether the picker browses raw bucket
-objects vs staged corpora, and how bytes are uploaded (through the app vs
-presigned direct-to-bucket), are held for now — the run surface above is built
-first, over the staged path the existing `IStagedCorpusReader` already serves.
+**Deferred (what is left of the document-selection half).** Only one thing:
+whether a picker should *browse raw bucket objects* a run has not processed. That
+waits, because Create Corpus uploads the documents it is about to run rather than
+selecting from what is already there. Upload transport is no longer part of this
+— through the app, following `extraction.uploadDraftDocuments`. The staged-corpus
+picker `IStagedCorpusReader` serves stays where it belongs, on
+`/evaluations/new`, listing corpora a run has already extracted.
 
 ---
 
