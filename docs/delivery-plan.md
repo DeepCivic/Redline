@@ -244,6 +244,13 @@ redline's to protect — it is the engine's, and the engine hands it over. There
 no design question left: the specialist names the run, the documents go under its
 prefix, the run extracts them, and the evaluation is composed over the result.
 
+**One thing has to be built before the split connects at all.** A run fired
+through the trigger publishes shards and stops; nothing loads them into
+`redline_chunks`, which is the only thing either screen can see. Today that load
+is `POST /ingest`'s job and it is called by hand. The first step below closes
+that gap; without it, Create Corpus would upload documents, run them, report
+success, and leave a corpus that never appears on the evaluation screen.
+
 **What that leaves is a straight split of one screen into two.** Create Corpus
 calls `CreateEvaluation` before `startRun` today, which is what forces brands and
 fields to be named against documents the run has not yet extracted. Drop that
@@ -277,7 +284,8 @@ the amended decision.
 
 | Step | Package(s) | What it is |
 |---|---|---|
-| Create Corpus becomes an ingest surface | redline-web + wayfinder (two commits) | Drop the brand/field half and the `CreateEvaluation` call; add the run name and the document upload over the built `IStagedCorpusWriter`, following the fork's existing upload procedure. On `done` the tracker links to `/evaluations/new`. _Exit: `redline-create-corpus.spec.ts` names a run, uploads a document to it, fires, and the corpus appears in `/evaluations/new`'s picker once it settles._ |
+| A finished run loads its own shards | womblex-ingest | **The split does not connect without this.** `run_trigger.py` fires extraction and the downstream stages and stops at shards in object storage — it never touches `redline_chunks`, which only `POST /ingest`'s load path writes (there is no `chunk_store` or `load_extraction` reference in the module). So a run fired from the browser today produces a corpus no screen can see, and the two-screen flow has no join. The run's completion must drive the same load `POST /ingest` drives, over the shards the run just published. _Exit: a run fired through `POST /runs` over staged inputs leaves its documents listed by `IStagedCorpusReader` when it reaches `done`, with no `POST /ingest` call in between._ |
+| Create Corpus becomes an ingest surface | redline-web + wayfinder (two commits) | Drop the brand/field half and the `CreateEvaluation` call; add the run name and the document upload over the built `IStagedCorpusWriter`, following the fork's existing upload procedure (`extraction.uploadDraftDocuments` — base64 through tRPC, `storage.put` under a per-flow key). On `done` the tracker links to `/evaluations/new`. Depends on the load step above. _Exit: `redline-create-corpus.spec.ts` names a run, uploads a document to it, fires, and the corpus appears in `/evaluations/new`'s picker once it settles._ |
 | Widen the authorable config for a first run | domain + womblex-ingest | Extraction and OCR settings join the override shape, refused on a run over a corpus that already has shards. _Exit: a first run authored with a non-default OCR engine extracts against that engine; the same override against a corpus with existing shards is refused._ |
 
 **The allow-listed override is authored but never applied.** The form composes it,
@@ -484,15 +492,20 @@ Deferred until the lean vertical is complete. In dependency order:
 dependency order → workspace extraction and release.**
 
 The Create Corpus programme's steps have their own internal ordering, and **cold
-start leads**. Splitting the tab back into an ingest surface comes first: it is
-the case the engine is built for, it unblocks every other step's ability to be
-tested over a corpus the browser made, and it removes the brand/field duplication
-rather than adding to it. The override step follows (it is what makes that
-surface worth having). The post-run population pair then lands against
-`/evaluations/new` rather than Create Corpus, in its own order — brains, then the
-fork mount that calls them. Raw-bucket *browse* and the synthesis picker stay
-deferred; upload transport does not, because the ingest surface needs it and the
-fork already settled the shape.
+start leads**.
+
+1. **A finished run loads its own shards.** Without it the two screens have
+   nothing to hand between them — a run publishes shards no screen can see.
+2. **Create Corpus becomes an ingest surface.** The case the engine is built for.
+   It unblocks every later step's ability to be tested over a corpus the browser
+   made, and it removes the brand/field duplication rather than adding to it.
+3. **The override reaches the engine**, which is what makes that surface worth
+   having, and the wider first-run config with it.
+4. **Post-run population**, now against `/evaluations/new` rather than Create
+   Corpus — brains first, then the fork mount that calls them.
+
+Raw-bucket *browse* and the synthesis picker stay deferred; upload transport does
+not, because the ingest surface needs it and the fork already settled the shape.
 
 ### Superseded decisions
 

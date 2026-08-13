@@ -117,7 +117,8 @@ screen, so every field is resolved by reading rather than by matching.
 ### What the report is, and what it is not
 
 Worth knowing before you write your fields, because it shapes what a good field
-looks like:
+looks like. This is the design the report is being built to — see
+[What happens next](#what-happens-next) for how much of it you can reach today:
 
 - **Every load-bearing claim is the response's own words.** A passage in the
   report is copied from the source exactly — not paraphrased, not tidied — and
@@ -174,15 +175,22 @@ Errors appear above the buttons, in the engine's own words:
 
 ## What happens next
 
-**The report is the point, and it is built in Wayfinder rather than on a redline
-screen.** redline exposes its evaluation to Wayfinder as a set of tools — the
-"Redline report tools" server — which fetch passages by provenance, fetch
-financial expressions as written, and walk the entity graph. A Wayfinder flow or
-assistant with those tools selected is what assembles the report: it is pointed
-at the findings your fields produced, transfers the passages, and writes the
-connective prose around them.
+**The report is the point, and it is assembled outside these screens.** redline
+does not render a report. It exposes the evaluation to Wayfinder as a set of
+tools — the "Redline report tools" server — which fetch passages by provenance,
+fetch financial expressions as written, and walk the entity graph. Wayfinder's
+assembler drives those tools: it is pointed at the findings your fields produced,
+transfers the passages, and writes the connective prose around them.
 
-The redline screens are supporting views over the same data, not the deliverable:
+> **Not yet reachable.** The pieces exist — the tool server, and an assembly loop
+> in Wayfinder's adapters that drives it — but nothing is wired to a screen or a
+> flow, and the tool server is registered by a setup script rather than being
+> there by default. There is no button that produces a report today, and the
+> editing-before-export behaviour described above is the design it is being built
+> to, not something you can do. Everything on this page up to and including
+> **Create** is real; the report is not yet.
+
+The redline screens are supporting views over the same data:
 
 - **review** — the grid of brands against fields,
 - **pivots** — the pricing pivots,

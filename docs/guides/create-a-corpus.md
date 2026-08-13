@@ -52,12 +52,8 @@ folder the results are written to, and later the id of the evaluation built over
 them. They are one thing, not three that have to be kept in step.
 
 Type something you will recognise in a fortnight — `water-treatment-2026`, not
-`test3`. If you leave it blank the engine generates a timestamped one
-(`run-20260813T041500Z`), which is valid but tells you nothing later.
-
-The name must not already be in use. A corpus that already exists is one you can
-already evaluate; go to [Creating an evaluation](./create-an-evaluation.md)
-instead of running it again.
+`test3`. Reuse a name and you are adding to that corpus rather than starting a
+new one, so pick a fresh one unless that is what you meant.
 
 ## 2. Upload the documents
 
@@ -160,16 +156,22 @@ built appears in the picker and you say what you want answered about it.
 
 ## What the deployed build still does
 
-The screen as currently deployed has not been split yet. Until it is:
+The screen as currently deployed has not been split yet, and getting a corpus in
+place today is a three-part manual sequence: put the documents in the bucket, run
+the engine over them, then call the sidecar's `POST /ingest` to map the resulting
+shards into redline's store. Only that last step makes a corpus visible to the
+screens. Firing a run through the browser does **not** do it — the run trigger
+produces shards and nothing loads them.
+
+Beyond that:
 
 - it asks for the **brands and fields** on this screen, which the evaluation
   screen asks for again;
 - it **picks** a corpus from a list rather than naming one, and the list only
   contains corpora that have already been extracted — so it re-runs stages over
   an existing corpus rather than starting a new one;
-- **uploading is not wired up**, so documents get into place another way (`POST
-  /ingest` against the sidecar, or an S3 client writing to the run's input
-  prefix);
+- **uploading is not wired up**, so the documents are put in the bucket with an
+  S3 client (`mc cp` or equivalent) writing under the run's input prefix;
 - the **chunk-mode and money-vocabulary overrides are dropped in transit** — the
   browser validates them and sends them, but the sidecar's run request accepts
   only the run id and the stage sequence, so every run uses the file default.
