@@ -21,9 +21,11 @@ import {
   type IWomblexRunTrigger,
   type ProcurementResponse,
   type RequirementClassification,
+  type ResponseGroup,
   type Result,
   type StagedCorpus,
   type StagedDocument,
+  type Vendor,
 } from "@redline/redline-domain";
 import {
   AssignDocumentsToGroups,
@@ -31,6 +33,7 @@ import {
   ClassifyResponseGroup,
   ColdStartClassifier,
   CreateEvaluation,
+  IngestDocuments,
   MoneySpanFinancialExtractor,
   type CreateEvaluationInput,
 } from "@redline/redline-application";
@@ -83,6 +86,7 @@ export class WorkflowController {
   private readonly classifyResponseGroup: ClassifyResponseGroup;
   private readonly buildEvaluationTable: BuildEvaluationTable;
   private readonly createEvaluationUseCase: CreateEvaluation;
+  private readonly ingestDocuments: IngestDocuments;
   // The run-side controllers, composed over the two write seams. Carried on the
   // workflow controller so the served router reaches the whole create-and-run
   // surface through one object, the way it reaches the read side.
@@ -100,6 +104,10 @@ export class WorkflowController {
       runTrigger: container.runTrigger,
     });
     this.runStatusController = new RunStatusController({ runTrigger: container.runTrigger });
+    this.ingestDocuments = new IngestDocuments({
+      repository: container.repository,
+      extractionReader: container.extractionReader,
+    });
     this.assignDocumentsToGroups = new AssignDocumentsToGroups({
       repository: container.repository,
     });
@@ -169,6 +177,101 @@ export class WorkflowController {
 
   buildTable(input: { evaluationId: string }): Promise<Result<readonly ProcurementResponse[]>> {
     return this.buildEvaluationTable.execute(input);
+  }
+
+  // Post-run population (build plan §5; delivery-plan §2 item 1). Takes a
+  // settled evaluation — created over a finished corpus, its vendors, groups and
+  // lens already persisted but no responses yet — through the reading passes the
+  // seed script drives: IngestDocuments (confirm every document reads back,
+  // advance to grouping), then the composition (grouping → classifying via
+  // AssignDocumentsToGroups over the persisted groups) and BuildEvaluationTable
+  // (classifying → review, persisting the ProcurementResponse[] the grid reads).
+  //
+  // Re-runnable by design: the sidecar's resume re-fires the whole sequence, so
+  // a run that already reached review must not re-read and double-write. When the
+  // response set is already there, that is the answer — return it and touch
+  // nothing, because the in-memory (and Drizzle) saves append/upsert and a second
+  // pass would otherwise duplicate every row.
+  async populate(input: {
+    evaluationId: string;
+  }): Promise<Result<readonly ProcurementResponse[]>> {
+    const evaluation = await this.container.repository.findEvaluation(input.evaluationId);
+    if (isErr(evaluation)) return evaluation;
+
+    const existing = await this.container.repository.listResponses(input.evaluationId);
+    if (isErr(existing)) return existing;
+    if (existing.data.length > 0) return ok(existing.data);
+
+    const groups = await this.container.repository.listResponseGroups(input.evaluationId);
+    if (isErr(groups)) return groups;
+    const vendors = await this.container.repository.listVendors(input.evaluationId);
+    if (isErr(vendors)) return vendors;
+
+    const documentIds = [
+      ...new Set(groups.data.flatMap((group) => group.documentIds)),
+    ];
+
+    const ingested = await this.ingestDocuments.execute({
+      evaluationId: input.evaluationId,
+      evaluationName: evaluation.data.name,
+      documentIds,
+    });
+    if (isErr(ingested)) return ingested;
+
+    const manager = this.hydrateManager({
+      evaluationId: input.evaluationId,
+      stage: ingested.data.stage,
+      documentIds,
+      vendors: vendors.data,
+      groups: groups.data,
+    });
+    if (isErr(manager)) return manager;
+
+    const advanced = await this.advance(manager.data);
+    if (isErr(advanced)) return advanced;
+
+    return this.buildTable({ evaluationId: input.evaluationId });
+  }
+
+  // Replays the persisted composition into a WorkflowManager so advance() can
+  // re-persist and re-transition it exactly as the grouping surface would. The
+  // create step already composed vendors and groups; populate is not the surface
+  // that authors them, so it reconstructs rather than reinvents. Every step goes
+  // through the manager's smart constructors, so a stored group the domain would
+  // now reject surfaces here rather than at the use-case.
+  private hydrateManager(input: {
+    evaluationId: string;
+    stage: Evaluation["stage"];
+    documentIds: readonly string[];
+    vendors: readonly Vendor[];
+    groups: readonly ResponseGroup[];
+  }): Result<WorkflowManager> {
+    const manager = new WorkflowManager({
+      evaluationId: input.evaluationId,
+      stage: input.stage,
+      documentIds: input.documentIds,
+    });
+
+    for (const vendor of input.vendors) {
+      const added = manager.addVendor(vendor);
+      if (isErr(added)) return added;
+    }
+
+    for (const group of input.groups) {
+      const created = manager.createGroup({
+        id: group.id,
+        label: group.label,
+        vendorIds: group.vendorIds,
+      });
+      if (isErr(created)) return created;
+
+      for (const documentId of group.documentIds) {
+        const assigned = manager.assignDocument(group.id, documentId);
+        if (isErr(assigned)) return assigned;
+      }
+    }
+
+    return ok(manager);
   }
 
   // Every evaluation in the store, newest first — what the /evaluations index
