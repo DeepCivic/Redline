@@ -414,7 +414,7 @@ no sidecars at all is left untouched: that is "the stage never ran here", not
 | `GET /extractions/{eval}/{doc}` | `{ documentId, elements[], chunks[], tableCells[] }` |
 | `GET /embeddings/{eval}/{doc}` | `{ documentId, model, dimensions, vectors[] }` |
 | `POST /embeddings/query {text}` | `{ model, dimensions, values[] }` (query vector) |
-| `POST /runs {evaluationId, stageSequence}` | the run-trigger seam (§5 invariant 2): fires the fixed CLI sequence, then projects the run's shards into `redline_chunks` (the same load `POST /ingest` drives) on completion, and returns a `runId`. Wired only when the engine's queue DSN + store URI are configured; else the route reports unavailable |
+| `POST /runs {evaluationId, stageSequence, configOverride?}` | the run-trigger seam (§5 invariant 2): fires the fixed CLI sequence against the allow-listed config the caller authored (absent inherits `redline.yaml`; an unset field within a group inherits too), then projects the run's shards into `redline_chunks` (the same load `POST /ingest` drives) on completion, and returns a `runId`. A `chunkMode.chunkingModel` is refused 422, not applied — AI chunking requires enrich before chunk, which the authorable stage sequence cannot express. Wired only when the engine's queue DSN + store URI are configured; else the route reports unavailable |
 | `GET /runs/{runId}` | `{ runId, evaluationId, phase, completedStages[], failedStage, resumable, error }` — the status a poller binds to |
 | `POST /runs/{runId}/resume` | re-fires the run (idempotent enqueue + skip-on-output) |
 
@@ -591,7 +591,13 @@ carried as provenance, not as part of the join key (see §7).
    flow needs. The load runs only after every stage completed and fails the run
    loudly on a store error. The
    allow-listed stage *sequence* is authored; the dependency (chunk before embed)
-   is enforced sidecar-side. What does **not** change: redline still does not
+   is enforced sidecar-side. So is the allow-listed **config**: the override the
+   surface composes is layered over `redline.yaml` per stage, on a deep copy, so a
+   second run in the same process cannot inherit the first run's values, and
+   preflight sees the authored config rather than the file's. An override the
+   engine cannot honour is refused at `start()` — before a run is extracting —
+   rather than dropped, because a silently ignored setting is worse than a refused
+   one. What does **not** change: redline still does not
    reimplement batching, retry or scale-out — those stay the engine's
    (`cloud/worker.py`, its Postgres queue). redline drives and observes; it does
    not wrap. Resume is not its own logic: womblex's `enqueue` is idempotent on

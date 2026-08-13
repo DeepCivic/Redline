@@ -13,11 +13,10 @@ Deciding what to *read out of* the corpus happens afterwards, on
 people, which is why they are two screens — and if someone else has already run
 the documents, you do not need this screen at all.
 
-> **Status.** This describes the intended flow, which the delivery plan calls the
-> Create Corpus split. The deployed build still asks for brands and fields on
-> this screen and can only run a corpus that has already been extracted — see
-> [What the deployed build still does](#what-the-deployed-build-still-does) at
-> the end. Everything else below is what the screen is being built to.
+> **Status.** The screen now does what this guide describes. One thing is not
+> offered yet — extraction and OCR settings — and one caveat applies to which
+> build you are running: see [What is not there yet](#what-is-not-there-yet) at
+> the end.
 
 The screen is served by the forked Wayfinder, not by a standalone redline app.
 See [Running both stacks locally](./two-stack-local-run.md) for how to get it up.
@@ -154,30 +153,33 @@ built appears in the picker and you say what you want answered about it.
 
 ---
 
-## What the deployed build still does
+## What is not there yet
 
-The screen as currently deployed has not been split yet, and getting a corpus in
-place today is a two-part manual sequence: put the documents in the bucket, then
-fire a run over them. A finished run now loads its own shards into redline's
-store, so the corpus it produces is visible to the evaluation screen with no
-separate `POST /ingest` step — the run's completion drives the same load ingest
-used to. (Ingesting an already-extracted corpus by hand with `POST /ingest`
-still works, for corpora produced outside a browser-fired run.)
+- **Extraction and OCR settings are not offered.** Everything else on the screen
+  is authorable; these are not, so a run extracts with whatever
+  `infra/womblex/redline.yaml` sets. That matters most for scanned documents:
+  the profile marks `extraction.ocr.engine: paddleocr` load-bearing, because a
+  VLM engine returns markdown with no regions and so drops every table cell on a
+  scanned page. Edit `redline.yaml` if you need something else. The delivery plan
+  tracks widening this for a first run.
 
-Beyond that:
+- **AI chunking is refused, deliberately.** Leaving the chunk-mode override off,
+  or setting only the size and table options, works. Naming a chunking *model*
+  is rejected with a message saying why: it makes chunking a per-document
+  Isaacus call and requires enrich to run before chunk or every document is
+  enriched twice at double cost — an ordering the stage toggles cannot express.
+  It is refused rather than quietly ignored so the bill is never a surprise.
 
-- it asks for the **brands and fields** on this screen, which the evaluation
-  screen asks for again;
-- it **picks** a corpus from a list rather than naming one, and the list only
-  contains corpora that have already been extracted — so it re-runs stages over
-  an existing corpus rather than starting a new one;
-- **uploading is not wired up**, so the documents are put in the bucket with an
-  S3 client (`mc cp` or equivalent) writing under the run's input prefix;
-- the **chunk-mode and money-vocabulary overrides are dropped in transit** — the
-  browser validates them and sends them, but the sidecar's run request accepts
-  only the run id and the stage sequence, so every run uses the file default.
-  Edit `redline.yaml` if you need different values today. The stage sequence does
-  take effect;
-- **extraction and OCR settings are not offered** at all.
+- **Uploading an already-extracted corpus is a different path.** This screen
+  starts a corpus from raw documents. If someone has already run one, you do not
+  need this screen — go straight to
+  [Creating an evaluation](./create-an-evaluation.md). `POST /ingest` still
+  loads a corpus extracted outside a browser-fired run; a run fired *here* loads
+  its own shards when it finishes, so no separate ingest step is needed.
 
-The delivery plan tracks each of these.
+> **Which build you are running.** The split above is committed but the forked
+> Wayfinder mount it lives in has not been pinned into redline yet (the fork
+> branch has to merge to the fork's `main` first). A deployment built from
+> redline's current pin still serves the older screen, which asks for brands and
+> fields and picks a corpus rather than naming one. The delivery plan tracks the
+> pin.
