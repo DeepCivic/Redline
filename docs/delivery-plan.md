@@ -497,15 +497,29 @@ Deferred until the lean vertical is complete. In dependency order:
    dev dependencies, no browsers). Scheduling that environment is not a
    lean-vertical concern.
 
-   There are now **three** such gates, and they name different things.
+   There are now **four** such gates, and they name different things.
    `E2E_REDLINE_EVALUATION_ID` is a populated evaluation;
    `E2E_REDLINE_STAGED_CORPUS_ID` is an extracted corpus **no evaluation has
    claimed** (`redline-create-evaluation.spec.ts`, because `create` refuses a
    claimed one); and `E2E_REDLINE_RUN_STACK` is neither — it gates
-   `redline-create-corpus.spec.ts`'s live test, which stages and runs its *own*
-   corpus and so needs only a reachable womblex-ingest sidecar and object storage.
+   `redline-create-corpus.spec.ts`'s live tests, which stage and run their *own*
+   corpus and so need only a reachable womblex-ingest sidecar and object storage.
    An ingest surface that needed a pre-staged corpus to test would not be an
    ingest surface.
+
+   The fourth, `E2E_REDLINE_ISAACUS`, splits that live half on **cost** rather
+   than on infrastructure, and it is not the same question as "is the stack up".
+   Extraction and the money pass are offline, so a run over those alone drives
+   the whole browser → object store → engine → tracker path for nothing, and it
+   runs wherever `E2E_REDLINE_RUN_STACK` does. `chunk` / `embed` / `enrich` each
+   declare `needs_isaacus_api` in the engine's own `STAGE_CONTRACTS`, so the two
+   tests that reach them take this gate as well — and in *opposite* directions.
+   With it set, the corpus must reach `/evaluations/new`'s picker, which only a
+   landed `*.chunks.parquet` makes possible. Without it, the run must fail
+   naming `chunk` and offer its resume. The keyless deployment is therefore
+   asserted rather than skipped: refusing a paid stage loudly *is* its
+   behaviour, and a run that reported success there would leave a corpus with no
+   chunks behind it.
 
 4. **A lens is declared at create time, not authored.** The create screen's
    fields become the lens's topics, so the manifest is gone — but the lens is
