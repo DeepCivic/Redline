@@ -63,9 +63,10 @@ design, and its item numbers are local to that file and renumbered whenever the
 outstanding set changes.
 
 Both upstream Python engines are **git submodules** consumed for their existing
-capabilities, not reimplemented: `services/womblex` (`f283969` — an untagged
-`main` commit ahead of `v0.3.0`, taken for `womblex run-stage`; it returns to a
-tag at the next release) and `services/numbatch` (`72bcead`). A submodule holds
+capabilities, not reimplemented: `services/womblex` (tracking the engine's latest
+`main` — currently `d6850de`, declared version `0.4.0`; the engine publishes no
+tags, so `validate.sh` #13 compares the declared version against the sidecar's
+`womblex==` extra) and `services/numbatch` (`72bcead`). A submodule holds
 upstream source only — redline's
 own code sits beside it (`services/womblex-ingest`, `services/numbatch-extension`).
 Run `git submodule update --init` on a fresh clone. Wayfinder is also vendored

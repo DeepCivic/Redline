@@ -12,7 +12,7 @@
 >
 > It is written against the *actual* behaviour of
 > the upstream engines (womblex is vendored as a submodule at `services/womblex`,
-> pinned to `f283969`; Numbatch is a submodule at `services/numbatch`), not against
+> tracking the engine's latest `main`; Numbatch is a submodule at `services/numbatch`), not against
 > aspiration. Where an earlier assumption proved false, the correction is stated
 > plainly under **Corrections to earlier assumptions**.
 
@@ -114,7 +114,7 @@ flowchart TB
     sidecar -->|reads Parquet| minio[("MinIO — redline-owned bucket<br/>proc/evaluationId/*.parquet")]
     sidecar -->|loads chunk rows + embeddings| pg
     sidecar -->|triggers a run: enqueue + worker + run-stage| engine
-    engine["services/womblex — SUBMODULE @ f283969<br/>the real engine: extract, then run-stage for chunk → embed"]
+    engine["services/womblex — SUBMODULE @ latest main<br/>the real engine: extract, then run-stage for chunk → embed"]
     engine -->|writes shards| minio
     engine -->|embed stage only| isaacus(["Isaacus API<br/>ISAACUS_API_KEY"])
 
@@ -361,7 +361,7 @@ NB: `womblex run`/`worker` persists **extraction shards only** — it computes
 chunking when `chunking.enabled` and then discards it, because
 `operations/persist.py` hands `write_results` just the extraction. Every
 downstream pass is therefore a separate one over the run's shard prefix, and
-`womblex run-stage` (`f283969`) is that pass: it lists one sidecar class, stages a
+`womblex run-stage` is that pass: it lists one sidecar class, stages a
 unit down, calls the unchanged `*_shards()` and publishes the declared outputs
 back — all of them or none. It covers normalise, spellfix, chunk, money, enrich,
 embed, link, pii, graph-refresh and quality; ordering between them is the
@@ -778,7 +778,7 @@ redline/
 │   ├── redline-adapters/          port implementations (the only code at the seams)
 │   └── redline-shared/            shared kernel
 ├── services/
-│   ├── womblex/                   ◄ SUBMODULE: the real womblex engine @ f283969
+│   ├── womblex/                   ◄ SUBMODULE: the real womblex engine @ latest main
 │   ├── womblex-ingest/            FastAPI read sidecar (reads MinIO Parquet → JSON)
 │   │   ├── src/womblex_ingest/    stub + real extractor, records (wire shape),
 │   │   │                          shard_reader (schema map), storage, embedding,
@@ -828,40 +828,32 @@ redline/
 
 ### Vendoring / pinning discipline
 
-- **womblex** — git **submodule** at `services/womblex`, pinned to `f283969` — an
-  **untagged `main` commit**, deliberately ahead of the last release (`v0.3.0`,
-  `b5730b0`), for `womblex run-stage`.
+- **womblex** — git **submodule** at `services/womblex`, tracking the engine's
+  **latest `main`**. It currently records `d6850de` (declared version `0.4.0`),
+  which is `origin/main`.
 
-  **Why an untagged pin was accepted.** At `v0.3.0` the engine's distributed path
-  stops at extraction: `write_batch_parquet` hands `write_results` only the
-  extraction, so the chunks `batch.py` computes are discarded, and every
-  downstream stage was a `--shards` command taking a *local* directory while
-  redline's shards live in object storage. The consequence was not slowness but
-  silence — **no path in redline produced chunks at all**, and chunks are what the
-  cold-start classifier reads, so a corpus run completed, landed extraction shards
-  and left `redline_chunks` empty with nothing failing. `f283969` adds `run-stage`,
-  which generalises the stage-in/run/stage-out shape to every per-batch stage
-  without moving a single `*_shards()` signature, and converts the silent
-  Isaacus-gated skip into a loud refusal. Waiting for a release meant either no
-  chunks or growing redline's own stage runner for `chunk` and `embed` beside the
-  `money` one — the duplication the submodule discipline exists to prevent, and
-  thrown away on release. The commit's `tests/test_stage_runner.py` shipped
-  upstream unexecuted; all 33 tests were run here against the built image and
-  pass. Blast radius is narrow (a new CLI verb plus two new `cloud/` modules), and
-  womblex is DeepCivic's own, so a defect is funnelled upstream rather than worked
-  around locally. **The pin returns to a tag at womblex's next release.**
+  **The policy is latest, not a held-back pin.** redline consumes womblex for
+  capabilities it does not reimplement, so lagging the engine means either going
+  without a capability or growing a redline-side substitute for it — the exact
+  duplication the submodule discipline exists to prevent. A submodule always
+  records *a* commit (that is what a gitlink is), so "latest" is a rule about
+  which commit we move it to, not a floating ref: move it forward to womblex
+  `main`, and do not sit on an older commit to avoid a bump.
 
-  Two consequences worth carrying: extraction is the worker's job and everything
-  downstream is an explicit `run-stage` pass whose **ordering is the caller's**
-  (chunk before embed); and `ISAACUS_API_KEY` is load-bearing earlier, because the
-  chunk gate now fails a run rather than quietly trimming it.
+  **The sidecar's pin moves in step.** `services/womblex-ingest`'s `[womblex]`
+  extra pins `womblex==0.4.0` — the version the submodule declares. `validate.sh`
+  #13 asserts those two agree, because the mismatch nothing else catches is shards
+  mapping fine while the query vectors come from a different engine. Bumping the
+  submodule without bumping the extra is the failure that check exists for.
 
-  This is the on-disk source of truth for the Parquet schema the
-  sidecar maps, **and the source the engine image is built from** — the `womblex`
-  compose profile builds the submodule's own `Dockerfile`. Initialise it with
-  `git submodule update --init`; CI checks it out (`submodules: true`). The
-  sidecar's `.[womblex]` extra pins the same version for its query embedder;
-  `validate.sh` check #13 fails the build if the two drift apart.
+  **A tag is preferred where one exists, and none does.** The engine publishes no
+  git tags, so #13 falls back to the version the submodule *declares* in its
+  `pyproject.toml`. An earlier pin (`f283969`) was an untagged commit taken ahead
+  of `v0.3.0` for `womblex run-stage` — without it no path in redline produced
+  chunks at all, and a corpus run completed leaving `redline_chunks` empty with
+  nothing failing. That situation is closed: `run-stage` is in the released line
+  and the submodule has moved past it.
+
 - **Numbatch** — git **submodule** at `services/numbatch` (DeepCivic/Numbatch),
   pinned to `72bcead`. Upstream has no tags, so the pin is a SHA rather than a
   tag as womblex's is. The `numbatch` compose profile builds the fork's own
