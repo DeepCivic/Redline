@@ -319,7 +319,6 @@ gitlink and `wayfinder.pin` record it (`56d457b`).
 
 | Step | Package(s) | What it is |
 |---|---|---|
-| Extraction and OCR settings join the override | domain + womblex-ingest | The override gains an extraction group carrying at least `extraction.ocr.engine`; `apply_config_override` sets it, and the domain's `makeRunConfigOverride` validates it the way it does the other two groups. No first-run/re-run distinction yet — this step only makes the setting reachable. _Exit: a `POST /runs` carrying an OCR-engine override runs extraction against a config whose engine is the request's, not the file's._ |
 | Refuse a structural override over a corpus with shards | womblex-ingest | The sidecar answers "does this corpus already have outputs?" from the store, and refuses an extraction/OCR override when it does — the safety argument for the narrow list is a re-run argument, and a first run has nothing to orphan. _Exit: the same OCR override that a first run accepts is refused with a 422 naming the reason when `proc/{id}/runs/` already holds a run's shards._ |
 
 **The allow-listed override now reaches the engine.** `TriggerRunRequest` accepts
@@ -328,6 +327,30 @@ gitlink and `wayfinder.pin` record it (`56d457b`).
 The file config is never mutated, so a second run in the same process does not
 inherit the first run's overrides, and an unset field within a group inherits
 rather than clearing.
+
+**Extraction and OCR settings are in the override, and they reach extraction
+itself.** The third group carries `extraction.ocr.engine` and `extraction.ocr.dpi`
+— the two keys the pinned engine actually threads into `extract_text`. It had to
+reach the *worker*, not only the stage passes: extraction is the only pass that
+reads `extraction.ocr.*`, so `RunWorkerFn` now carries the override and
+`_engine_run_worker` layers it over the file config the same way
+`_engine_run_stage` does. An override honoured by the downstream stages but not
+by extraction would have been the silent drop in a new place.
+
+`extraction.native.include_tables` is deliberately **not** in the group. The
+pinned engine (0.4.0, `d6850de`) never reads that field — `run_extraction`
+threads `ocr.dpi`, `ocr.lang`, `ocr.engine`, `ocr.engine_options` and
+`native.spreadsheet_print` into `extract_text`, and the `include_tables` in
+`orchestrator.py` is its own spreadsheet-print flag, not the config key. An
+override for it would have been a knob that does nothing — the same defect the
+money term lists nearly shipped with. `lang`, `engine_options` and `num_threads`
+are left out too: the first is not per-corpus for Australian procurement, the
+second is a free-form dict that would be a hole in the allow-list's shape safety
+(the deployment sets it by env), and the third is a deployment concern.
+
+No first-run/re-run distinction yet, per the step: the setting is reachable, and
+the row below is what makes it safe. The Create Corpus editors for the group are
+fork-side and are not built — nothing in the served UI authors it yet.
 
 `chunking_model` is **refused, not carried** — the choice the plan left open.
 Setting it switches chunking to a per-document Isaacus call, and

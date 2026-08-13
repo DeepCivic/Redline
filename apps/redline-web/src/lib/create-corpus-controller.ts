@@ -71,14 +71,20 @@ export interface CreateCorpusResult {
   readonly runId: string;
 }
 
-// A validated override with both groups null is the same as no override at all
+// A validated override with every group null is the same as no override at all
 // — the form left everything blank and the run inherits the file default. Return
 // undefined for that case so the trigger request omits configOverride entirely,
-// rather than sending an empty shape the sidecar would merge to a no-op.
+// rather than sending an empty shape the sidecar would merge to a no-op. Every
+// group must be counted here: missing one discards a run that authored only that
+// group.
 const attachedOverride = (
   override: RunConfigOverride,
 ): RunConfigOverride | undefined =>
-  override.chunkMode === null && override.moneyVocabulary === null ? undefined : override;
+  override.chunkMode === null &&
+  override.moneyVocabulary === null &&
+  override.extraction === null
+    ? undefined
+    : override;
 
 export class CreateCorpusController {
   private readonly writer: IStagedCorpusWriter;

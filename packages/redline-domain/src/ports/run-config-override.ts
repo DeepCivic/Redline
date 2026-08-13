@@ -12,11 +12,14 @@ import { domainError } from "../errors/domain-error";
 //     chunking), plus `chunk_size` and `chunk_tables`;
 //   - the money vocabulary — `extra_header_terms` / `extra_veto_terms` /
 //     `default_currency`, corpus-specific by nature (a tender schedule's headers
-//     collide with the built-in money terms differently per corpus).
+//     collide with the built-in money terms differently per corpus);
+//   - the extraction settings — `extraction.ocr.engine` and `extraction.ocr.dpi`,
+//     which decide what a scanned tender's pages become before anything else
+//     reads them.
 //
 // What stays fixed in the file regardless of what a form submits — the embed
-// model and task, the OCR engine, `enrichment.enabled`, the structural/identity
-// keys — is NOT here, and cannot be reached through this shape.
+// model and task, `enrichment.enabled`, the structural/identity keys — is NOT
+// here, and cannot be reached through this shape.
 //
 // Every group is optional. A blank form field inherits the redline.yaml default
 // below the seam, so an absent override group means "run the file as-is" and is
@@ -46,9 +49,26 @@ export interface MoneyVocabularyOverride {
   readonly defaultCurrency: string;
 }
 
+export interface ExtractionOverride {
+  // `redline.yaml` ships `paddleocr` and marks it LOAD-BEARING: reconstructing
+  // table cells inside a detected table needs per-detection OCR quads, and only
+  // region-based engines supply them, so a VLM engine returns markdown with no
+  // regions and silently deletes every table cell on a scanned page — which is
+  // where a scanned tender keeps its pricing. Authorable because a first run has
+  // nothing to orphan and is the run that meets that corpus. Validated to a
+  // non-blank *name* here; the engine owns membership against its own alias
+  // table, as the sidecar owns ISO 4217 membership above.
+  readonly ocrEngine: string;
+  // Render resolution for OCR'd pages. The engine bounds it 72–600 on its own
+  // `OCRConfig`; mirrored below so an out-of-range value is refused at the seam
+  // rather than raising inside a run that has already started extracting.
+  readonly ocrDpi: number;
+}
+
 export interface RunConfigOverrideInput {
   readonly chunkMode?: ChunkModeOverride;
   readonly moneyVocabulary?: MoneyVocabularyOverride;
+  readonly extraction?: ExtractionOverride;
 }
 
 export interface RunConfigOverride {
@@ -56,6 +76,7 @@ export interface RunConfigOverride {
   // the validated, normalised override the sidecar merges over the file default.
   readonly chunkMode: ChunkModeOverride | null;
   readonly moneyVocabulary: MoneyVocabularyOverride | null;
+  readonly extraction: ExtractionOverride | null;
 }
 
 const invalid = (message: string) => err(domainError("VALIDATION_FAILED", message));
@@ -117,6 +138,25 @@ const validateMoneyVocabulary = (
   });
 };
 
+// The engine's own bounds on `OCRConfig.dpi`, verified against the pinned
+// womblex (0.4.0, d6850de): `Field(default=200, ge=72, le=600)`.
+const OCR_DPI_MINIMUM = 72;
+const OCR_DPI_MAXIMUM = 600;
+
+const validateExtraction = (extraction: ExtractionOverride): Result<ExtractionOverride> => {
+  const engine = extraction.ocrEngine.trim().toLowerCase();
+  if (engine === "") {
+    return invalid("an OCR engine must be named, or the extraction group left out");
+  }
+  if (!Number.isInteger(extraction.ocrDpi)) {
+    return invalid("OCR dpi must be a whole number");
+  }
+  if (extraction.ocrDpi < OCR_DPI_MINIMUM || extraction.ocrDpi > OCR_DPI_MAXIMUM) {
+    return invalid(`OCR dpi must be between ${OCR_DPI_MINIMUM} and ${OCR_DPI_MAXIMUM}`);
+  }
+  return ok({ ocrEngine: engine, ocrDpi: extraction.ocrDpi });
+};
+
 export const makeRunConfigOverride = (
   input: RunConfigOverrideInput,
 ): Result<RunConfigOverride> => {
@@ -134,5 +174,12 @@ export const makeRunConfigOverride = (
     moneyVocabulary = validated.data;
   }
 
-  return ok({ chunkMode, moneyVocabulary });
+  let extraction: ExtractionOverride | null = null;
+  if (input.extraction !== undefined) {
+    const validated = validateExtraction(input.extraction);
+    if (validated.error) return err(validated.error);
+    extraction = validated.data;
+  }
+
+  return ok({ chunkMode, moneyVocabulary, extraction });
 };

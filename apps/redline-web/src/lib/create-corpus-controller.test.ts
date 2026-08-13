@@ -145,6 +145,23 @@ describe("CreateCorpusController — triggering the run", () => {
     expect(runTrigger.started[0]?.configOverride?.moneyVocabulary?.defaultCurrency).toBe("AUD");
   });
 
+  it("carries an extraction-only override — the other two groups blank must not drop it", async () => {
+    const { controller, runTrigger } = build();
+
+    const started = await controller.startRun({
+      evaluationId: "tender-2026-water",
+      stageSequence: ["chunk"],
+      configOverride: { extraction: { ocrEngine: "mistral-ocr", ocrDpi: 400 } },
+    });
+
+    expect(isOk(started)).toBe(true);
+    // An override is "absent" only when every group is blank. Counting the two
+    // original groups alone would silently discard a run that authored nothing
+    // but its OCR engine — the exact drop this seam exists to close.
+    expect(runTrigger.started[0]?.configOverride?.extraction?.ocrEngine).toBe("mistral-ocr");
+    expect(runTrigger.started[0]?.configOverride?.extraction?.ocrDpi).toBe(400);
+  });
+
   it("normalises the override through the domain before firing (money terms trimmed and cased)", async () => {
     const { controller, runTrigger } = build();
 
