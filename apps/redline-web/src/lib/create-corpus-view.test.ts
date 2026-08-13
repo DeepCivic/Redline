@@ -33,6 +33,7 @@ const draft = (over: Partial<CreateCorpusDraft> = {}): CreateCorpusDraft => ({
   stageSequence: DEFAULT_STAGE_SEQUENCE,
   chunkMode: null,
   moneyVocabulary: null,
+  extraction: null,
   ...over,
 });
 
@@ -127,6 +128,9 @@ describe("renderCreateCorpusView", () => {
     expect(view.config.chunkMode.chunkSize).toBeNull();
     expect(view.config.moneyVocabulary.inheritsDefault).toBe(true);
     expect(view.config.moneyVocabulary.defaultCurrency).toBeNull();
+    expect(view.config.extraction.inheritsDefault).toBe(true);
+    expect(view.config.extraction.ocrEngine).toBeNull();
+    expect(view.config.extraction.ocrDpi).toBeNull();
   });
 
   it("shows an authored override group as the specialist's, not the file's", () => {
@@ -158,5 +162,15 @@ describe("renderCreateCorpusView", () => {
 
     expect(view.config.chunkMode.aiChunking).toBe(true);
     expect(view.config.chunkMode.chunkingModel).toBe("kanon-2");
+  });
+
+  it("shows an authored extraction group as the specialist's OCR engine and dpi", () => {
+    const view = renderCreateCorpusView(
+      draft({ extraction: { ocrEngine: "mistral-ocr", ocrDpi: 400 } }),
+    );
+
+    expect(view.config.extraction.inheritsDefault).toBe(false);
+    expect(view.config.extraction.ocrEngine).toBe("mistral-ocr");
+    expect(view.config.extraction.ocrDpi).toBe(400);
   });
 });

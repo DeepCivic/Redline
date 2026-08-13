@@ -82,6 +82,7 @@ export {
   type StageToggleView,
   type ChunkModeView,
   type MoneyVocabularyView,
+  type ExtractionView,
 } from "./lib/create-corpus-view";
 
 export {

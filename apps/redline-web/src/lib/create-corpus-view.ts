@@ -1,6 +1,7 @@
 import type {
   AuthorableStage,
   ChunkModeOverride,
+  ExtractionOverride,
   MoneyVocabularyOverride,
 } from "@redline/redline-domain";
 
@@ -60,6 +61,7 @@ export interface CreateCorpusDraft {
   readonly stageSequence: readonly AuthorableStage[];
   readonly chunkMode: ChunkModeOverride | null;
   readonly moneyVocabulary: MoneyVocabularyOverride | null;
+  readonly extraction: ExtractionOverride | null;
 }
 
 export interface UploadRowView {
@@ -88,6 +90,16 @@ export interface MoneyVocabularyView {
   readonly defaultCurrency: string | null;
 }
 
+// The first-run extraction group. Authorable only on a cold run — a re-run of an
+// already-extracted corpus would leave the paths cut from the old extraction
+// unjoinable to a new one. The OCR engine decides what a scanned tender's pages
+// become before anything else reads them, so it is the load-bearing setting.
+export interface ExtractionView {
+  readonly inheritsDefault: boolean;
+  readonly ocrEngine: string | null;
+  readonly ocrDpi: number | null;
+}
+
 export interface CreateCorpusView {
   readonly runName: string;
   readonly uploads: {
@@ -98,6 +110,7 @@ export interface CreateCorpusView {
     readonly stageSequence: { readonly stages: readonly StageToggleView[] };
     readonly chunkMode: ChunkModeView;
     readonly moneyVocabulary: MoneyVocabularyView;
+    readonly extraction: ExtractionView;
   };
   readonly trigger: { readonly enabled: boolean; readonly label: string };
 }
@@ -157,6 +170,17 @@ const renderMoneyVocabulary = (
   };
 };
 
+const renderExtraction = (extraction: ExtractionOverride | null): ExtractionView => {
+  if (extraction === null) {
+    return { inheritsDefault: true, ocrEngine: null, ocrDpi: null };
+  }
+  return {
+    inheritsDefault: false,
+    ocrEngine: extraction.ocrEngine,
+    ocrDpi: extraction.ocrDpi,
+  };
+};
+
 const triggerAffordance = (
   draft: CreateCorpusDraft,
 ): { readonly enabled: boolean; readonly label: string } => {
@@ -193,6 +217,7 @@ export const renderCreateCorpusView = (draft: CreateCorpusDraft): CreateCorpusVi
       },
       chunkMode: renderChunkMode(draft.chunkMode),
       moneyVocabulary: renderMoneyVocabulary(draft.moneyVocabulary),
+      extraction: renderExtraction(draft.extraction),
     },
     trigger: triggerAffordance(draft),
   };
