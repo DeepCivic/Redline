@@ -326,26 +326,23 @@ typechecks and tests against the fork mount as it was, and the live half of
 |---|---|---|
 | Widen the authorable config for a first run | domain + womblex-ingest | Extraction and OCR settings join the override shape, refused on a run over a corpus that already has shards. _Exit: a first run authored with a non-default OCR engine extracts against that engine; the same override against a corpus with existing shards is refused._ |
 
-**The allow-listed override is authored but never applied.** The form composes it,
-`makeRunConfigOverride` validates it, and `HttpWomblexRunTrigger` puts it on the
-wire — then the sidecar drops it. `TriggerRunRequest` in
-`services/womblex-ingest/src/womblex_ingest/main.py` declares only `evaluationId`
-and `stageSequence`, and `RunPlan` carries the same two, so pydantic discards the
-extra key without complaint and every run uses the `redline.yaml` default. The
-allow-list is decided and built; only its last leg is missing. Silently ignoring
-an override a specialist typed is worse than refusing it, so this is a defect in
-the seam rather than a deferral.
+**The allow-listed override now reaches the engine.** `TriggerRunRequest` accepts
+`configOverride`, `RunPlan` carries it, and `_engine_run_stage` layers it over
+`redline.yaml` per stage so preflight and the pass both see the authored config.
+The file config is never mutated, so a second run in the same process does not
+inherit the first run's overrides, and an unset field within a group inherits
+rather than clearing.
 
-The one group to think twice about before wiring is `chunking_model`. Setting it
-switches chunking from the vendored offline tokeniser to a per-document Isaacus
-call, and `WomblexConfig._wire_ai_chunking_reuse` then auto-enables
-`enrichment.persist_document` and warns that `enrich` must run *before* `chunk`
-or the document is enriched twice — at double cost. The Create Corpus stage
-toggles cannot express that ordering (the sidecar normalises chunk before embed
-and leaves enrich where it was authored), so a specialist ticking an AI model
-would buy an API bill from a checkbox with no way to avoid the double charge.
-Either carry only `chunk_size` / `chunk_tables` in the wire shape, or make the
-ordering the model implies part of what the override sets.
+`chunking_model` is **refused, not carried** — the choice the plan left open.
+Setting it switches chunking to a per-document Isaacus call, and
+`WomblexConfig._wire_ai_chunking_reuse` then auto-enables
+`enrichment.persist_document` and requires `enrich` to run *before* `chunk` or the
+document is enriched twice at double cost. The authorable stage sequence cannot
+express that ordering (the sidecar normalises chunk before embed and leaves enrich
+where it was authored), so accepting it would sell an API bill from a checkbox
+with no way to avoid the double charge. A `POST /runs` carrying one gets a 422
+naming the reason. Carrying it properly means making the ordering part of what the
+override sets, which is a separate build.
 
 **Nothing runs redline's own passes when the engine's finish.** The tracker's
 "Open the evaluation" is the end of the served path; `IngestDocuments`, grouping,
@@ -355,7 +352,6 @@ half, and it is two steps because the fork rule makes it two commits anyway.
 
 | Step | Package(s) | What it is |
 |---|---|---|
-| Apply the run-config override below the seam | womblex-ingest | `TriggerRunRequest` and `RunPlan` accept the allow-listed `configOverride`, and the runner layers it over `redline.yaml` before firing the passes. The groups are the ones already decided (chunk mode, money vocabulary); the fixed structural keys stay unreachable because the shape cannot express them. _Exit: a `POST /runs` carrying a chunk-mode and money-vocabulary override fires its stage sequence against a config whose `chunk_size` and `default_currency` are the request's, not the file's._ |
 | Post-run population, brains half | redline-web | A controller method that takes a settled evaluation through the sequence the seed script drives — `IngestDocuments`, then `openWorkflow` → `advance` → `buildTable` — returning `Result`s and re-runnable over an evaluation already populated (a resumed run must not double-write responses). _Exit: over a fake extraction reader and an in-memory repository, running it against an evaluation with staged documents and no responses leaves the response set the review grid reads, and running it a second time leaves the same set rather than a doubled one._ |
 | Post-run population, fork mount | wayfinder (two commits) | The tRPC procedure behind `evaluation:create` that runs the reading passes on create, so an evaluation arrives with its fields resolved against the corpus and the report tools have anchored findings to be pointed at. The failure needs its own state — reading failing over a successfully extracted corpus is not a failed stage and must not present as one. _Exit: the create spec's live test reaches an evaluation whose responses carry source anchors, rather than one with documents and none._ |
 

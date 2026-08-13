@@ -24,7 +24,15 @@ from pydantic import BaseModel
 from womblex_ingest.chunk_store import ChunkStore, load_extraction
 from womblex_ingest.embedding import TextEmbedder
 from womblex_ingest.extraction import Extractor
-from womblex_ingest.run_trigger import RunPlan, RunTrigger, UnknownStage
+from womblex_ingest.run_trigger import (
+    ChunkModeOverride,
+    ConfigOverride,
+    MoneyVocabularyOverride,
+    RunPlan,
+    RunTrigger,
+    UnknownStage,
+    UnsupportedOverride,
+)
 from womblex_ingest.runs import Run, RunRegistry
 from womblex_ingest.storage import ObjectNotFound, ObjectStorage
 
@@ -52,12 +60,59 @@ class QueryEmbeddingRequest(BaseModel):
     text: str
 
 
+# The allow-listed config a run may author, camelCase on the wire to match the
+# TypeScript seam that composes it. An absent group — or an absent field within a
+# group — inherits the redline.yaml default; nothing here can reach a structural
+# key, which is the allow-list's safety.
+class ChunkModeOverrideRequest(BaseModel):
+    chunkingModel: Optional[str] = None
+    chunkSize: Optional[int] = None
+    chunkTables: Optional[bool] = None
+
+
+class MoneyVocabularyOverrideRequest(BaseModel):
+    extraHeaderTerms: Optional[List[str]] = None
+    extraVetoTerms: Optional[List[str]] = None
+    defaultCurrency: Optional[str] = None
+
+
+class ConfigOverrideRequest(BaseModel):
+    chunkMode: Optional[ChunkModeOverrideRequest] = None
+    moneyVocabulary: Optional[MoneyVocabularyOverrideRequest] = None
+
+    def to_override(self) -> ConfigOverride:
+        return ConfigOverride(
+            chunk_mode=(
+                None
+                if self.chunkMode is None
+                else ChunkModeOverride(
+                    chunk_size=self.chunkMode.chunkSize,
+                    chunk_tables=self.chunkMode.chunkTables,
+                    chunking_model=self.chunkMode.chunkingModel,
+                )
+            ),
+            money_vocabulary=(
+                None
+                if self.moneyVocabulary is None
+                else MoneyVocabularyOverride(
+                    extra_header_terms=self.moneyVocabulary.extraHeaderTerms,
+                    extra_veto_terms=self.moneyVocabulary.extraVetoTerms,
+                    default_currency=self.moneyVocabulary.defaultCurrency,
+                )
+            ),
+        )
+
+
 class TriggerRunRequest(BaseModel):
     evaluationId: str
     # The allow-listed downstream stage sequence (architecture §2.1). The trigger
     # validates it against the allow-list and normalises its ordering; a blank
     # inherits the default at the surface above, so a request always names one.
     stageSequence: List[str]
+    # Absent means "run on the redline.yaml default". Until this field existed
+    # pydantic discarded the key the surface was already sending, so every run
+    # used the file config and the specialist was never told.
+    configOverride: Optional[ConfigOverrideRequest] = None
 
 
 def _error(status_code: int, code: str, message: str, run_id: Optional[str] = None) -> JSONResponse:
@@ -220,10 +275,20 @@ def build_app(
         assert run_trigger is not None
         try:
             started = run_trigger.start(
-                RunPlan(evaluation_id=evaluation_id, stage_sequence=list(request.stageSequence))
+                RunPlan(
+                    evaluation_id=evaluation_id,
+                    stage_sequence=list(request.stageSequence),
+                    config_override=(
+                        None
+                        if request.configOverride is None
+                        else request.configOverride.to_override()
+                    ),
+                )
             )
         except UnknownStage as bad_stage:
             return _error(422, "INVALID_REQUEST", str(bad_stage))
+        except UnsupportedOverride as refused:
+            return _error(422, "INVALID_REQUEST", str(refused))
         return JSONResponse(status_code=202, content=started)
 
     @app.get("/runs/{run_id}")

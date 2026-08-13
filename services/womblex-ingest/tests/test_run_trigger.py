@@ -22,6 +22,7 @@ order so the enforced dependency (chunk before embed) is asserted, not assumed.
 
 from __future__ import annotations
 
+import copy
 import time
 from typing import Dict, List
 
@@ -30,10 +31,15 @@ from fastapi.testclient import TestClient
 
 from womblex_ingest.main import build_app
 from womblex_ingest.run_trigger import (
+    ChunkModeOverride,
+    ConfigOverride,
+    MoneyVocabularyOverride,
     RunPlan,
     RunTrigger,
     StageError,
+    UnsupportedOverride,
     UnknownStage,
+    apply_config_override,
 )
 from tests.conftest import FakeObjectStorage, StubExtractor
 
@@ -74,10 +80,18 @@ class FakeStages:
 
     def __init__(self) -> None:
         self.calls: List[str] = []
+        self.overrides: List[ConfigOverride | None] = []
         self.fail_on: str | None = None
 
-    def run(self, run_id: str, evaluation_id: str, stage: str) -> None:
+    def run(
+        self,
+        run_id: str,
+        evaluation_id: str,
+        stage: str,
+        override: ConfigOverride | None = None,
+    ) -> None:
         self.calls.append(stage)
+        self.overrides.append(override)
         if stage == self.fail_on:
             raise StageError(stage, f"{stage} pass exhausted retries")
 
@@ -462,3 +476,254 @@ def test_post_resume_of_unknown_run_is_404() -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "RUN_NOT_FOUND"
+
+
+# --- The authored config override reaches the engine -------------------------
+#
+# The form composes the allow-listed override, `makeRunConfigOverride` validates
+# it and `HttpWomblexRunTrigger` puts it on the wire — and until this seam
+# carried it, pydantic discarded the extra key without complaint and every run
+# used the redline.yaml default. Silently ignoring an override a specialist typed
+# is worse than refusing it, so these prove it arrives and is applied.
+
+
+class StubColumns:
+    """Mirrors `womblex.config.MoneyColumnsConfig`'s two term lists.
+
+    The real shape was verified against the pinned engine (0.4.0, d6850de):
+    `extra_header_terms` / `extra_veto_terms` hang off `MoneyColumnsConfig`, not
+    off `MoneyConfig` — an override written from the short names would set them
+    one level too high and silently do nothing.
+    """
+
+    def __init__(self) -> None:
+        self.extra_header_terms: List[str] = []
+        self.extra_veto_terms: List[str] = []
+
+
+class StubChunking:
+    def __init__(self) -> None:
+        self.chunk_size = 480
+        self.chunk_tables = True
+        self.chunking_model = None
+
+
+class StubMoney:
+    def __init__(self) -> None:
+        self.default_currency = "AUD"
+        self.columns = StubColumns()
+
+
+class StubConfig:
+    """Stands in for `WomblexConfig` — only the keys the allow-list can reach."""
+
+    def __init__(self) -> None:
+        self.chunking = StubChunking()
+        self.money = StubMoney()
+
+    def model_copy(self, deep: bool = False) -> "StubConfig":
+        return copy.deepcopy(self)
+
+
+def test_a_blank_override_leaves_the_file_default_untouched() -> None:
+    config = StubConfig()
+
+    applied = apply_config_override(config, None)
+
+    assert applied is config
+    assert applied.chunking.chunk_size == 480
+    assert applied.money.default_currency == "AUD"
+
+
+def test_chunk_mode_override_sets_size_and_tables_on_a_copy() -> None:
+    config = StubConfig()
+    override = ConfigOverride(
+        chunk_mode=ChunkModeOverride(chunk_size=640, chunk_tables=False)
+    )
+
+    applied = apply_config_override(config, override)
+
+    assert applied.chunking.chunk_size == 640
+    assert applied.chunking.chunk_tables is False
+    # The loaded file config is never mutated: a second run in the same process
+    # must not inherit the first run's overrides.
+    assert config.chunking.chunk_size == 480
+    assert config.chunking.chunk_tables is True
+
+
+def test_money_vocabulary_override_reaches_the_columns_config() -> None:
+    config = StubConfig()
+    override = ConfigOverride(
+        money_vocabulary=MoneyVocabularyOverride(
+            extra_header_terms=["schedule of rates"],
+            extra_veto_terms=["page"],
+            default_currency="NZD",
+        )
+    )
+
+    applied = apply_config_override(config, override)
+
+    assert applied.money.columns.extra_header_terms == ["schedule of rates"]
+    assert applied.money.columns.extra_veto_terms == ["page"]
+    assert applied.money.default_currency == "NZD"
+    assert config.money.columns.extra_header_terms == []
+
+
+def test_an_unset_field_within_a_group_inherits_rather_than_nulling() -> None:
+    config = StubConfig()
+    override = ConfigOverride(chunk_mode=ChunkModeOverride(chunk_size=320))
+
+    applied = apply_config_override(config, override)
+
+    assert applied.chunking.chunk_size == 320
+    # chunk_tables was not authored, so it keeps the file's value rather than
+    # becoming None — a blank field inherits, it does not clear.
+    assert applied.chunking.chunk_tables is True
+
+
+# `WomblexConfig._wire_ai_chunking_reuse` auto-enables enrichment.persist_document
+# when chunking_model is set, and warns that enrich must run BEFORE chunk or the
+# document is enriched twice, at double API cost. The Create Corpus stage toggles
+# cannot express that ordering — the sidecar normalises chunk before embed and
+# leaves enrich where it was authored — so a specialist ticking an AI model would
+# buy an API bill from a checkbox with no way to avoid the double charge. Refused
+# here rather than carried, because a silent drop is exactly the defect this seam
+# is closing.
+def test_an_ai_chunking_model_is_refused_rather_than_silently_applied() -> None:
+    config = StubConfig()
+    override = ConfigOverride(
+        chunk_mode=ChunkModeOverride(chunk_size=480, chunking_model="kanon-2")
+    )
+
+    with pytest.raises(UnsupportedOverride) as refused:
+        apply_config_override(config, override)
+
+    assert "chunking_model" in str(refused.value)
+    assert config.chunking.chunking_model is None
+
+
+def test_the_plan_carries_the_override_to_every_stage_pass() -> None:
+    queue = FakeQueue()
+    stages = FakeStages()
+    trigger = _build(queue, stages)
+    override = ConfigOverride(chunk_mode=ChunkModeOverride(chunk_size=640))
+
+    started = trigger.start(
+        RunPlan(
+            evaluation_id="eval-override",
+            stage_sequence=DEFAULT_SEQUENCE,
+            config_override=override,
+        )
+    )
+    _wait_terminal(trigger, started["runId"])
+
+    assert stages.calls == DEFAULT_SEQUENCE
+    assert stages.overrides == [override] * len(DEFAULT_SEQUENCE)
+
+
+def test_a_run_with_no_override_passes_none_below_the_seam() -> None:
+    queue = FakeQueue()
+    stages = FakeStages()
+    trigger = _build(queue, stages)
+
+    started = trigger.start(
+        RunPlan(evaluation_id="eval-default", stage_sequence=["chunk"])
+    )
+    _wait_terminal(trigger, started["runId"])
+
+    assert stages.overrides == [None]
+
+
+# --- The override on the wire ------------------------------------------------
+
+
+def test_post_runs_carries_an_authored_override_below_the_seam() -> None:
+    queue = FakeQueue()
+    stages = FakeStages()
+    client = _client(queue, stages)
+
+    response = client.post(
+        "/runs",
+        json={
+            "evaluationId": "eval-wire",
+            "stageSequence": ["chunk", "money"],
+            "configOverride": {
+                "chunkMode": {"chunkingModel": None, "chunkSize": 640, "chunkTables": False},
+                "moneyVocabulary": {
+                    "extraHeaderTerms": ["lump sum"],
+                    "extraVetoTerms": [],
+                    "defaultCurrency": "AUD",
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 202
+    carried = stages.overrides[0]
+    assert carried is not None
+    assert carried.chunk_mode is not None
+    assert carried.chunk_mode.chunk_size == 640
+    assert carried.chunk_mode.chunk_tables is False
+    assert carried.money_vocabulary is not None
+    assert carried.money_vocabulary.extra_header_terms == ["lump sum"]
+    assert carried.money_vocabulary.default_currency == "AUD"
+
+
+def test_post_runs_without_an_override_still_fires_on_the_file_default() -> None:
+    queue = FakeQueue()
+    stages = FakeStages()
+    client = _client(queue, stages)
+
+    response = client.post(
+        "/runs", json={"evaluationId": "eval-plain", "stageSequence": ["chunk"]}
+    )
+
+    assert response.status_code == 202
+    assert stages.overrides == [None]
+
+
+def test_post_runs_refuses_an_ai_chunking_model_rather_than_dropping_it() -> None:
+    queue = FakeQueue()
+    stages = FakeStages()
+    client = _client(queue, stages)
+
+    response = client.post(
+        "/runs",
+        json={
+            "evaluationId": "eval-ai",
+            "stageSequence": ["chunk"],
+            "configOverride": {
+                "chunkMode": {"chunkingModel": "kanon-2", "chunkSize": 480, "chunkTables": True},
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_REQUEST"
+    assert "chunking_model" in response.json()["error"]["message"]
+    assert stages.calls == []
+
+
+# Pins the override against the *real* engine config rather than the stand-in
+# above, wherever the engine is installed. Skips on the sidecar's plain [dev]
+# environment, which does not carry the [womblex] extra.
+def test_the_override_matches_the_real_engine_config_shape() -> None:
+    womblex_config = pytest.importorskip("womblex.config")
+
+    config = womblex_config.WomblexConfig.model_construct(
+        chunking=womblex_config.ChunkingConfig(),
+        money=womblex_config.MoneyConfig(),
+    )
+    override = ConfigOverride(
+        chunk_mode=ChunkModeOverride(chunk_size=640, chunk_tables=False),
+        money_vocabulary=MoneyVocabularyOverride(
+            extra_header_terms=["schedule of rates"], default_currency="NZD"
+        ),
+    )
+
+    applied = apply_config_override(config, override)
+
+    assert applied.chunking.chunk_size == 640
+    assert applied.chunking.chunk_tables is False
+    assert applied.money.default_currency == "NZD"
+    assert applied.money.columns.extra_header_terms == ["schedule of rates"]
