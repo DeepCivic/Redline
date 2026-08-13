@@ -5,7 +5,6 @@ import {
   ok,
   err,
   domainError,
-  type Evaluation,
   type IStagedCorpusWriter,
   type IWomblexRunTrigger,
   type Result,
@@ -13,17 +12,21 @@ import {
   type StagedUpload,
   type TriggerRunRequest,
 } from "@redline/redline-domain";
-import type { CreateEvaluationInput } from "@redline/redline-application";
 import { CreateCorpusController } from "./create-corpus-controller";
 
-// The Create Corpus controller is the surface's write brain (delivery-plan §2
-// item 1): it owns the two seams the served container gained — the object-store
-// writer (IStagedCorpusWriter, staging a specialist's bytes under the evaluation's
-// input prefix) and the run trigger (IWomblexRunTrigger, firing the pass sequence
-// against the authored config). It drives the seed script's middle, minus the
-// manifest: stage the chosen bytes, create the evaluation, then trigger the run
-// that ingest → lens → grouping → build hangs off. Every seam error returns as a
-// Result — nothing throws across the boundary.
+// The Create Corpus controller is the ingest surface's write brain: it owns the
+// two seams the served container gained — the object-store writer
+// (IStagedCorpusWriter, staging a specialist's bytes under the run's input
+// prefix) and the run trigger (IWomblexRunTrigger, firing the pass sequence
+// against the authored config).
+//
+// It does NOT create an evaluation. womblex is a cold-start engine: raw
+// documents go under the run's input prefix, the run extracts them and mints
+// their source_hash identities, and only then can an evaluation name brands and
+// fields against real documents. Creating one here is what forced a specialist
+// to describe documents the run had not yet read, and it is why the surface
+// could only ever re-run a corpus something else had extracted.
+// /evaluations/new composes the evaluation afterwards.
 
 class FakeStagedCorpusWriter implements IStagedCorpusWriter {
   readonly staged: { evaluationId: string; upload: StagedUpload }[] = [];
@@ -61,19 +64,6 @@ class FakeRunTrigger implements IWomblexRunTrigger {
   }
 }
 
-class FakeCreateEvaluation {
-  readonly inputs: CreateEvaluationInput[] = [];
-  error: string | null = null;
-
-  async execute(input: CreateEvaluationInput): Promise<Result<Evaluation>> {
-    if (this.error !== null) {
-      return err(domainError("VALIDATION_FAILED", this.error));
-    }
-    this.inputs.push(input);
-    return ok({ id: input.corpusId, name: input.name, stage: "documents_uploaded" });
-  }
-}
-
 const upload = (over: Partial<StagedUpload> = {}): StagedUpload => ({
   fileName: "acme-response.pdf",
   bytes: new Uint8Array([1, 2, 3]),
@@ -81,22 +71,11 @@ const upload = (over: Partial<StagedUpload> = {}): StagedUpload => ({
   ...over,
 });
 
-const createInput = (
-  over: Partial<CreateEvaluationInput> = {},
-): CreateEvaluationInput => ({
-  corpusId: "tender-2026-water",
-  name: "Water treatment panel 2026",
-  documents: [{ documentId: "doc-1", brand: "Acme" }],
-  fields: [{ name: "Warranty", definition: "The warranty offered." }],
-  ...over,
-});
-
 const build = () => {
   const writer = new FakeStagedCorpusWriter();
   const runTrigger = new FakeRunTrigger();
-  const createEvaluation = new FakeCreateEvaluation();
-  const controller = new CreateCorpusController({ writer, runTrigger, createEvaluation });
-  return { writer, runTrigger, createEvaluation, controller };
+  const controller = new CreateCorpusController({ writer, runTrigger });
+  return { writer, runTrigger, controller };
 };
 
 describe("CreateCorpusController — staging chosen bytes", () => {
@@ -126,30 +105,6 @@ describe("CreateCorpusController — staging chosen bytes", () => {
     expect(isErr(staged)).toBe(true);
     if (!isErr(staged)) return;
     expect(staged.error.code).toBe("INFRA_FAILURE");
-  });
-});
-
-describe("CreateCorpusController — creating the evaluation", () => {
-  it("creates the evaluation under the corpus's own id", async () => {
-    const { controller, createEvaluation } = build();
-
-    const created = await controller.createEvaluation(createInput());
-
-    expect(isOk(created)).toBe(true);
-    if (!isOk(created)) return;
-    expect(created.data.id).toBe("tender-2026-water");
-    expect(createEvaluation.inputs[0]?.name).toBe("Water treatment panel 2026");
-  });
-
-  it("surfaces a create-use-case failure rather than throwing", async () => {
-    const { controller, createEvaluation } = build();
-    createEvaluation.error = "an evaluation needs at least one document";
-
-    const created = await controller.createEvaluation(createInput({ documents: [] }));
-
-    expect(isErr(created)).toBe(true);
-    if (!isErr(created)) return;
-    expect(created.error.code).toBe("VALIDATION_FAILED");
   });
 });
 
@@ -243,17 +198,12 @@ describe("CreateCorpusController — triggering the run", () => {
   });
 });
 
-describe("CreateCorpusController — the whole create sequence", () => {
-  it("stages every document, creates the evaluation, then triggers the run", async () => {
-    const { controller, writer, createEvaluation, runTrigger } = build();
+describe("CreateCorpusController — the whole ingest sequence", () => {
+  it("stages every document under the run's own name, then fires the run", async () => {
+    const { controller, writer, runTrigger } = build();
 
     const result = await controller.createCorpus({
-      evaluation: createInput({
-        documents: [
-          { documentId: "acme-response.pdf", brand: "Acme" },
-          { documentId: "beta-response.pdf", brand: "Beta" },
-        ],
-      }),
+      runName: "tender-2026-water",
       uploads: [
         upload({ fileName: "acme-response.pdf" }),
         upload({ fileName: "beta-response.pdf" }),
@@ -264,54 +214,94 @@ describe("CreateCorpusController — the whole create sequence", () => {
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
     expect(result.data.runId).toBe("run-1");
-    expect(result.data.evaluationId).toBe("tender-2026-water");
+    expect(result.data.corpusId).toBe("tender-2026-water");
 
-    // Staged before created, created before triggered.
+    // The name the specialist typed is the run, the object-store prefix and the
+    // corpus id — one identity, staged before fired.
+    expect(writer.staged.map((entry) => entry.evaluationId)).toEqual([
+      "tender-2026-water",
+      "tender-2026-water",
+    ]);
     expect(writer.staged.map((entry) => entry.upload.fileName)).toEqual([
       "acme-response.pdf",
       "beta-response.pdf",
     ]);
-    expect(createEvaluation.inputs).toHaveLength(1);
     expect(runTrigger.started[0]?.evaluationId).toBe("tender-2026-water");
   });
 
-  it("does not create or trigger when a document fails to stage", async () => {
-    const { controller, writer, createEvaluation, runTrigger } = build();
+  it("does not fire the run when a document fails to stage", async () => {
+    const { controller, writer, runTrigger } = build();
     writer.rejectFileName = "beta-response.pdf";
 
     const result = await controller.createCorpus({
-      evaluation: createInput(),
-      uploads: [upload({ fileName: "acme-response.pdf" }), upload({ fileName: "beta-response.pdf" })],
+      runName: "tender-2026-water",
+      uploads: [
+        upload({ fileName: "acme-response.pdf" }),
+        upload({ fileName: "beta-response.pdf" }),
+      ],
       stageSequence: ["chunk"],
     });
 
     expect(isErr(result)).toBe(true);
     if (!isErr(result)) return;
     expect(result.error.code).toBe("INFRA_FAILURE");
-    expect(createEvaluation.inputs).toHaveLength(0);
+    // A run over a half-staged prefix would extract some of the corpus and
+    // report success, which is worse than not starting.
     expect(runTrigger.started).toHaveLength(0);
   });
 
-  it("does not trigger a run when the evaluation fails to create", async () => {
-    const { controller, createEvaluation, runTrigger } = build();
-    createEvaluation.error = "an evaluation already exists over corpus tender-2026-water";
+  it("trims the run name, so a stray space cannot make a second prefix", async () => {
+    const { controller, writer, runTrigger } = build();
 
     const result = await controller.createCorpus({
-      evaluation: createInput(),
+      runName: "  tender-2026-water  ",
+      uploads: [upload()],
+      stageSequence: ["chunk"],
+    });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.corpusId).toBe("tender-2026-water");
+    expect(writer.staged[0]?.evaluationId).toBe("tender-2026-water");
+    expect(runTrigger.started[0]?.evaluationId).toBe("tender-2026-water");
+  });
+
+  it("refuses a blank run name before staging anything", async () => {
+    const { controller, writer, runTrigger } = build();
+
+    const result = await controller.createCorpus({
+      runName: "   ",
       uploads: [upload()],
       stageSequence: ["chunk"],
     });
 
     expect(isErr(result)).toBe(true);
     if (!isErr(result)) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+    expect(writer.staged).toHaveLength(0);
+    expect(runTrigger.started).toHaveLength(0);
+  });
+
+  it("refuses a run with no documents — the engine refuses an empty prefix anyway", async () => {
+    const { controller, runTrigger } = build();
+
+    const result = await controller.createCorpus({
+      runName: "tender-2026-water",
+      uploads: [],
+      stageSequence: ["chunk"],
+    });
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
     expect(runTrigger.started).toHaveLength(0);
   });
 
   it("refuses a malformed override before staging anything", async () => {
-    const { controller, writer, createEvaluation, runTrigger } = build();
+    const { controller, writer, runTrigger } = build();
 
     const result = await controller.createCorpus({
-      evaluation: createInput(),
+      runName: "tender-2026-water",
       uploads: [upload()],
       stageSequence: ["money"],
       configOverride: {
@@ -323,7 +313,6 @@ describe("CreateCorpusController — the whole create sequence", () => {
     if (!isErr(result)) return;
     expect(result.error.code).toBe("VALIDATION_FAILED");
     expect(writer.staged).toHaveLength(0);
-    expect(createEvaluation.inputs).toHaveLength(0);
     expect(runTrigger.started).toHaveLength(0);
   });
 });

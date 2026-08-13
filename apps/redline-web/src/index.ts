@@ -67,7 +67,6 @@ export {
   type CreateCorpusControllerParts,
   type CreateCorpusInput,
   type CreateCorpusResult,
-  type CreateEvaluationUseCase,
   type StageDocumentInput,
   type StartRunInput,
 } from "./lib/create-corpus-controller";
@@ -78,8 +77,8 @@ export {
   DEFAULT_STAGE_SEQUENCE,
   type CreateCorpusDraft,
   type CreateCorpusView,
-  type CorpusOptionView,
-  type DocumentOptionView,
+  type PendingUpload,
+  type UploadRowView,
   type StageToggleView,
   type ChunkModeView,
   type MoneyVocabularyView,

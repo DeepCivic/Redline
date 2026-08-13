@@ -2,22 +2,24 @@ import type {
   AuthorableStage,
   ChunkModeOverride,
   MoneyVocabularyOverride,
-  StagedCorpus,
-  StagedDocument,
 } from "@redline/redline-domain";
 
-// View model for the Create Corpus surface (delivery-plan §2 item 1). A pure
-// draft → presentation transform the served route binds to (matching view.ts /
-// run-status-view.ts — the DOM stays dumb, the readiness logic stays tested).
+// View model for the Create Corpus surface. A pure draft → presentation
+// transform the served route binds to (matching view.ts / run-status-view.ts —
+// the DOM stays dumb, the readiness logic stays tested).
 //
-// The surface authors four things: the document picker (a staged corpus and its
-// documents, chosen through IStagedCorpusReader — raw-bucket browse is deferred),
-// the evaluation name/id field, the allow-listed config overrides (stage sequence
-// / chunk mode / money vocabulary — blank inherits the redline.yaml default), and
-// the trigger that, on submit, drives ingest → lens → grouping → build. The rule
-// the surface must honour lives here as `trigger.enabled` / its label, not in the
-// shell: a run needs a corpus, at least one document, a name, and at least one
-// stage.
+// This is an *ingest* surface: raw documents in, run fired, evaluation composed
+// afterwards on /evaluations/new. It authors three things — the run name, the
+// documents to upload into that run's input prefix, and the allow-listed config
+// overrides (stage sequence / chunk mode / money vocabulary, blank inheriting the
+// redline.yaml default). The rule the surface must honour lives here as
+// `trigger.enabled` / its label, not in the shell: a run needs a name, at least
+// one document and at least one stage.
+//
+// The run name is not validated or minted here. A corpus *is* a womblex run, run
+// ids are engine identities the engine mints when none is given, and the name a
+// specialist types is that run, its object-store prefix and later the evaluation
+// id — one identity, and not redline's to curate.
 
 // The four downstream passes a form may author, in the file's default order. The
 // structural stages (`link`, `pii`, …) are not run parameters, so they are not
@@ -40,31 +42,29 @@ const STAGE_LABELS: Record<AuthorableStage, string> = {
   money: "Money",
 };
 
+// One document the specialist has chosen but not yet uploaded. It carries no
+// document identity: womblex mints the source_hash when it extracts these bytes,
+// so until the run drains a document is only a file name under the run's prefix.
+export interface PendingUpload {
+  readonly fileName: string;
+  readonly sizeBytes: number;
+  readonly contentType: string;
+}
+
 // The in-flight form state the shell holds and this transform reads. A null
 // override group means the field was left blank and the run inherits the file
 // default; a present group is what the specialist authored.
 export interface CreateCorpusDraft {
-  readonly corpora: readonly StagedCorpus[];
-  readonly selectedCorpusId: string | null;
-  readonly documents: readonly StagedDocument[];
-  readonly selectedDocumentIds: readonly string[];
-  readonly evaluationName: string;
+  readonly runName: string;
+  readonly uploads: readonly PendingUpload[];
   readonly stageSequence: readonly AuthorableStage[];
   readonly chunkMode: ChunkModeOverride | null;
   readonly moneyVocabulary: MoneyVocabularyOverride | null;
 }
 
-export interface CorpusOptionView {
-  readonly corpusId: string;
-  readonly label: string;
-  readonly selected: boolean;
-}
-
-export interface DocumentOptionView {
-  readonly documentId: string;
-  readonly preview: string;
-  readonly chunkCount: number;
-  readonly selected: boolean;
+export interface UploadRowView {
+  readonly fileName: string;
+  readonly sizeLabel: string;
 }
 
 export interface StageToggleView {
@@ -89,11 +89,11 @@ export interface MoneyVocabularyView {
 }
 
 export interface CreateCorpusView {
-  readonly picker: {
-    readonly corpora: readonly CorpusOptionView[];
-    readonly documents: readonly DocumentOptionView[];
+  readonly runName: string;
+  readonly uploads: {
+    readonly rows: readonly UploadRowView[];
+    readonly summary: string;
   };
-  readonly evaluationName: string;
   readonly config: {
     readonly stageSequence: { readonly stages: readonly StageToggleView[] };
     readonly chunkMode: ChunkModeView;
@@ -102,8 +102,22 @@ export interface CreateCorpusView {
   readonly trigger: { readonly enabled: boolean; readonly label: string };
 }
 
-const documentCountLabel = (count: number): string =>
-  `${count} document${count === 1 ? "" : "s"}`;
+const KILOBYTE = 1024;
+
+// Sizes are shown so a specialist notices a wrong or truncated file before it
+// costs a run. One decimal place above the byte range; whole bytes below it.
+const sizeLabelOf = (sizeBytes: number): string => {
+  if (sizeBytes < KILOBYTE) return `${sizeBytes} B`;
+  if (sizeBytes < KILOBYTE * KILOBYTE) {
+    return `${(sizeBytes / KILOBYTE).toFixed(1)} KB`;
+  }
+  return `${(sizeBytes / (KILOBYTE * KILOBYTE)).toFixed(1)} MB`;
+};
+
+const uploadSummaryOf = (uploads: readonly PendingUpload[]): string => {
+  if (uploads.length === 0) return "No documents chosen yet";
+  return `${uploads.length} document${uploads.length === 1 ? "" : "s"} to upload`;
+};
 
 const renderChunkMode = (mode: ChunkModeOverride | null): ChunkModeView => {
   if (mode === null) {
@@ -146,11 +160,10 @@ const renderMoneyVocabulary = (
 const triggerAffordance = (
   draft: CreateCorpusDraft,
 ): { readonly enabled: boolean; readonly label: string } => {
-  const hasCorpus = draft.selectedCorpusId !== null;
-  const hasDocument = draft.selectedDocumentIds.length > 0;
-  const hasName = draft.evaluationName.trim() !== "";
-  if (!hasCorpus || !hasDocument || !hasName) {
-    return { enabled: false, label: "Choose a corpus, a document and a name to start" };
+  const hasName = draft.runName.trim() !== "";
+  const hasDocument = draft.uploads.length > 0;
+  if (!hasName || !hasDocument) {
+    return { enabled: false, label: "Name the run and choose documents to start" };
   }
   if (draft.stageSequence.length === 0) {
     return { enabled: false, label: "Select at least one stage to run" };
@@ -159,29 +172,17 @@ const triggerAffordance = (
 };
 
 export const renderCreateCorpusView = (draft: CreateCorpusDraft): CreateCorpusView => {
-  const selectedDocumentIds = new Set(draft.selectedDocumentIds);
   const enabledStages = new Set(draft.stageSequence);
 
-  const documents =
-    draft.selectedCorpusId === null
-      ? []
-      : draft.documents.map((document) => ({
-          documentId: document.documentId,
-          preview: document.preview,
-          chunkCount: document.chunkCount,
-          selected: selectedDocumentIds.has(document.documentId),
-        }));
-
   return {
-    picker: {
-      corpora: draft.corpora.map((corpus) => ({
-        corpusId: corpus.corpusId,
-        label: `${corpus.corpusId} — ${documentCountLabel(corpus.documentCount)}`,
-        selected: corpus.corpusId === draft.selectedCorpusId,
+    runName: draft.runName,
+    uploads: {
+      rows: draft.uploads.map((upload) => ({
+        fileName: upload.fileName,
+        sizeLabel: sizeLabelOf(upload.sizeBytes),
       })),
-      documents,
+      summary: uploadSummaryOf(draft.uploads),
     },
-    evaluationName: draft.evaluationName,
     config: {
       stageSequence: {
         stages: AUTHORABLE_STAGES.map((stage) => ({
