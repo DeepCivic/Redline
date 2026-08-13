@@ -151,7 +151,14 @@ Create-evaluation's gates on `E2E_REDLINE_STAGED_CORPUS_ID` — a staged corpus
 **no evaluation has claimed**, which `E2E_REDLINE_EVALUATION_ID` by definition
 does not name. Create-corpus's gates on `E2E_REDLINE_RUN_STACK` instead: it
 stages and runs its own corpus, so it needs a reachable womblex-ingest sidecar
-and object storage rather than anything pre-staged. The mount is Next.js/React
+and object storage rather than anything pre-staged. Its live half splits again on
+`E2E_REDLINE_ISAACUS`, which is a question about **cost**, not infrastructure: a
+run over the offline stages (extraction plus `money`) drives the whole
+browser → object store → engine → tracker path for nothing and needs no key,
+while `chunk` / `embed` / `enrich` are Isaacus spend. Unset, the run must fail
+naming `chunk` and offer its resume; set, the corpus must reach
+`/evaluations/new`'s picker, which only a landed `*.chunks.parquet` makes
+possible. The mount is Next.js/React
 inside Wayfinder's own `apps/web`, not a standalone shell and not Numbatch's
 unused SvelteKit stack. The vitest suite under `apps/redline-web/` stays the
 framework-free proof of the brains + view models the served DOM binds to, and
