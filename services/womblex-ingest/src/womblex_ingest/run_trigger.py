@@ -8,11 +8,13 @@ without a terminal driving `enqueue` / `worker` / `run-stage` by hand.
 `RunTrigger` is a *thin runner*, not an orchestrator. It fires the fixed sequence
 the seed script's operator fires by hand — extraction (`enqueue` then `worker`),
 then `run-stage --stage {chunk,embed,enrich}` in the caller-authored order, then
-`money` — against the UI-authored config. It never reimplements batching, retry
-or scale-out: those stay the engine's (`cloud/worker.py`, the Postgres queue). It
-drives and observes.
+`money` — against the UI-authored config, and finally projects the run's shards
+into redline's own store (the load `POST /ingest` drives), so the corpus a run
+produces is visible to the evaluation screen. It never reimplements batching,
+retry or scale-out: those stay the engine's (`cloud/worker.py`, the Postgres
+queue). It drives and observes.
 
-The four operations it wraps are injected as callables (the `money_stage.py`
+The five operations it wraps are injected as callables (the `money_stage.py`
 posture), so the sequencing logic runs in tests without a live Postgres, a real
 womblex or an Isaacus key. `run_trigger_from_env` binds them to the real engine.
 
@@ -28,7 +30,10 @@ import logging
 import threading
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Literal, Optional
+from typing import TYPE_CHECKING, Callable, Dict, List, Literal, Optional
+
+if TYPE_CHECKING:
+    from womblex_ingest.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +62,16 @@ EnqueueFn = Callable[[str, str], int]
 RunWorkerFn = Callable[[str, str], None]
 RunStageFn = Callable[[str, str, str], None]
 StatsFn = Callable[[str], Dict[str, int]]
+
+# The load projection, injected like the four engine operations. It reads the
+# run's published shards and lands them in redline's own store (`redline_chunks`)
+# — the same projection `POST /ingest` drives via `load_extraction` — so a run
+# fired from the browser leaves a corpus that `IStagedCorpusReader` can see. It is
+# the join the two-screen flow needs: without it a run "would upload documents,
+# run them, report success, and leave a corpus that never appears on the
+# evaluation screen". Receives the run id and evaluation id, which scope the same
+# `proc/{evaluationId}/runs/{run_id}/documents` prefix the stages published under.
+LoadFn = Callable[[str, str], None]
 
 
 class UnknownStage(Exception):
@@ -128,12 +143,14 @@ class RunTrigger:
         run_worker: RunWorkerFn,
         run_stage: RunStageFn,
         stats: StatsFn,
+        load: LoadFn,
         run_in_background: bool = True,
     ) -> None:
         self._enqueue = enqueue
         self._run_worker = run_worker
         self._run_stage = run_stage
         self._stats = stats
+        self._load = load
         self._run_in_background = run_in_background
         self._runs: Dict[str, _RunState] = {}
         self._lock = threading.Lock()
@@ -210,6 +227,12 @@ class RunTrigger:
                 self._run_stage(state.run_id, state.evaluation_id, stage)
                 with self._lock:
                     state.completed_stages.append(stage)
+            # Project the run's published shards into redline's own store — the
+            # same load `POST /ingest` drives — so the corpus this run produced is
+            # visible to both screens. Runs only after every stage completed: the
+            # projection reads the shards those stages published, and loading a
+            # half-run would land a partial, misleading corpus.
+            self._load(state.run_id, state.evaluation_id)
             with self._lock:
                 state.phase = "done"
         except StageError as stage_error:
@@ -228,9 +251,10 @@ class RunTrigger:
 
 # --- Real engine binding -----------------------------------------------------
 #
-# Binds the four injected callables to the actual womblex engine — the queue
-# (`enqueue` / `worker` / `stats`) and the stage runner (`run-stage`). womblex is
-# imported lazily (the `money_stage.py` posture) so the base sidecar package
+# Binds the five injected callables to the actual womblex engine — the queue
+# (`enqueue` / `worker` / `stats`), the stage runner (`run-stage`) and the load
+# projection (the shards → `redline_chunks` step `POST /ingest` drives). womblex
+# is imported lazily (the `money_stage.py` posture) so the base sidecar package
 # installs and the stub lane runs without the engine; these are touched only when
 # a trigger is wired. Returns ``None`` when the DSN or store URI is absent, so the
 # sidecar starts as a read-only seam and the /runs routes 503.
@@ -254,6 +278,7 @@ def run_trigger_from_env() -> Optional["RunTrigger"]:
         run_worker=_engine_run_worker(dsn, store_uri, config_path),
         run_stage=_engine_run_stage(dsn, store_uri, config_path),
         stats=_engine_stats(dsn),
+        load=_engine_load(settings),
     )
 
 
@@ -368,6 +393,53 @@ def _engine_stats(dsn: str) -> StatsFn:
             return queue.stats(run_id)
 
     return stats
+
+
+def _engine_load(settings: "Settings") -> LoadFn:
+    """Bind the shard → `redline_chunks` projection the run's completion drives.
+
+    This is the same load `POST /ingest` runs (`chunk_store.load_extraction` over
+    each document's read model), pointed at the shards the run just published
+    under `proc/{evaluationId}/runs/{run_id}/documents`. `RealWomblexExtractor`
+    reads and maps those shards — selected by the run's own id, so a run projects
+    exactly its own corpus — and each document lands identically to an ingest, so
+    `IStagedCorpusReader` sees the corpus with no `POST /ingest` in between.
+
+    Without a `REDLINE_DATABASE_URL` there is no store to project into, so the
+    load is a no-op — the same skip `POST /ingest` takes when no store is wired;
+    the run still stages its shards to object storage.
+    """
+    database_url = settings.redline_database_url
+
+    def load(run_id: str, evaluation_id: str) -> None:
+        if not database_url:
+            return
+        from womblex_ingest.chunk_store import load_extraction
+        from womblex_ingest.chunk_store_postgres import PostgresChunkStore
+        from womblex_ingest.real_extractor import RealWomblexExtractor
+        from womblex_ingest.storage import S3ObjectStorage
+
+        storage = S3ObjectStorage(
+            endpoint_url=settings.s3_endpoint,
+            access_key=settings.s3_access_key,
+            secret_key=settings.s3_secret_key,
+            bucket=settings.bucket,
+        )
+        extractor = RealWomblexExtractor(storage=storage, bucket=settings.bucket)
+        result = extractor.extract(evaluation_id, document_names=[], run_id=run_id)
+
+        store = PostgresChunkStore(database_url)
+        store.migrate()
+        embeddings_by_document = {e.documentId: e for e in result.embeddings}
+        for document in result.documents:
+            load_extraction(
+                store,
+                evaluation_id,
+                document,
+                embeddings_by_document.get(document.documentId),
+            )
+
+    return load
 
 
 __all__ = [

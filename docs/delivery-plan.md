@@ -204,9 +204,11 @@ The run trigger + run-status seam is built: `IWomblexRunTrigger` /
 `run_trigger.py` behind them — the thin runner that fires the fixed CLI sequence
 (extraction `worker`, then `run-stage --stage {chunk,embed,enrich,money}` in the
 caller-authored order, dependency-normalised) against the UI-authored config,
-layering the current downstream stage over `womblex_jobs` for status. Resume
-re-fires the same run (idempotent enqueue + skip-on-output). `architecture.md`
-§3/§5 records the second engine seam.
+layering the current downstream stage over `womblex_jobs` for status, and then
+projecting the run's shards into `redline_chunks` on completion (the same load
+`POST /ingest` drives) so the corpus a run makes is visible to the evaluation
+screen. Resume re-fires the same run (idempotent enqueue + skip-on-output).
+`architecture.md` §3/§5 records the second engine seam.
 
 The run-status view model + controller is built: `renderRunStatusView` /
 `RunStatusController` (redline-web) over that status seam. The view model is a
@@ -255,12 +257,19 @@ redline's to protect — it is the engine's, and the engine hands it over. There
 no design question left: the specialist names the run, the documents go under its
 prefix, the run extracts them, and the evaluation is composed over the result.
 
-**One thing has to be built before the split connects at all.** A run fired
-through the trigger publishes shards and stops; nothing loads them into
-`redline_chunks`, which is the only thing either screen can see. Today that load
-is `POST /ingest`'s job and it is called by hand. The first step below closes
-that gap; without it, Create Corpus would upload documents, run them, report
-success, and leave a corpus that never appears on the evaluation screen.
+**One thing had to be built before the split connects at all, and it is built.**
+A run fired through the trigger published shards and stopped; nothing loaded them
+into `redline_chunks`, which is the only thing either screen can see. That load
+was `POST /ingest`'s job, called by hand. Now the run's completion drives it:
+`run_trigger.py` projects the run's published shards into `redline_chunks` (the
+same `chunk_store.load_extraction` projection `POST /ingest` runs, over the shards
+the run just published) as its last step before `done`, so a run fired through
+`POST /runs` leaves its documents listed by `IStagedCorpusReader` with no
+`POST /ingest` in between. The load runs only after every stage completed and
+fails the run loudly on a store error; it is a no-op without
+`REDLINE_DATABASE_URL`, the same skip `POST /ingest` takes. Without it Create
+Corpus would upload documents, run them, report success, and leave a corpus that
+never appears on the evaluation screen.
 
 **What that leaves is a straight split of one screen into two.** Create Corpus
 calls `CreateEvaluation` before `startRun` today, which is what forces brands and
@@ -295,8 +304,7 @@ the amended decision.
 
 | Step | Package(s) | What it is |
 |---|---|---|
-| A finished run loads its own shards | womblex-ingest | **The split does not connect without this.** `run_trigger.py` fires extraction and the downstream stages and stops at shards in object storage — it never touches `redline_chunks`, which only `POST /ingest`'s load path writes (there is no `chunk_store` or `load_extraction` reference in the module). So a run fired from the browser today produces a corpus no screen can see, and the two-screen flow has no join. The run's completion must drive the same load `POST /ingest` drives, over the shards the run just published. _Exit: a run fired through `POST /runs` over staged inputs leaves its documents listed by `IStagedCorpusReader` when it reaches `done`, with no `POST /ingest` call in between._ |
-| Create Corpus becomes an ingest surface | redline-web + wayfinder (two commits) | Drop the brand/field half and the `CreateEvaluation` call; add the run name and the document upload over the built `IStagedCorpusWriter`, following the fork's existing upload procedure (`extraction.uploadDraftDocuments` — base64 through tRPC, `storage.put` under a per-flow key). On `done` the tracker links to `/evaluations/new`. Depends on the load step above. _Exit: `redline-create-corpus.spec.ts` names a run, uploads a document to it, fires, and the corpus appears in `/evaluations/new`'s picker once it settles._ |
+| Create Corpus becomes an ingest surface | redline-web + wayfinder (two commits) | Drop the brand/field half and the `CreateEvaluation` call; add the run name and the document upload over the built `IStagedCorpusWriter`, following the fork's existing upload procedure (`extraction.uploadDraftDocuments` — base64 through tRPC, `storage.put` under a per-flow key). On `done` the tracker links to `/evaluations/new`. The load step above is done, so the corpus a run makes is visible to the picker. _Exit: `redline-create-corpus.spec.ts` names a run, uploads a document to it, fires, and the corpus appears in `/evaluations/new`'s picker once it settles._ |
 | Widen the authorable config for a first run | domain + womblex-ingest | Extraction and OCR settings join the override shape, refused on a run over a corpus that already has shards. _Exit: a first run authored with a non-default OCR engine extracts against that engine; the same override against a corpus with existing shards is refused._ |
 
 **The allow-listed override is authored but never applied.** The form composes it,
@@ -505,8 +513,9 @@ dependency order → workspace extraction and release.**
 The Create Corpus programme's steps have their own internal ordering, and **cold
 start leads**.
 
-1. **A finished run loads its own shards.** Without it the two screens have
-   nothing to hand between them — a run publishes shards no screen can see.
+1. **A finished run loads its own shards** — done. A run's completion projects
+   its published shards into `redline_chunks`, so the two screens have something
+   to hand between them; without it a run published shards no screen could see.
 2. **Create Corpus becomes an ingest surface.** The case the engine is built for.
    It unblocks every later step's ability to be tested over a corpus the browser
    made, and it removes the brand/field duplication rather than adding to it.

@@ -157,11 +157,12 @@ built appears in the picker and you say what you want answered about it.
 ## What the deployed build still does
 
 The screen as currently deployed has not been split yet, and getting a corpus in
-place today is a three-part manual sequence: put the documents in the bucket, run
-the engine over them, then call the sidecar's `POST /ingest` to map the resulting
-shards into redline's store. Only that last step makes a corpus visible to the
-screens. Firing a run through the browser does **not** do it — the run trigger
-produces shards and nothing loads them.
+place today is a two-part manual sequence: put the documents in the bucket, then
+fire a run over them. A finished run now loads its own shards into redline's
+store, so the corpus it produces is visible to the evaluation screen with no
+separate `POST /ingest` step — the run's completion drives the same load ingest
+used to. (Ingesting an already-extracted corpus by hand with `POST /ingest`
+still works, for corpora produced outside a browser-fired run.)
 
 Beyond that:
 

@@ -82,12 +82,34 @@ class FakeStages:
             raise StageError(stage, f"{stage} pass exhausted retries")
 
 
-def _build(queue: FakeQueue, stages: FakeStages) -> RunTrigger:
+class FakeLoader:
+    """Stands in for the shard→`redline_chunks` projection the load step drives.
+
+    Records each `(run_id, evaluation_id)` it was asked to project so the exit
+    test can assert a done run drove the same load `POST /ingest` drives — the
+    join that makes the corpus visible to `IStagedCorpusReader`. `fail` raises,
+    standing in for a store write that failed, so the loud-failure path is proven.
+    """
+
+    def __init__(self) -> None:
+        self.calls: List[tuple[str, str]] = []
+        self.fail = False
+
+    def load(self, run_id: str, evaluation_id: str) -> None:
+        self.calls.append((run_id, evaluation_id))
+        if self.fail:
+            raise RuntimeError("redline_chunks projection failed")
+
+
+def _build(
+    queue: FakeQueue, stages: FakeStages, loader: FakeLoader | None = None
+) -> RunTrigger:
     return RunTrigger(
         enqueue=queue.enqueue,
         run_worker=queue.run_worker,
         run_stage=stages.run,
         stats=queue.stats,
+        load=(loader or FakeLoader()).load,
         # Run inline so the tests are deterministic — the production wiring runs
         # the passes on a background thread (a run is minutes-long, status polled).
         run_in_background=False,
@@ -237,6 +259,102 @@ def test_status_of_an_unknown_run_reports_not_found() -> None:
 
     with pytest.raises(KeyError):
         trigger.status("no-such-run")
+
+
+# --- Loading the run's own shards (the two-screen join) ----------------------
+#
+# A finished run must project its published shards into `redline_chunks` — the
+# same load `POST /ingest` drives — or the corpus it produced is visible to no
+# screen and the two-screen flow has no join (delivery-plan §, cold start step 1).
+
+
+def test_a_done_run_loads_its_own_shards_after_the_stages() -> None:
+    queue = FakeQueue()
+    stages = FakeStages()
+    loader = FakeLoader()
+    trigger = _build(queue, stages, loader)
+
+    started = trigger.start(RunPlan(evaluation_id="eval-8", stage_sequence=DEFAULT_SEQUENCE))
+    view = _wait_terminal(trigger, started["runId"])
+
+    assert view["phase"] == "done"
+    # The load ran once, scoped to this run + evaluation, so the corpus the run
+    # published is now readable by IStagedCorpusReader — no POST /ingest between.
+    assert loader.calls == [(started["runId"], "eval-8")]
+
+
+def test_the_load_runs_after_every_stage_has_completed() -> None:
+    # The projection reads the shards the downstream stages published, so it must
+    # run only once they have all completed — never interleaved with them.
+    queue = FakeQueue()
+    stages = FakeStages()
+    loader = FakeLoader()
+    trigger = _build(queue, stages, loader)
+
+    started = trigger.start(RunPlan(evaluation_id="eval-9", stage_sequence=DEFAULT_SEQUENCE))
+    _wait_terminal(trigger, started["runId"])
+
+    assert stages.calls == DEFAULT_SEQUENCE
+    assert loader.calls == [(started["runId"], "eval-9")]
+
+
+def test_a_stage_failure_skips_the_load() -> None:
+    # A run that never finished its stages has no complete corpus to project;
+    # loading a half-run's shards would land a partial, misleading corpus.
+    queue = FakeQueue()
+    stages = FakeStages()
+    stages.fail_on = "embed"
+    loader = FakeLoader()
+    trigger = _build(queue, stages, loader)
+
+    started = trigger.start(RunPlan(evaluation_id="eval-10", stage_sequence=DEFAULT_SEQUENCE))
+    view = _wait_terminal(trigger, started["runId"])
+
+    assert view["phase"] == "errored"
+    assert loader.calls == []
+
+
+def test_a_load_failure_fails_the_run_loudly() -> None:
+    # The projection is the point of the step: a store write that failed must fail
+    # the run, not leave a done run whose corpus never reached redline_chunks.
+    queue = FakeQueue()
+    stages = FakeStages()
+    loader = FakeLoader()
+    loader.fail = True
+    trigger = _build(queue, stages, loader)
+
+    started = trigger.start(RunPlan(evaluation_id="eval-11", stage_sequence=DEFAULT_SEQUENCE))
+    view = _wait_terminal(trigger, started["runId"])
+
+    assert view["phase"] == "errored"
+    assert "projection failed" in view["error"]
+    # Every stage completed; the failure is the load, not a stage — resumable.
+    assert view["completedStages"] == DEFAULT_SEQUENCE
+    assert view["resumable"] is True
+
+
+def test_resume_after_a_load_failure_re_runs_the_load() -> None:
+    # The store transient clears; resume re-fires the run and the projection
+    # lands. Idempotent upserts keep re-loading the same shards safe.
+    queue = FakeQueue()
+    stages = FakeStages()
+    loader = FakeLoader()
+    loader.fail = True
+    trigger = _build(queue, stages, loader)
+
+    started = trigger.start(RunPlan(evaluation_id="eval-12", stage_sequence=DEFAULT_SEQUENCE))
+    _wait_terminal(trigger, started["runId"])
+
+    loader.fail = False
+    trigger.resume(started["runId"])
+    view = _wait_terminal(trigger, started["runId"])
+
+    assert view["phase"] == "done"
+    # Two attempts at the projection: the failed pass, then the resumed pass.
+    assert loader.calls == [
+        (started["runId"], "eval-12"),
+        (started["runId"], "eval-12"),
+    ]
 
 
 # --- HTTP surface (the two JSON endpoints redline's adapter calls) ----------

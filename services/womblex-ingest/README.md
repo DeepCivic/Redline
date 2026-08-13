@@ -182,7 +182,14 @@ CLI sequence the operator otherwise fires by hand:
 1. extraction — `enqueue` the evaluation's staged inputs, then run a `worker`
    until the run drains;
 2. the authored downstream stages — `run-stage --stage {chunk,embed,enrich,money}`
-   in the caller's order.
+   in the caller's order;
+3. the load — project the run's published shards into `redline_chunks` (the same
+   projection `POST /ingest` drives), so the corpus the run just produced is
+   visible to the evaluation screen with no `POST /ingest` in between. Without
+   this a browser-fired run would leave shards no screen can see — the two-screen
+   flow has no join without it. It runs only after every stage completed (loading
+   a half-run would land a partial corpus), and a load failure fails the run
+   loudly rather than leaving a done run whose corpus never reached the store.
 
 The allow-listed stage **sequence** is authored per request (the Create Corpus
 surface's override over `redline.yaml`); the **dependency** (chunk before embed)
@@ -203,10 +210,14 @@ Run state is in-memory and process-local (like the ingest `RunRegistry`): a run'
 durable record is its shards in MinIO and its `womblex_jobs` rows. The trigger is
 wired only when the engine's queue DSN + store URI are configured
 (`WOMBLEX_DB_DSN`, `WOMBLEX_STORE_URI`); absent, the sidecar is a read-only seam
-and the `/runs` routes return `503`. The four engine operations are injected
-callables, so the sequencing logic is proven without a live Postgres, a real
-womblex or an Isaacus key (`tests/test_run_trigger.py`); `run_trigger_from_env`
-binds them to the real engine (womblex imported lazily, real lane only).
+and the `/runs` routes return `503`. The five engine operations (the four queue /
+stage passes plus the load projection) are injected callables, so the sequencing
+logic is proven without a live Postgres, a real womblex or an Isaacus key
+(`tests/test_run_trigger.py`); `run_trigger_from_env` binds them to the real
+engine (womblex imported lazily, real lane only). The load binding reuses the
+same `RealWomblexExtractor` read + `chunk_store.load_extraction` projection
+`POST /ingest` runs, so an ingest and a run land identical rows; it is a no-op
+without `REDLINE_DATABASE_URL`, the same skip `POST /ingest` takes.
 
 ## Extraction modes & the womblex pod
 

@@ -414,7 +414,7 @@ no sidecars at all is left untouched: that is "the stage never ran here", not
 | `GET /extractions/{eval}/{doc}` | `{ documentId, elements[], chunks[], tableCells[] }` |
 | `GET /embeddings/{eval}/{doc}` | `{ documentId, model, dimensions, vectors[] }` |
 | `POST /embeddings/query {text}` | `{ model, dimensions, values[] }` (query vector) |
-| `POST /runs {evaluationId, stageSequence}` | the run-trigger seam (§5 invariant 2): fires the fixed CLI sequence and returns a `runId`. Wired only when the engine's queue DSN + store URI are configured; else the route reports unavailable |
+| `POST /runs {evaluationId, stageSequence}` | the run-trigger seam (§5 invariant 2): fires the fixed CLI sequence, then projects the run's shards into `redline_chunks` (the same load `POST /ingest` drives) on completion, and returns a `runId`. Wired only when the engine's queue DSN + store URI are configured; else the route reports unavailable |
 | `GET /runs/{runId}` | `{ runId, evaluationId, phase, completedStages[], failedStage, resumable, error }` — the status a poller binds to |
 | `POST /runs/{runId}/resume` | re-fires the run (idempotent enqueue + skip-on-output) |
 
@@ -583,7 +583,13 @@ carried as provenance, not as part of the join key (see §7).
    fires by hand (`enqueue` + `worker` for extraction, then `run-stage --stage
    {chunk,embed,enrich,money}` in the caller-authored order) against the
    UI-authored config, layering the current downstream stage on top of
-   `womblex_jobs` (which tracks extraction batches only) for the status read. The
+   `womblex_jobs` (which tracks extraction batches only) for the status read. On
+   completion it drives the **same load `POST /ingest` drives** — projecting the
+   run's published shards into `redline_chunks` via `chunk_store.load_extraction`
+   — so the corpus a browser-fired run produces is visible to `IStagedCorpusReader`
+   with no separate `POST /ingest` in between; that is the join the two-screen
+   flow needs. The load runs only after every stage completed and fails the run
+   loudly on a store error. The
    allow-listed stage *sequence* is authored; the dependency (chunk before embed)
    is enforced sidecar-side. What does **not** change: redline still does not
    reimplement batching, retry or scale-out — those stay the engine's
