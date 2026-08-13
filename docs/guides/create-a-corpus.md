@@ -1,16 +1,22 @@
-# Creating a corpus and firing its run
+# Creating a corpus
 
-**Who this is for:** whoever starts a tender off — the person holding the
-documents, deciding what the engine should do with them, and watching the run.
+**Who this is for:** whoever holds the documents — the person who has a tender's
+responses and needs them read.
 
-This is the guide to the **Create Corpus** screen (`/create-corpus`). It is the
-start surface: it composes the evaluation *and* fires the womblex run that
-extracts, chunks, embeds and reads the documents, then tracks that run to a
-finish. When the run lands, the evaluation is ready to group and review.
+This is the guide to the **Create Corpus** screen. It does one job: it takes raw
+documents and runs them through the engine. Name the run, upload the documents,
+say how they should be processed, start it, and watch it land. When it finishes
+you have an extracted corpus, and you go on to
+[create an evaluation](./create-an-evaluation.md) over it.
 
-If the corpus has already been run and you only need to compose an evaluation
-over it, use [Creating an evaluation](./create-an-evaluation.md) — the same form
-without the run.
+Those are two jobs for two people, which is why they are two screens. If someone
+else has already run the documents, you do not need this screen at all.
+
+> **Status.** This describes the intended flow, which the delivery plan calls the
+> Create Corpus split. The deployed build still asks for brands and fields on
+> this screen and can only run a corpus that has already been extracted — see
+> [What the deployed build still does](#what-the-deployed-build-still-does) at
+> the end. Everything else below is what the screen is being built to.
 
 The screen is served by the forked Wayfinder, not by a standalone redline app.
 See [Running both stacks locally](./two-stack-local-run.md) for how to get it up.
@@ -24,167 +30,149 @@ See [Running both stacks locally](./two-stack-local-run.md) for how to get it up
   served.
 - **The ingest sidecar must have its run trigger configured.** It needs a
   database DSN and a store URI; without them the run endpoints answer *"run
-  trigger is not configured"* and nothing can be fired. Check
-  `curl -s localhost:8000/health` before blaming the form.
+  trigger is not configured"*. Check `curl -s localhost:8000/health` before
+  blaming the form.
 - **Check which womblex lane you are on.** `"womblexMode":"real"` on that same
   health response means real extraction. `"stub"` is a dependency-free test
   double that serves deterministic *fabricated* documents — a run left on it
   looks like it succeeded while showing invented content.
-- **A corpus must already be staged.** The picker lists corpora that already
-  have content in redline's store, so browsing raw uploaded files is not
-  something this screen does yet — see [Staging documents](#staging-documents)
-  below.
 
 ## Getting there
 
-**Create Corpus** in the sidebar. The heading reads *Create corpus*.
+**Create Corpus** in the sidebar.
 
 ---
 
-## 1. Choose the corpus and name the evaluation
+## 1. Name the run
 
-The **Corpus** dropdown lists staged corpora as `corpus-id — N documents`.
+A corpus is one womblex run, and you name it. The name you type is the run's
+identity all the way down: it is the folder the documents are uploaded to, the
+folder the results are written to, and later the id of the evaluation built over
+them. They are one thing, not three that have to be kept in step.
 
-You cannot type a corpus id. **The corpus id becomes the evaluation's id** — the
-same string addresses the corpus in object storage, in redline's chunk store and
-at the sidecar, so a mistyped one would produce an evaluation whose documents
-can never be read.
+Type something you will recognise in a fortnight — `water-treatment-2026`, not
+`test3`. If you leave it blank the engine generates a timestamped one
+(`run-20260813T041500Z`), which is valid but tells you nothing later.
 
-If you see *"No corpus has been staged yet. An operator stages one over object
-storage before a run can be fired over it"*, there is nothing to run against.
+The name must not already be in use. A corpus that already exists is one you can
+already evaluate; go to [Creating an evaluation](./create-an-evaluation.md)
+instead of running it again.
 
-**Evaluation name** is the human label for the tender — "Water treatment panel
-2026".
+## 2. Upload the documents
 
-### Staging documents
+Add the tender responses — the submissions, the pricing schedules, the annexures.
+They upload to the run's input folder and sit there until you start the run;
+nothing reads them before that.
 
-Uploading from the browser is not wired up yet. The write seam exists — bytes
-land under `proc/{evaluationId}/inputs/` in redline's bucket, which is where the
-womblex runner resolves its input from — but this screen does not drive it, and
-the picker reads from the store rather than the raw bucket. In practice that
-means an operator puts the documents in place and runs an initial extraction
-(`POST /ingest` against the sidecar) before the corpus turns up here.
-
-## 2. Documents, brands and fields
-
-These three sections behave exactly as they do on the New evaluation screen, and
-the same rules apply:
-
-- **Documents and brands** — tick the documents to include and type the
-  responding brand against each. The preview is shown because the document id is
-  a content hash and tells you nothing. Every included document needs a brand;
-  no document may carry two; two brand names must not slug to the same id.
-- **Fields** — a name and a definition per field, at least one complete pair.
-  The definition is what the adjudicator reasons from, so write it as you would
-  explain the field to a colleague.
-
-[Creating an evaluation](./create-an-evaluation.md) covers both in full,
-including what makes a good field definition and every rejection message.
-
-Switching corpus clears the document choices made against the previous one.
+You do not identify or label them here. The engine assigns each document its
+identity when it extracts it, and saying *whose* response a document is happens
+on the evaluation screen afterwards, once those identities exist. That ordering
+is the whole reason these are two screens.
 
 ## 3. Choose the stages to run
 
-**Stages to run** is the downstream sequence the engine runs after extraction:
+The downstream passes the engine runs after extraction:
 
 | Stage | What it does |
 |---|---|
 | Chunk | Splits the extracted documents into chunks. |
 | Embed | Produces the vectors retrieval reads by. |
-| Enrich | Runs the entity/graph enrichment pass. |
+| Enrich | Runs the entity and graph enrichment pass. |
 | Money | Finds and types the amounts the pricing pivots are built from. |
 
-All four are ticked by default, which matches the sequence the corpus profile
-ships. Leave it alone unless you have a reason.
+All four are on by default, matching the sequence the corpus profile ships. Leave
+them alone unless you have a reason.
 
-The **order** is not yours to author: the sidecar normalises the sequence and
-enforces the dependencies (chunk before embed) below the seam. Unticking a stage
-removes it; it never reorders the rest. Only these four are offered — the
-structural stages are not run parameters and the sidecar refuses them.
+The **order** is not yours to set: the sidecar normalises the sequence and
+enforces the dependencies (chunk before embed). Turning a stage off removes it;
+it never reorders the rest. Only these four are offered — the structural stages
+are not run parameters and the engine refuses them.
 
-## 4. Advanced run config (optional)
+## 4. Author the run config (optional)
 
-The allow-listed slice of the engine config. **Leave a group switched off and
-the run inherits the corpus profile default** — the editors only appear once you
-tick the group, so touching nothing runs the profile as it ships.
+Everything here inherits the corpus profile's default when you leave it alone.
+The editors only appear once you switch a group on.
 
-**Override chunk mode**
+**Extraction and OCR** — available on a first run, which is this one. The OCR
+engine is the setting that matters: the default (`paddleocr`) detects regions,
+which is what lets the engine reconstruct table cells on a scanned page. A
+vision-language engine returns prose with no regions, so it deletes every table
+cell on a scanned page — and with them all the pricing on a scanned tender.
+Change it only if you know your documents are not scanned, and know what you are
+giving up.
 
-- *Chunk size (tokens)* — must be a whole positive number. Defaults to 480.
+You get these on a first run because there is nothing yet to break. Re-running a
+corpus that already has results is different: changing extraction there
+invalidates everything built on top of it, so the screen refuses it.
+
+**Chunk mode**
+
+- *Chunk size (tokens)* — a whole positive number. Defaults to 480.
 - *Chunk tables* — whether tables are chunked. On by default.
 
-**Override money vocabulary**
+**Money vocabulary**
 
-- *Default currency (ISO 4217)* — the currency a bare number inherits when its
-  column or prose declares none. Three letters; AUD by default.
-- *Extra header terms* — comma-separated tender-schedule header terms the
-  built-in money vocabulary misses.
-- *Extra veto terms* — comma-separated terms that suppress a header which
-  collides with a built-in money term without actually being money.
+- *Default currency* — three-letter ISO code, `AUD` by default. What a bare
+  number inherits when its column or prose declares no currency.
+- *Extra header terms* — comma-separated tender-schedule headers the built-in
+  money vocabulary misses.
+- *Extra veto terms* — comma-separated headers that collide with a built-in money
+  term without being money.
 
 Terms are lower-cased and de-duplicated for you; a blank term or a currency that
-is not three letters is refused before the run is fired.
+is not three letters is refused before the run starts.
 
-What is **not** here cannot be reached from this screen at all: the embed model
-and task, the OCR engine, whether enrichment is enabled, and the structural
-keys all stay fixed in the file.
+Two things are never offered, on any run: the embedding model and its task,
+because the chunk vectors have to pair with the vectors used at search time and
+that is not a per-corpus choice; and the Isaacus gate.
 
-> **Known limitation.** The stage sequence takes effect, but the chunk-mode and
-> money-vocabulary overrides currently do not. They are validated in the browser
-> and sent to the ingest sidecar, but the sidecar's run request accepts only the
-> evaluation id and the stage sequence, so the override is dropped and the run
-> uses the file default. Change `redline.yaml` if you need a different chunk size
-> or money vocabulary today.
+## 5. Start it and watch
 
-## 5. Start the run
-
-**Start run** stays disabled until the form can actually fire one. The button
-label tells you what is missing:
-
-| Label | Meaning |
-|---|---|
-| *Choose a corpus, a document and a name to start* | One of those three is missing. |
-| *Select at least one stage to run* | Every stage was unticked. |
-| *Start run* | Ready. |
-
-It also stays disabled while an included document has no brand and while no
-field has both halves filled in. Once clicked it reads *Starting…* until the
-evaluation is created and the run is queued.
-
-Clicking it creates the evaluation first, then fires the run. The evaluation is
-created before anything is queued, so a rejected create — a corpus that is
-already claimed, a blank brand — stops there without leaving a run firing over
-an evaluation that does not exist.
-
-## 6. Watch the run
-
-The form is replaced by the run tracker, which polls every couple of seconds
-until the run settles. A real run takes minutes.
+The form is replaced by the run tracker, which polls until the run settles. A
+real run takes minutes.
 
 | What you see | State |
 |---|---|
 | *Extracting documents* | The engine is extracting; the tracker shows **Running…** |
 | *Running stages* | Extraction is done and the downstream sequence is going. |
 | *Completed: chunk · embed* | The stages finished so far, in run order. |
-| *Run complete* + **Open the evaluation** | Done. The link takes you to the evaluation's grouping view. |
+| *Run complete* | Done. |
 | *&lt;Stage&gt; stage failed* + the engine's message | The named pass failed. |
 
-**A failed run is never a dead end.** An errored run names the stage that failed
-and offers **Resume run**. Resuming re-fires the same run rather than starting a
-new one: the engine's enqueue is idempotent and completed stages skip on their
-published outputs, so it picks up where it stopped. It is safe to press more
-than once.
+**A failed run is never a dead end.** It names the stage that failed and offers
+**Resume run**, which re-fires the same run rather than starting a new one: the
+engine's enqueue is idempotent and completed stages skip on their published
+outputs, so it picks up where it stopped. Safe to press more than once.
 
 The tracker stops polling once the run settles, so a failed run will not spin
-forever waiting for something that is not coming.
+forever.
 
 ## What happens next
 
-Follow **Open the evaluation** to `/evaluations/{id}/grouping`. From there:
+A finished run leaves an extracted corpus. Nothing has been evaluated yet — no
+brands, no fields, no grid. The tracker offers the way on to
+[Creating an evaluation](./create-an-evaluation.md), where the corpus you just
+ran appears in the picker and you say what should be read out of it.
 
-- **grouping** — how documents are grouped into responses,
-- **review** — the grid of brands against fields,
-- **pivots** — the pricing pivots the money stage feeds,
-- **documents/{documentId}** — one document as extracted.
+---
 
-The evaluation is also on the Evaluations index by name.
+## What the deployed build still does
+
+The screen as currently deployed has not been split yet. Until it is:
+
+- it asks for the **brands and fields** on this screen, which the evaluation
+  screen asks for again;
+- it **picks** a corpus from a list rather than naming one, and the list only
+  contains corpora that have already been extracted — so it re-runs stages over
+  an existing corpus rather than starting a new one;
+- **uploading is not wired up**, so documents get into place another way (`POST
+  /ingest` against the sidecar, or an S3 client writing to the run's input
+  prefix);
+- the **chunk-mode and money-vocabulary overrides are dropped in transit** — the
+  browser validates them and sends them, but the sidecar's run request accepts
+  only the run id and the stage sequence, so every run uses the file default.
+  Edit `redline.yaml` if you need different values today. The stage sequence does
+  take effect;
+- **extraction and OCR settings are not offered** at all.
+
+The delivery plan tracks each of these.

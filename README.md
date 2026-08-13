@@ -113,13 +113,16 @@ WAYFINDER_PACKAGES="domain shared" scripts/podman-run.sh
 ## User guides
 
 How to drive the surfaces the fork serves, written for the people who use them
-rather than the people who build them:
+rather than the people who build them. Two screens, two jobs, usually two people:
 
-- [Creating a corpus and firing its run](./docs/guides/create-a-corpus.md) — the
-  **Create Corpus** screen: pick a staged corpus, author the run, watch it land.
+- [Creating a corpus](./docs/guides/create-a-corpus.md) — the **Create Corpus**
+  screen: name the run, upload the documents, author the config, watch it land.
 - [Creating an evaluation](./docs/guides/create-an-evaluation.md) — the **New
-  evaluation** screen: compose an evaluation over a corpus that has already been
-  run.
+  evaluation** screen: over a corpus that has been run, say whose response is
+  whose and what to read out of it.
+
+Both describe the flow the delivery plan is building towards, and each ends with
+a short note on what the deployed build still does differently.
 
 Operator runbooks live beside them:
 [running both stacks locally](./docs/guides/two-stack-local-run.md) and
