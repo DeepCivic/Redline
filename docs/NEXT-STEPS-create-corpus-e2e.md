@@ -15,15 +15,22 @@ export PM="flatpak-spawn --host podman"
 
 ## 1. What was committed
 
-Two commits, in fork-first order (two-commit fork rule):
+Three fork commits + three parent commits, in fork-first order (two-commit rule):
 
-- **Submodule** `services/wayfinder` → `eb55e25`
-  "Create Corpus: author the first-run extraction/OCR override end-to-end"
-- **Parent** redline → `09b8564`
-  "Create Corpus: extraction/OCR override in the view + run-stack sidecar"
-  (bumps the `services/wayfinder` gitlink + `wayfinder.pin` to `eb55e25` in step)
+- **Submodule** `services/wayfinder` HEAD → `05947392fcc6104c30fdcb0e97bfe71f30eecc97`
+  (`eb55e25` end-to-end override → `0594739` money-editor build fix)
+- **Parent** redline HEAD → `6d95fdc`
+  (`09b8564` view + sidecar → `6d95fdc` follows the fork fix, bumps gitlink + pin
+  to `0594739`, adds this note)
 
-Both working trees are clean. Nothing pushed; no PR (none requested).
+Both working trees are clean. Nothing pushed; no PR (none requested). The pin
+(`wayfinder.pin` `ref=`) matches the submodule HEAD — verify with
+`git -C services/wayfinder rev-parse HEAD` before rebuilding.
+
+NOTE: the first attempt to build the web image FAILED — the override edit had
+replaced the money-vocabulary editor's inputs (leaving two helpers unused →
+production `next build` no-unused-vars lint error). That is FIXED in `0594739`.
+The committed code now typechecks clean; rebuild from this state (§4).
 
 The changes: the extraction/OCR override (`ocrEngine` / `ocrDpi`) now reaches the
 served surface end-to-end (tRPC zod input → redline-web view → the Create Corpus
@@ -90,13 +97,10 @@ These are a DIFFERENT (non-redline) wayfinder deployment. Do not touch them.
 does NOT contain the OCR override UI. A rebuild from repo root picks up all three
 changed layers (it globs the parent `@redline/*` packages + copies the fork).
 
-A background rebuild was started this session (log: `/tmp/redline-web-build.log`)
-but its completion was NOT confirmed. Check / redo:
+The session's background rebuild FAILED on the now-fixed build bug (see §1); just
+rebuild fresh from the committed state:
 
 ```sh
-# is the earlier background build still going or done?
-tail -20 /tmp/redline-web-build.log | tr '\r' '\n'
-
 # (re)build cleanly — from repo root, needs --env-file for the ${VAR:?} guards:
 cd "/run/media/toothy/DeepCivic_1/projects/Sandbox Workspace/redline"
 $PM compose -f infra/uat/docker-compose.yml --env-file infra/uat/.env.uat build wayfinder-web
