@@ -423,6 +423,26 @@ else
   fi
 fi
 
+# ── 16. the run-capable sidecar builds with the isaacus extra ────────────────
+# The money image installs the engine WITHOUT `isaacus` on purpose — the money op
+# is offline. infra/docker-compose.run-sidecar.yml reuses that image to serve the
+# run trigger, which drives chunk/embed/enrich, and `isaacus_available()` tests
+# the SDK before the key. Built on the default extras, that sidecar fails every
+# run at the chunk stage while holding a valid ISAACUS_API_KEY and reporting
+# itself healthy. Static because the alternative is a 7 GB image build: this
+# reads the two lines that have to agree.
+section "16. run-sidecar builds the engine with the isaacus extra"
+RUN_SIDECAR_COMPOSE=infra/docker-compose.run-sidecar.yml
+if [ ! -f "$RUN_SIDECAR_COMPOSE" ]; then
+  skip "run-sidecar extras — $RUN_SIDECAR_COMPOSE not present"
+elif ! grep -qE '^\s*ARG EXTRAS=' infra/docker/womblex-money.Dockerfile 2>/dev/null; then
+  fail "infra/docker/womblex-money.Dockerfile hardcodes its engine extras — declare 'ARG EXTRAS=cloud' and install \"./womblex-engine[\${EXTRAS}]\" so the run sidecar can opt into isaacus"
+elif ! grep -qE 'EXTRAS:.*isaacus' "$RUN_SIDECAR_COMPOSE"; then
+  fail "$RUN_SIDECAR_COMPOSE does not pass the isaacus extra — add 'args: {EXTRAS: cloud,isaacus}' to womblex-run-sidecar's build, or its runs fail at the chunk stage with a valid key set"
+else
+  pass "run-sidecar builds the engine with the isaacus extra"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo; echo "──────────────────────────────────────────"
 echo "Passed:  $PASS"; echo "Failed:  $FAIL"; echo "Skipped: ${#SKIPPED_CHECKS[@]}"

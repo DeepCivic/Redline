@@ -42,9 +42,18 @@ WORKDIR /app
 
 # The engine, from the submodule source. `cloud` gives RemoteStore + S3 staging,
 # which money_stage.py uses to move shards between object storage and its scratch
-# dir. No `isaacus` extra: the money op is offline and API-free.
+# dir. The default omits `isaacus`: the money op is offline and API-free, and the
+# extra drags boto3 in for nothing.
+#
+# It is an ARG, not a constant, because this image has a second consumer. The
+# run-capable sidecar (infra/docker-compose.run-sidecar.yml) serves the run
+# trigger from it, and that trigger drives chunk/embed/enrich — all Isaacus
+# stages. `isaacus_available()` tests the SDK BEFORE the key, so a run-serving
+# build without this extra fails at the chunk stage holding a valid key. Matches
+# services/womblex/Dockerfile, which takes the same ARG for the same reason.
+ARG EXTRAS=cloud
 COPY services/womblex /app/womblex-engine
-RUN pip install "./womblex-engine[cloud]"
+RUN pip install "./womblex-engine[${EXTRAS}]"
 
 # The sidecar package brings the money_stage module and its own deps (boto3,
 # psycopg, pyarrow). Installed WITHOUT the `[womblex]` extra — the engine is

@@ -15,9 +15,22 @@ See ADR-0008 (amended) and `docs/architecture.md` §2.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from dataclasses import dataclass
 from typing import Optional
+
+
+def isaacus_sdk_installed() -> bool:
+    """True when the `isaacus` package can be imported.
+
+    Mirrors the FIRST check in the engine's own
+    `womblex.utils.availability.isaacus_available()`, which tests the SDK before
+    it looks at the key. Kept as a local `find_spec` rather than importing the
+    engine: the light sidecar image is deliberately womblex-free, so importing
+    from `womblex` here would break the stub lane's startup.
+    """
+    return importlib.util.find_spec("isaacus") is not None
 
 
 @dataclass(frozen=True)
@@ -42,12 +55,17 @@ class Settings:
 
     @property
     def isaacus_enabled(self) -> bool:
-        """Isaacus is live only in real mode with a non-blank key present.
+        """Isaacus is live only in real mode with the SDK installed and a key.
 
         False on the real lane means retrieval cannot run — a misconfiguration
-        to surface, not a supported offline mode.
+        to surface, not a supported offline mode. The SDK check is not
+        redundant with the key: an image built without the engine's `isaacus`
+        extra carries a perfectly valid key it cannot use, and reporting that
+        as enabled is what let a run reach the chunk stage before failing.
         """
         if self.womblex_mode != "real":
+            return False
+        if not isaacus_sdk_installed():
             return False
         return bool(self.isaacus_api_key and self.isaacus_api_key.strip())
 

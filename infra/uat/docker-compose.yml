@@ -109,7 +109,17 @@ services:
       # Reached over the `redline` network. Never Wayfinder's DATABASE_URL
       # (ADR-0002) — redline owns its schema in its own instance.
       REDLINE_DATABASE_URL: postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}
-      REDLINE_WOMBLEX_INGEST_URL: http://womblex-ingest:8000
+      # Defaults to the shipped read-seam sidecar, which serves the evaluation
+      # screens but 503s POST /runs (no WOMBLEX_DB_DSN, no engine in its image).
+      # Firing a run from the Create Corpus tab needs the run-capable sidecar
+      # instead: REDLINE_WOMBLEX_INGEST_URL=http://womblex-run-sidecar:8000,
+      # brought up from infra/docker-compose.run-sidecar.yml.
+      REDLINE_WOMBLEX_INGEST_URL: ${REDLINE_WOMBLEX_INGEST_URL:-http://womblex-ingest:8000}
+      # Test-only auth bypass — off unless the operator opts in. Playwright's
+      # auth.setup.ts POSTs /api/auth/test-session, which only exists when this
+      # is exactly "true"; without it every spec is blocked at setup.
+      TEST_AUTH_BYPASS: ${TEST_AUTH_BYPASS:-}
+      TEST_ADMIN_EMAIL: ${ADMIN_SEED_EMAIL:-admin@example.com}
       # Endpoint and model are NOT operator concerns — they default to the pair
       # this UAT actually runs on (Groq, verified end to end), so only the key
       # belongs in the env file. `:-` substitutes on empty as well as unset, so a

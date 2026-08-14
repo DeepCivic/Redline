@@ -925,6 +925,17 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    be an upstream change request, not a redline fix — and redline needs the key for
    `embed` regardless, so nothing downstream turns on it.
 
+   **Packaging is half of that check, and it is the half that bites.** Because
+   `isaacus_available()` tests `find_spec("isaacus")` *before* it reads the key, an
+   image built without the engine's `isaacus` extra is gated off while holding a
+   perfectly valid `ISAACUS_API_KEY`: the run drains extraction, reaches `chunk`
+   and fails there. Any image that serves a *run* must therefore install
+   `womblex-engine[cloud,isaacus]`, not just `[cloud]` — which the run-capable
+   sidecar did not, because it reuses the deliberately offline money image.
+   `validate.sh` #16 holds those two lines together. The sidecar's own
+   `/health` was no help there until it was taught the same check: it reported
+   `isaacusEnabled: true` off the key alone.
+
    Operationally: `womblex run` persists only extract shards; `chunk` and `embed`
    are separate `--shards` commands. Note also that `run` still *computes* chunking
    in-batch when `chunking.enabled` (`batch.py:63-64`) and then drops it at write

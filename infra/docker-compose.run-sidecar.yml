@@ -30,6 +30,13 @@ services:
     build:
       context: ..
       dockerfile: infra/docker/womblex-money.Dockerfile
+      # The money image defaults to `cloud` alone because the money op is
+      # offline. This service is not the money op: it serves the run trigger,
+      # which drives chunk/embed/enrich. `isaacus_available()` checks the SDK
+      # before the key, so without this the run fails at chunk with a valid
+      # ISAACUS_API_KEY set — which is exactly what it did.
+      args:
+        EXTRAS: cloud,isaacus
     depends_on:
       minio:
         condition: service_healthy
