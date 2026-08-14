@@ -2,23 +2,14 @@
 #
 # redline consumes Wayfinder's `@rbrasier/domain` as a workspace package
 # (ADR-0001, Strategy A). We never commit Wayfinder source (validate.sh check
-# #6), so CI checks Wayfinder out separately and materialises the packages we
-# consume into vendor/wayfinder via scripts/vendor-wayfinder.sh — the non-Podman
-# counterpart of what scripts/podman-run.sh does locally.
+# #6), so CI materialises the packages we consume into vendor/wayfinder via
+# scripts/vendor-wayfinder.sh — the non-Podman counterpart of what
+# scripts/podman-run.sh does locally.
 #
-# The Wayfinder repo and commit come from wayfinder.pin — one authoritative
-# place, shared with scripts/vendor-wayfinder.sh, so CI and a local clone
-# materialise byte-identical trees (ADR-0012). CI previously tracked a moving
-# `main`, which let an upstream commit turn redline red with nothing changed
-# here and no SHA to bisect against.
-#
-# To bump Wayfinder, edit wayfinder.pin — not this file. Repository variables
-# still override for a one-off experiment:
-#   vars.WAYFINDER_REPO / vars.WAYFINDER_REF
-# The pinned repo is johntooth/wayfinder — the fork, the same one
-# services/wayfinder mounts. It is public, so the default GITHUB_TOKEN suffices.
-# If you point WAYFINDER_REPO at a private repo, add a secret WAYFINDER_TOKEN (a
-# PAT with contents:read on that repo).
+# The source is the services/wayfinder submodule, checked out below. There is no
+# separate Wayfinder pin: the gitlink IS the pin, so the tree redline typechecks
+# against and the tree it runs in cannot disagree. To move Wayfinder, move the
+# submodule.
 
 name: CI
 
@@ -43,41 +34,29 @@ jobs:
       - name: Checkout redline
         uses: actions/checkout@v5
         with:
-          # services/womblex is a submodule pinned to the engine tag redline's
-          # Parquet mapping is written against. Without it the tree has an empty
-          # directory where the schema source of truth should be, and the
-          # womblex pin-drift guard in validate.sh cannot run.
+          # The submodules are not optional here: services/womblex is the schema
+          # redline's Parquet mapping is written against, and services/wayfinder
+          # is what gets vendored below. Without them the tree has empty
+          # directories where both sources of truth should be.
           submodules: true
 
       # `submodules: true` runs `git submodule update --init --depth=1`: each
       # submodule lands detached at its pinned commit with NO remote-tracking
-      # branch refs. validate.sh #15 asserts the wayfinder fork sits on the
+      # branch refs. validate.sh #14 asserts the wayfinder fork sits on the
       # branch .gitmodules names and compares commits to allow a detached-but-
       # correct checkout — which needs that ref to exist. Without this step the
       # check cannot resolve it and skips, so CI would stop exercising the
       # guard ADR-0019 relies on. Shallow: we need the branch tip's SHA, not its
-      # history. Non-fatal — if the fetch fails, #15 skips rather than lying.
-      - name: Fetch the fork's branch ref (for validate.sh #15)
+      # history. Non-fatal — if the fetch fails, #14 skips rather than lying.
+      - name: Fetch the fork's branch ref (for validate.sh #14)
         continue-on-error: true
         run: |
           branch="$(git config -f .gitmodules submodule.services/wayfinder.branch)"
           git -C services/wayfinder fetch --depth=1 origin \
             "+refs/heads/${branch}:refs/remotes/origin/${branch}"
 
-      - name: Read the Wayfinder pin
-        id: pin
-        run: grep -E '^(repo|ref)=' wayfinder.pin >> "$GITHUB_OUTPUT"
-
-      - name: Checkout Wayfinder (read-only, for @rbrasier/* reuse)
-        uses: actions/checkout@v5
-        with:
-          repository: ${{ vars.WAYFINDER_REPO || steps.pin.outputs.repo }}
-          ref: ${{ vars.WAYFINDER_REF || steps.pin.outputs.ref }}
-          token: ${{ secrets.WAYFINDER_TOKEN || github.token }}
-          path: .wayfinder-src
-
       - name: Vendor Wayfinder domain into vendor/wayfinder
-        run: WAYFINDER_DIR="$GITHUB_WORKSPACE/.wayfinder-src" scripts/vendor-wayfinder.sh
+        run: scripts/vendor-wayfinder.sh
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -96,13 +75,13 @@ jobs:
           cache: pnpm
 
       - name: Install workspace dependencies
-        # --frozen-lockfile is safe now that wayfinder.pin fixes the vendored tree
-        # to one commit (ADR-0012): the importer for
+        # --frozen-lockfile is safe because the submodule gitlink fixes the
+        # vendored tree to one commit: the importer for
         # vendor/wayfinder/packages/domain is deterministic, so a stale lockfile
         # means *our* manifests moved — exactly what strictness should catch.
-        # Before the pin this had to be --prefer-frozen-lockfile, because an
-        # upstream dependency bump on a moving `main` staleness-failed the
-        # install for a commit that was not ours.
+        # This had to be --prefer-frozen-lockfile back when CI tracked a moving
+        # Wayfinder `main`, because an upstream dependency bump staleness-failed
+        # the install for a commit that was not ours.
         run: pnpm install --frozen-lockfile
 
       - name: Set up Python (womblex-ingest sidecar tests)

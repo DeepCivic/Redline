@@ -8,12 +8,11 @@ dependencies = [
     "uvicorn[standard]>=0.30,<0.35",
     "boto3>=1.34,<2.0",
     "pydantic>=2.7,<3.0",
-    # The Parquet decode behind WOMBLEX_MODE=real. It belongs in the base deps,
-    # not only in `[womblex]`: the Dockerfile's `sidecar` target installs the base
-    # package alone, so leaving pyarrow in the extra shipped a default image that
-    # could serve only the stub. The read side of the binding is meant to run
-    # wherever pyarrow resolves, engine or no engine — that is why the engine
-    # itself stays in `[womblex]` while its decoder does not.
+    # The Parquet decode behind WOMBLEX_MODE=real. A base dependency, not an
+    # extra: the Dockerfile's `sidecar` target installs the base package alone,
+    # so an extra would ship a default image that could serve only the stub. The
+    # read side of the binding is meant to run wherever pyarrow resolves, engine
+    # or no engine.
     "pyarrow>=16,<25",
     # The driver behind both writers into redline's own Postgres — the chunk store
     # and the money-span store. A base dependency, not an extra: the `sidecar`
@@ -24,42 +23,24 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The real womblex engine. redline runs it from the engine's OWN image, built
-# from the services/womblex submodule by the `womblex` compose service. Kept out
-# of the API image by DEPLOYMENT CHOICE (resource/lifecycle isolation), not
-# necessity — the sidecar image is python:3.12-slim, inside womblex's 3.11/3.12
-# support, so the engine can equally be co-located. This extra is here so a
-# real-lane test environment can `pip install .[womblex]` to exercise the
-# query-embedding half of the binding.
+# There is deliberately no `womblex` extra here. The engine publishes no release
+# to any index, so a `womblex==X.Y.Z` requirement could never be resolved — every
+# image that needs the engine installs it from the services/womblex submodule
+# source instead (infra/docker/womblex-money.Dockerfile). A version pin here
+# would be a string nothing installs, kept in step with the submodule by hand.
 #
-# The version MUST track the services/womblex submodule — that submodule is
-# the schema the shard mapping is written against, and a sidecar embedding
-# against a different engine build is the one drift nothing else would catch.
-# validate.sh check #13 enforces the two stay equal, comparing this pin against
-# the submodule's exact git tag.
-#
-# The engine stays in a SEPARATE extra (and a separate image) for resource +
-# lifecycle reasons — heavy OCR/tokeniser/model runtime, independently scaled via
-# its own cloud runner — NOT because it can't be installed here: the sidecar image
-# is python:3.12-slim, inside womblex's own 3.11/3.12 support. A real-lane env may
-# `pip install .[womblex]` on 3.12 to exercise the query-embedding half.
-#
-# `pyarrow` is what the binding uses to DECODE the Parquet shards the engine landed
-# in MinIO (real_extractor.py); it is far lighter than womblex's full OCR/model
-# stack, so the read side of the binding runs anywhere pyarrow resolves even when
-# the engine itself is deployed as its own image.
-womblex = [
-    "womblex==0.4.0",
-    "pyarrow>=16,<25",
-]
+# The engine stays out of the API image by DEPLOYMENT CHOICE — heavy
+# OCR/tokeniser/model runtime, independently scaled via its own cloud runner —
+# not by necessity: the sidecar image is python:3.12-slim, inside womblex's own
+# 3.11/3.12 support, so it can be co-located when a lane needs that.
 dev = [
     "pytest>=8.0,<9.0",
     "httpx>=0.27,<0.29",
-    # pyarrow is in `dev`, not only in `womblex`, because `test_real_extractor.py`
-    # is gated on it (`importorskip`) and validate.sh installs `[dev]` alone. Without
-    # it here the real-shard mapping — the half that decodes actual Parquet — reports
-    # green by never running, which is how a mapping written against columns womblex
-    # does not write survived the suite. The engine itself stays in `[womblex]`.
+    # pyarrow is repeated here, not left to the base deps, because
+    # `test_real_extractor.py` is gated on it (`importorskip`) and validate.sh
+    # installs `[dev]` alone. Without it the real-shard mapping — the half that
+    # decodes actual Parquet — reports green by never running, which is how a
+    # mapping written against columns womblex does not write survived the suite.
     "pyarrow>=16,<25",
 ]
 

@@ -23,8 +23,8 @@ Three fork commits + three parent commits, in fork-first order (two-commit rule)
   (`09b8564` view + sidecar → `6d95fdc` follows the fork fix, bumps gitlink + pin
   to `0594739`, adds this note)
 
-Both working trees are clean. Nothing pushed; no PR (none requested). The pin
-(`wayfinder.pin` `ref=`) matches the submodule HEAD — verify with
+Both working trees are clean. Nothing pushed; no PR (none requested). The gitlink
+is now the only Wayfinder pin — verify with
 `git -C services/wayfinder rev-parse HEAD` before rebuilding.
 
 NOTE: the first attempt to build the web image FAILED — the override edit had

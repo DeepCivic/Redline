@@ -7,14 +7,11 @@
 # own directory as context and cannot reach the engine source, so the money
 # image, which needs both, lives here.
 #
-# WHY IT INSTALLS THE ENGINE FROM SOURCE, NOT FROM THE `[womblex]` EXTRA:
-# that extra pins `womblex==0.4.0`, which is an untagged `main` commit not
-# published to any index — `pip install ".[womblex]"` cannot resolve it. The
-# engine is installed here from the SUBMODULE SOURCE instead — the same source
-# the engine image (the `womblex` compose service) is built from — so the money
-# stage annotates with the exact engine the shards were extracted by. The extra
-# still exists in pyproject.toml so validate.sh #13's pin-vs-submodule check
-# stays meaningful; this image simply does not use it.
+# WHY IT INSTALLS THE ENGINE FROM SOURCE: womblex publishes no release to any
+# index, so a version requirement could not be resolved. The submodule source is
+# the only installable form — and it is the same source the engine image (the
+# `womblex` compose service) is built from, so the money stage annotates with the
+# exact engine the shards were extracted by.
 #
 # WHAT IT RUNS: `python -m womblex_ingest.money_stage` stages an evaluation's
 # `*.elements` / `*.table_cells` shards down from object storage, runs womblex's
@@ -56,9 +53,8 @@ COPY services/womblex /app/womblex-engine
 RUN pip install "./womblex-engine[${EXTRAS}]"
 
 # The sidecar package brings the money_stage module and its own deps (boto3,
-# psycopg, pyarrow). Installed WITHOUT the `[womblex]` extra — the engine is
-# already present from source above, and the extra would try to re-pull it from
-# an index that does not carry the pin.
+# psycopg, pyarrow). It declares no engine dependency of its own — the engine is
+# already present from source above.
 COPY services/womblex-ingest/pyproject.toml /app/sidecar/
 COPY services/womblex-ingest/src /app/sidecar/src
 RUN pip install "./sidecar"

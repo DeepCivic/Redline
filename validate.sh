@@ -107,7 +107,7 @@ run_ws_check "tests" "pnpm test"
 # run when the tree is vendored. Say so rather than let a green run imply the
 # contract was verified. CI sets REQUIRE_WAYFINDER=1, which makes absence fail.
 if [ ! -d "$ROOT/vendor/wayfinder/packages/domain" ]; then
-  warn "no vendor/wayfinder — the Wayfinder contract drift check SKIPPED (see wayfinder.pin)"
+  warn "no vendor/wayfinder — the Wayfinder contract drift check SKIPPED (run scripts/vendor-wayfinder.sh)"
 fi
 
 # ── 4. redline-domain purity (zero external imports, relative only) ─────────────
@@ -272,49 +272,14 @@ else
   fail "pnpm-lock.yaml was rewritten without the vendored Wayfinder tree (the vendor/wayfinder importer is gone). Do not commit it: run 'git checkout -- pnpm-lock.yaml', or vendor first ('scripts/vendor-wayfinder.sh && pnpm install') if you meant to change dependencies"
 fi
 
-# ── 13. the womblex submodule and the sidecar's pin agree ────────────────────
-# services/womblex is the engine build the Parquet mapping in shard_reader.py is
-# written against; the sidecar's `.[womblex]` extra pins the build its query
-# embedder runs. Those two drifting apart is the one mismatch nothing else
-# catches — the shards would map fine and the query vectors would come from a
-# different engine. SKIPs (never fails) on a clone without the submodule
-# initialised, so a Wayfinder-style "green on a clean clone" still holds; CI
-# checks out submodules, so CI is where this actually bites.
-section "13. womblex submodule version matches the sidecar's pin"
-WOMBLEX_EXTRA_PIN="$(grep -oE '"womblex==[0-9]+\.[0-9]+\.[0-9]+"' services/womblex-ingest/pyproject.toml 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-if [ -z "$WOMBLEX_EXTRA_PIN" ]; then
-  skip "womblex pin — no womblex== pin found in the sidecar's pyproject.toml"
-elif [ ! -f services/womblex/pyproject.toml ]; then
-  skip "womblex pin — services/womblex not initialised (git submodule update --init)"
-else
-  # An exact tag is preferred, but the pin is deliberately an untagged `main`
-  # commit, taken for `womblex run-stage` (architecture.md, "Vendoring / pinning
-  # discipline" — it returns to a tag at the next release). Falling back to the
-  # version the submodule DECLARES keeps this check live on an untagged pin;
-  # skipping there would silently retire the one drift nothing else catches.
-  WOMBLEX_SUBMODULE_VERSION="$(git -C services/womblex describe --tags --exact-match 2>/dev/null | sed 's/^v//')"
-  WOMBLEX_VERSION_SOURCE="tag"
-  if [ -z "$WOMBLEX_SUBMODULE_VERSION" ]; then
-    WOMBLEX_SUBMODULE_VERSION="$(grep -oE '^version *= *"[0-9]+\.[0-9]+\.[0-9]+"' services/womblex/pyproject.toml 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-    WOMBLEX_VERSION_SOURCE="declared (untagged commit $(git -C services/womblex rev-parse --short HEAD 2>/dev/null))"
-  fi
-  if [ -z "$WOMBLEX_SUBMODULE_VERSION" ]; then
-    skip "womblex pin — services/womblex declares no version and is on no tag"
-  elif [ "$WOMBLEX_SUBMODULE_VERSION" = "$WOMBLEX_EXTRA_PIN" ]; then
-    pass "womblex pin (submodule ${WOMBLEX_SUBMODULE_VERSION} [${WOMBLEX_VERSION_SOURCE}] == sidecar pin ${WOMBLEX_EXTRA_PIN})"
-  else
-    fail "womblex pin drift: services/womblex is ${WOMBLEX_SUBMODULE_VERSION} [${WOMBLEX_VERSION_SOURCE}] but the sidecar pins womblex==${WOMBLEX_EXTRA_PIN}. Move both together (see services/womblex-ingest/pyproject.toml)"
-  fi
-fi
-
-# ── 14. Python lint (ruff) over redline's own Python ─────────────────────────
+# ── 13. Python lint (ruff) over redline's own Python ─────────────────────────
 # The Python half of check #3's lint pass. Rules and exclusions live in ruff.toml
 # at the root — including the two upstream submodules, which we never modify
 # (ADR-0015). Unlike the pytest checks above, ruff's output is NOT silenced: a
 # lint failure is only actionable with its diagnostics. SKIPs cleanly when python3
 # is absent or ruff cannot be installed, so an offline host still gates on the
 # rest, matching checks #10 and #11.
-section "14. ruff lint (redline's own Python)"
+section "13. ruff lint (redline's own Python)"
 RUFF_TARGETS=()
 [ -d services/womblex-ingest ] && RUFF_TARGETS+=(services/womblex-ingest)
 [ -d services/numbatch-extension ] && RUFF_TARGETS+=(services/numbatch-extension)
@@ -336,28 +301,26 @@ else
   find services -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
-# ── 15. Wayfinder fork hygiene (services/wayfinder submodule) ────────────────
+# ── 14. Wayfinder fork hygiene (services/wayfinder submodule) ────────────────
 # The Wayfinder fork is a submodule we RUN and EDIT (ADR-0019), unlike the
 # byte-identical Python submodules. One invariant replaces "never modified": the
 # checkout is on the fork's `main` branch commit the superproject
 # records — redline's mount lives on johntooth/wayfinder's `main`.
 #
-# This check used to carry a second half, asserting the fork's `main` had not
-# diverged from rbrasier's — protecting a clean upstreaming diff. redline builds
-# and runs against johntooth/wayfinder only, so that guard policed a
-# relationship we do not have, and PR #9 breached it with no consequence.
-# Removed rather than left failing. The branch this check enforces is read from
-# .gitmodules, so it follows a rename there rather than hard-coding a name.
+# This is the only Wayfinder pin redline has. The gitlink alone fixes both the
+# runtime mount and the vendored build-time tree (scripts/vendor-wayfinder.sh
+# copies out of this checkout), so there is no second ref that can drift from it.
 #
-# SKIPs (never fails) on a clone without the submodule initialised, matching
-# #13's clean-clone posture.
+# The check once also asserted the fork's `main` had not diverged from
+# rbrasier's — protecting a clean upstreaming diff. redline builds and runs
+# against johntooth/wayfinder only, so that guard policed a relationship we do
+# not have, and PR #9 breached it with no consequence. Removed rather than left
+# failing. The branch is read from .gitmodules, so it follows a rename there
+# rather than hard-coding a name.
 #
-# (b) below does NOT skip on such a clone, deliberately — it reads the gitlink
-# out of the superproject's own tree, which needs no submodule checkout. The
-# gitlink and wayfinder.pin drifting apart went unnoticed for three fork commits
-# precisely because (a) is the only half that was checked and (a) is the half
-# that skips here.
-section "15. Wayfinder fork checkout is on the branch .gitmodules names"
+# SKIPs (never fails) on a clone without the submodule initialised, matching the
+# clean-clone posture of the checks above.
+section "14. Wayfinder fork checkout is on the branch .gitmodules names"
 if [ ! -d services/wayfinder/.git ] && [ ! -f services/wayfinder/.git ]; then
   skip "wayfinder fork — services/wayfinder not initialised (git submodule update --init)"
 elif ! command -v git >/dev/null 2>&1; then
@@ -385,8 +348,8 @@ else
     # pinned commit detached and NO branch refs, so a correct checkout is
     # indistinguishable from a wrong one. Refusing here failed every CI run from
     # this check's introduction (966361b) onward. Skip rather than assert what
-    # cannot be observed — the same posture as #13. The workflow
-    # fetches the ref so CI still exercises the guard.
+    # cannot be observed. The workflow fetches the ref so CI still exercises the
+    # guard.
     warn "wayfinder fork: '${WF_CONFIGURED_BRANCH}' is not resolvable in services/wayfinder — a shallow checkout carries no branch refs, so a detached-but-correct HEAD cannot be told from a wrong one"
     skip "wayfinder fork — no ${WF_CONFIGURED_BRANCH} ref to compare HEAD against"
   elif [ "$WF_ON_BRANCH" != true ]; then
@@ -396,34 +359,7 @@ else
   fi
 fi
 
-# (b) The two Wayfinder seams must name the same commit. The runtime mount reads
-# the gitlink; the build-time typed-reuse seam reads wayfinder.pin's ref. When
-# they disagree redline typechecks against one @rbrasier/domain and runs against
-# another, which is how it once typechecked against a package the fork had moved
-# past. Read the gitlink from the superproject tree rather than the checkout, so
-# this holds on a clone with no submodule initialised.
-if ! command -v git >/dev/null 2>&1; then
-  skip "wayfinder.pin ↔ gitlink — git unavailable"
-else
-  WF_PIN_REF="$(sed -n 's/^ref=\([0-9a-f]\{7,40\}\)$/\1/p' wayfinder.pin 2>/dev/null | head -1)"
-  # Both sides must come from the same place or a bump reads as a failure while
-  # it is being made: wayfinder.pin is read from the worktree, so prefer the
-  # submodule's actual HEAD and fall back to the committed gitlink only when the
-  # submodule is not checked out (a clean clone, where HEAD is all there is).
-  WF_GITLINK="$(git -C services/wayfinder rev-parse HEAD 2>/dev/null)"
-  if [ -z "$WF_GITLINK" ]; then
-    WF_GITLINK="$(git ls-tree HEAD services/wayfinder 2>/dev/null | awk '$2 == "commit" { print $3 }')"
-  fi
-  if [ -z "$WF_PIN_REF" ] || [ -z "$WF_GITLINK" ]; then
-    skip "wayfinder.pin ↔ gitlink — no ref in wayfinder.pin or no services/wayfinder gitlink in HEAD"
-  elif [ "$WF_PIN_REF" != "$WF_GITLINK" ]; then
-    fail "wayfinder.pin ref (${WF_PIN_REF}) is not the services/wayfinder gitlink (${WF_GITLINK}) — the fork tracks its latest main and both seams move to it in step (see docs/architecture.md, 'Vendoring / pinning discipline')"
-  else
-    pass "wayfinder.pin ref matches the services/wayfinder gitlink"
-  fi
-fi
-
-# ── 16. the run-capable sidecar builds with the isaacus extra ────────────────
+# ── 15. the run-capable sidecar builds with the isaacus extra ────────────────
 # The money image installs the engine WITHOUT `isaacus` on purpose — the money op
 # is offline. infra/docker-compose.run-sidecar.yml reuses that image to serve the
 # run trigger, which drives chunk/embed/enrich, and `isaacus_available()` tests
@@ -431,7 +367,7 @@ fi
 # run at the chunk stage while holding a valid ISAACUS_API_KEY and reporting
 # itself healthy. Static because the alternative is a 7 GB image build: this
 # reads the two lines that have to agree.
-section "16. run-sidecar builds the engine with the isaacus extra"
+section "15. run-sidecar builds the engine with the isaacus extra"
 RUN_SIDECAR_COMPOSE=infra/docker-compose.run-sidecar.yml
 if [ ! -f "$RUN_SIDECAR_COMPOSE" ]; then
   skip "run-sidecar extras — $RUN_SIDECAR_COMPOSE not present"

@@ -389,8 +389,8 @@ and publishes `*.money_spans.parquet` + `*.money_columns.parquet` back under
 `proc/{evaluationId}/documents/`. Runnable via the `money` compose profile
 (`compose --profile money run --rm money --evaluation-id <id>`), whose image is
 built from the repo root by `infra/docker/womblex-money.Dockerfile` — it installs
-the engine from the `services/womblex` submodule source, because the `[womblex]`
-extra's pin is an untagged commit not on any index. The read-seam sidecar keeps
+the engine from the `services/womblex` submodule source, the only installable form
+the engine has (it publishes no release). The read-seam sidecar keeps
 its own light, womblex-free `sidecar` Dockerfile.
 
 Publishing is not the last step: `run_money_stage` then **loads** the spans into
@@ -836,62 +836,64 @@ redline/
 │   ├── guides/                    local dev, validation, two-stack run
 │   └── reviews/                   dated point-in-time reviews (historical record)
 ├── scripts/                       vendor-wayfinder, womblex-pod smoke, etc.
-├── vendor/wayfinder/              materialised from wayfinder.pin (never committed)
+├── vendor/wayfinder/              materialised from services/wayfinder (never committed)
 └── validate.sh                    the CI gate
 ```
 
 ### Vendoring / pinning discipline
 
-- **womblex** — git **submodule** at `services/womblex`, tracking the engine's
-  **latest `main`**. It currently records `d6850de` (declared version `0.4.0`),
-  which is `origin/main`.
+**One pin per dependency, and the gitlink is it.** All three upstreams are git
+submodules, so each already records exactly one commit. redline adds no second
+declaration of that commit anywhere — no pin file, no version string to keep in
+step by hand. A copy of a SHA is a thing that can drift; a gitlink cannot drift
+from itself.
 
-  **The policy is latest, not a held-back pin.** redline consumes womblex for
-  capabilities it does not reimplement, so lagging the engine means either going
-  without a capability or growing a redline-side substitute for it — the exact
-  duplication the submodule discipline exists to prevent. A submodule always
-  records *a* commit (that is what a gitlink is), so "latest" is a rule about
-  which commit we move it to, not a floating ref: move it forward to womblex
-  `main`, and do not sit on an older commit to avoid a bump.
+**The policy is latest, not a held-back pin.** redline consumes these engines for
+capabilities it does not reimplement, so lagging one means either going without a
+capability or growing a redline-side substitute for it — the exact duplication
+the submodule discipline exists to prevent. "Latest" is a rule about which commit
+we move the gitlink to, not a floating ref: move it forward to upstream `main`,
+and do not sit on an older commit to avoid a bump.
 
-  **The sidecar's pin moves in step.** `services/womblex-ingest`'s `[womblex]`
-  extra pins `womblex==0.4.0` — the version the submodule declares. `validate.sh`
-  #13 asserts those two agree, because the mismatch nothing else catches is shards
-  mapping fine while the query vectors come from a different engine. Bumping the
-  submodule without bumping the extra is the failure that check exists for.
+- **womblex** — `services/womblex`, currently `d6850de` (declared version
+  `0.4.0`), which is `origin/main`. The engine publishes no release to any index,
+  so the submodule source is the only installable form: every image that needs it
+  does `pip install ./womblex-engine[...]` off this tree
+  (`infra/docker/womblex-money.Dockerfile`). The sidecar declares no engine
+  dependency, so there is nothing to keep in step with the bump.
 
-  **A tag is preferred where one exists, and none does.** The engine publishes no
-  git tags, so #13 falls back to the version the submodule *declares* in its
-  `pyproject.toml`. An earlier pin (`f283969`) was an untagged commit taken ahead
-  of `v0.3.0` for `womblex run-stage` — without it no path in redline produced
-  chunks at all, and a corpus run completed leaving `redline_chunks` empty with
-  nothing failing. That situation is closed: `run-stage` is in the released line
-  and the submodule has moved past it.
+  An earlier pin (`f283969`) was an untagged commit taken ahead of `v0.3.0` for
+  `womblex run-stage` — without it no path in redline produced chunks at all, and
+  a corpus run completed leaving `redline_chunks` empty with nothing failing.
+  That situation is closed: `run-stage` is in the released line and the submodule
+  has moved past it.
 
-- **Numbatch** — git **submodule** at `services/numbatch` (DeepCivic/Numbatch),
-  pinned to `72bcead`. Upstream has no tags, so the pin is a SHA rather than a
-  tag as womblex's is. The `numbatch` compose profile builds the fork's own
-  `infra/docker/*.Dockerfile`s; run all-but-frontend. redline's
-  additive overlay is **not** in the submodule — it lives beside it in
+- **Numbatch** — `services/numbatch` (DeepCivic/Numbatch), currently `72bcead`.
+  The `numbatch` compose profile builds the fork's own
+  `infra/docker/*.Dockerfile`s; run all-but-frontend. redline's additive overlay
+  is **not** in the submodule — it lives beside it in
   `services/numbatch-extension/` and grafts onto the fork's `app/` + `alembic/`.
-  This reverses an earlier choice of a build-time pin for consistency with
-  Wayfinder; Wayfinder's pin exists because a submodule drags its package set into
-  the pnpm workspace, which is a JavaScript problem Numbatch does not have.
-- **Wayfinder** — consumed through **two** distinct seams, mechanism following
-  runtime:
-  - the **build-time typed-reuse seam** — materialised read-only from
-    `wayfinder.pin` into `vendor/wayfinder`, never committed;
-  - the **runtime UI-mount seam** — the Wayfinder **fork** as a submodule at
-    `services/wayfinder`, tracking branch `main`. This is a
-    submodule redline *runs and edits* (unlike the byte-identical
-    womblex/numbatch submodules): the review UI mounts into the fork's `apps/web`,
-    which resolves redline's `@redline/*` packages as workspace members. The
-    invariant that replaces "never modified" is enforced by `validate.sh` #15:
-    the checkout stays on the branch `.gitmodules` names (the fork's `main`). The
-    check once also asserted the fork's `main` never diverged from rbrasier,
-    protecting a clean upstreaming diff; redline builds against johntooth/wayfinder
-    only, so that half was
-    removed rather than left policing a relationship we do not have.
+
+- **Wayfinder** — `services/wayfinder`, tracking branch `main`. Unlike the
+  byte-identical Python submodules this is one redline *runs and edits*: the
+  review UI mounts into the fork's `apps/web`, which resolves redline's
+  `@redline/*` packages as workspace members. The invariant that replaces "never
+  modified" is enforced by `validate.sh` #14: the checkout stays on the branch
+  `.gitmodules` names. The check once also asserted the fork's `main` never
+  diverged from rbrasier, protecting a clean upstreaming diff; redline builds
+  against johntooth/wayfinder only, so that half was removed rather than left
+  policing a relationship we do not have.
+
+  Wayfinder is consumed at **two** seams but from **one** commit. The runtime
+  UI-mount seam is the submodule itself. The build-time typed-reuse seam is
+  `vendor/wayfinder`, which `scripts/vendor-wayfinder.sh` materialises *out of
+  that same checkout* and which is never committed. The copy exists only because
+  pnpm's workspace glob would otherwise absorb every package under the fork —
+  dragging `@huggingface/transformers`, the OpenTelemetry SDK, minio, docx and
+  pdf-parse into redline's install — so the script copies only the package we
+  consume. It is a filter on *what* is vendored, not a second answer to *which
+  commit*. redline typechecking against a domain package the fork had moved past
+  is exactly what a second answer once caused.
 
 ---
 
@@ -932,7 +934,7 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    and fails there. Any image that serves a *run* must therefore install
    `womblex-engine[cloud,isaacus]`, not just `[cloud]` — which the run-capable
    sidecar did not, because it reuses the deliberately offline money image.
-   `validate.sh` #16 holds those two lines together. The sidecar's own
+   `validate.sh` #15 holds those two lines together. The sidecar's own
    `/health` was no help there until it was taught the same check: it reported
    `isaacusEnabled: true` off the key alone.
 
@@ -1065,15 +1067,16 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
 
 - womblex requires **Python 3.11/3.12** (its OCR dep `rapidocr-onnxruntime` has no
   wheel on 3.10 or 3.13). The **sidecar image is `python:3.12-slim`** — inside that
-  window — so nothing stops `pip install .[womblex]` co-locating the engine with
-  the sidecar. The engine **can** run from its own image for resource/lifecycle
+  window — so nothing stops the engine being co-located with the sidecar
+  (`pip install ./womblex-engine[cloud]` off the submodule, as the money image
+  does). The engine **can** run from its own image for resource/lifecycle
   isolation (heavy OCR/YOLO/tokeniser/model runtime, its own cloud runner for
   scale-out), and **can** equally run co-located with the sidecar on one
   appropriately-sized host — the split is a deployment choice, not a code
   constraint. The one interpreter caveat that remains is that a developer's
   `validate.sh` box may run a *newer* interpreter (e.g. 3.13) that womblex's OCR
-  wheel does not cover, which is why the engine-touching tests `importorskip` the
-  `[womblex]` extra rather than assuming it is present.
+  wheel does not cover, which is why the engine-touching tests `importorskip`
+  `womblex` rather than assuming it is present.
 - The womblex-ingest sidecar's **real binding** decodes Parquet with `pyarrow`
   (light) — that half runs anywhere pyarrow resolves, independent of whether the
   engine is installed in the same environment. Producing the shards (and any query

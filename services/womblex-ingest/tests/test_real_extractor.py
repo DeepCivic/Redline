@@ -13,9 +13,9 @@ sidecar image is `python:3.12-slim`, which is inside womblex's own 3.11/3.12
 support — see ADR-0003), but a test-shape one. The engine is a heavy, separately
 scaled subsystem that produces shards via its own cloud runner; the *binding's*
 contract is the read + map, and that is provable from real Parquet bytes alone.
-The default `validate.sh` box does not install the `[womblex]` extra (and may run
-a newer interpreter than the engine supports), so `test_..._matches_the_engines`
-below `importorskip`s the engine while everything here runs on pyarrow alone.
+The default `validate.sh` box does not install the engine (and may run a newer
+interpreter than the engine supports), so `test_..._matches_the_engines` below
+`importorskip`s it while everything here runs on pyarrow alone.
 
 These write *real* Parquet (via pyarrow, the same decoder the binding uses) into
 an in-memory `FakeObjectStorage`, so the read + decode + map path is the
@@ -23,9 +23,9 @@ production code path with only the MinIO seam faked — the same posture Thread 
 took for the embeddings seam.
 
 pyarrow is in the `[dev]` extra, so this suite **runs in the default validate
-lane**. It used to sit behind the `[womblex]` extra alone, which meant every test
-here skipped under `validate.sh` — a mapping written against columns womblex never
-writes reported green for as long as that held.
+lane**. It used to be reachable only where the engine was installed, which meant
+every test here skipped under `validate.sh` — a mapping written against columns
+womblex never writes reported green for as long as that held.
 
 The engine-produced-shards proof (real corpus → real engine → these same reads)
 is the compose-level smoke owed to a runtime with Podman, and remains V5
@@ -54,7 +54,7 @@ MODEL = "kanon-2-embedder"
 
 # womblex's `TABLE_CELLS_SCHEMA`, mirrored exactly from `services/womblex` @
 # `v0.2.0` (`src/womblex/store/output.py:82`). Mirrored rather than imported
-# because the default validate box does not install the `[womblex]` extra;
+# because the default validate box does not install the engine;
 # `test_the_mirrored_table_cells_schema_matches_the_engines` asserts the mirror
 # against the real object whenever womblex IS importable, so the two cannot drift
 # in silence. That guard is the point: the previous fixtures here invented
@@ -386,10 +386,10 @@ def test_the_mirrored_table_cells_schema_matches_the_engines() -> None:
     """redline's assumed `table_cells` schema is womblex's actual one.
 
     The guard that would have caught this thread's defect at the source. It runs
-    only where the `.[womblex]` extra is installed — but where it runs, a submodule
-    bump that changes the shard schema fails here rather than three layers
-    downstream as an empty pricing column. `validate.sh` #13 pins the submodule tag
-    to the sidecar's declared version, so the two checks close the loop together.
+    only where the engine is installed — but where it runs, a submodule bump that
+    changes the shard schema fails here rather than three layers downstream as an
+    empty pricing column. This is the only thing that catches such a bump, which
+    is why it asserts against the real object rather than a second mirror.
     """
     output = pytest.importorskip("womblex.store.output")
 

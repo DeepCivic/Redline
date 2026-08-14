@@ -39,12 +39,12 @@ Consequences to know:
 
 - **Commit the lockfile with any dependency change.** A `package.json` edit that
   leaves `pnpm-lock.yaml` unstaged is an incomplete commit.
-- **CI installs with `--frozen-lockfile`.** `wayfinder.pin` fixes
-  the vendored tree to one commit, so the importer for
+- **CI installs with `--frozen-lockfile`.** The `services/wayfinder` gitlink
+  fixes the vendored tree to one commit, so the importer for
   `vendor/wayfinder/packages/domain` is deterministic and strictness costs
-  nothing. (Before the pin this had to be `--prefer-frozen-lockfile`, because a
-  dependency bump on Wayfinder's moving `main` staleness-failed a strict install
-  and turned our CI red for someone else's commit.)
+  nothing. (This had to be `--prefer-frozen-lockfile` back when CI tracked a
+  moving Wayfinder `main`, because a dependency bump there staleness-failed a
+  strict install and turned our CI red for someone else's commit.)
 
 ### The vendoring trap — read this before running `pnpm install`
 
@@ -146,17 +146,18 @@ checkout is never written to. Point `WAYFINDER_DIR` at your Wayfinder checkout
 | 10 | `services/womblex-ingest` pytest (isolated venv) | needs Python 3 |
 | 11 | `services/numbatch-extension/financial_extension` pytest (isolated venv) | needs Python 3 |
 | 12 | `pnpm-lock.yaml` carries the vendored Wayfinder importer | no |
-| 13 | `services/womblex` submodule tag matches the sidecar's `womblex==` pin | needs the submodule |
-| 14 | `ruff check` over redline's own Python (config: `ruff.toml`) | needs Python 3 |
+| 13 | `ruff check` over redline's own Python (config: `ruff.toml`) | needs Python 3 |
+| 14 | `services/wayfinder` sits on the branch `.gitmodules` names | needs the submodule |
+| 15 | the run-sidecar image builds the engine with the `isaacus` extra | no |
 
-Check 14 is the Python counterpart of check 2. Rules live in `ruff.toml` at the
+Check 13 is the Python counterpart of check 2. Rules live in `ruff.toml` at the
 root and are deliberately a floor — pyflakes plus pycodestyle's error classes, no
 style regime — because the repo has no Python formatter and a lint pass that
 arrives with hundreds of cosmetic findings gets switched off. The two upstream
 submodules are excluded there; redline's own overlays beside them are not. To run
 it alone: `pipx run ruff check services/womblex-ingest services/numbatch-extension`.
 
-Static checks (4–9, 12–13) always run on the host. If neither local Node nor Podman
+Static checks (4–9, 12, 14–15) always run on the host. If neither local Node nor Podman
 is available, the Node-dependent checks (1–3) `SKIP` — and the run **exits 2**,
 not 0, so a change is never mistaken as shippable until those checks have run
 green somewhere (locally or in CI).
@@ -168,18 +169,18 @@ green somewhere (locally or in CI).
 local Node, it does not use Podman; instead it materialises the Wayfinder seam the
 non-Podman way:
 
-1. Checks out redline.
-2. Checks out Wayfinder into `.wayfinder-src` (repo/ref configurable — see below).
-3. Runs `scripts/vendor-wayfinder.sh` to copy the consumed `@rbrasier/*` packages
-   into `vendor/wayfinder` (untracked; `.gitignore` excludes `vendor/`).
-4. `pnpm install`, sets up Python 3.12, then `./validate.sh`.
+1. Checks out redline **with submodules**, which is where Wayfinder comes from.
+2. Runs `scripts/vendor-wayfinder.sh` to copy the consumed `@rbrasier/*` packages
+   out of `services/wayfinder` into `vendor/wayfinder` (untracked; `.gitignore`
+   excludes `vendor/`).
+3. `pnpm install`, sets up Python 3.12, then `./validate.sh`.
 
 `scripts/vendor-wayfinder.sh` is the non-Podman counterpart of the vendoring inside
 `scripts/podman-run.sh` — same result (`@rbrasier/domain` resolvable as a workspace
 package), no container. Run it locally too if you have Node but no Podman:
 
 ```bash
-WAYFINDER_DIR=../wayfinder scripts/vendor-wayfinder.sh
+scripts/vendor-wayfinder.sh    # defaults to services/wayfinder
 pnpm install && ./validate.sh
 ```
 
@@ -203,24 +204,21 @@ failure rather than a skip.
 > `HEAD` rather than looking for the importer outright, so it fires on the rewrite and
 > never on a tree that simply has no Wayfinder importer committed.
 
-### CI configuration (repo variables / secrets)
+### Bumping Wayfinder
 
-| Kind | Name | Default | Purpose |
-|---|---|---|---|
-| variable | `WAYFINDER_REPO` | `repo=` in `wayfinder.pin` | one-off override of the pinned repo |
-| variable | `WAYFINDER_REF` | `ref=` in `wayfinder.pin` | one-off override of the pinned commit |
-| secret | `WAYFINDER_TOKEN` | `github.token` | PAT with read access if you point `WAYFINDER_REPO` at a private repo |
+**Move the `services/wayfinder` submodule. That is the whole procedure** — the
+gitlink is the only Wayfinder pin redline has, and both the runtime UI mount and
+the vendored `@rbrasier/domain` read it, so they cannot disagree. There are no CI
+variables or secrets to set: `johntooth/wayfinder` is public and comes down with
+`submodules: true`.
 
-**Bump Wayfinder by editing [`wayfinder.pin`](../../wayfinder.pin), not CI.** The pin
-names `johntooth/wayfinder` at a full SHA — the fork, the same repo the
-`services/wayfinder` submodule mounts and the same branch; rbrasier is not a build
-source here. Both CI and `scripts/vendor-wayfinder.sh` read it, so the two
-materialise identical trees. After a bump, re-vendor and
-run `pnpm install && ./validate.sh`; the drift check
-(`packages/redline-adapters/src/wayfinder/wayfinder-contract.test.ts`) is what tells you
-whether the new commit still satisfies the contract redline reuses. The repository
-variables above stay available for a one-off experiment without committing a pin change.
+```bash
+git -C services/wayfinder checkout main && git -C services/wayfinder pull
+scripts/vendor-wayfinder.sh
+pnpm install && ./validate.sh
+```
 
-The pinned `johntooth/wayfinder` is public, so no secret is needed. If you point
-`WAYFINDER_REPO` at a private repo, add a `WAYFINDER_TOKEN` secret (a fine-grained
-PAT with `contents: read` on that repo) so the cross-repo checkout succeeds.
+Check #14 fails unless the submodule sits on the fork `main`'s commit, so a fork
+feature branch cannot be pinned — merge it there first. The drift check
+(`packages/redline-adapters/src/wayfinder/wayfinder-contract.test.ts`) is what tells
+you whether the new commit still satisfies the contract redline reuses.

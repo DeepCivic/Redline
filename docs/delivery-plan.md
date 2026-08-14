@@ -39,14 +39,12 @@
 - One agent, one context. One commit. A PR only on explicit request.
 - Tests-first: the test file is written before the implementation file.
 - One package where possible.
-- **A fork-side step is two commits, not one.** Work in `services/wayfinder`
-  lands on the fork's `main` there, then needs the gitlink *and*
-  `wayfinder.pin`'s `ref` moved here in step. Letting those two drift is what
-  left redline typechecking against a domain package the fork had moved past.
-  **The order is forced, not stylistic:** `validate.sh` #15 fails unless the
-  submodule sits on the fork `main`'s commit, so a fork feature branch
-  cannot be pinned — it must merge there first. Plan the fork PR as part of the
-  step, or the second commit cannot be made.
+- **A fork-side step is two commits, not one** — one in `services/wayfinder`,
+  one here moving the gitlink onto it. That is how gitlinks work, not a policy.
+  What *is* a policy: `validate.sh` #14 fails unless the submodule sits on the
+  fork `main`'s commit, so a fork feature branch cannot be pinned — it must merge
+  there first. Plan the fork PR as part of the step, or the second commit cannot
+  be made.
 
 ---
 
@@ -68,9 +66,8 @@ not reimplement, so the submodule follows womblex's `main` rather than sitting o
 an older commit — currently `d6850de`, declared version `0.4.0`, which is
 `origin/main`. Lagging it means going without a capability or growing a
 redline-side substitute, which is the duplication the submodule discipline exists
-to prevent. Two things move with it: the sidecar's `[womblex]` extra
-(`womblex==0.4.0`), which `validate.sh` #13 asserts agrees with the submodule's
-declared version, and any claim in the docs that names a specific commit. The
+to prevent. The gitlink is the only pin — nothing restates the version, so a bump
+is one edit plus any claim in the docs that names a specific commit. The
 discipline itself is in `architecture.md`; what belongs here is that a bump is
 ordinary work, not a decision to relitigate.
 
@@ -150,7 +147,7 @@ feature, and it is the first step below.** The Create Corpus tab
 is the cold-start ingest surface: it names the run, uploads raw documents, authors
 the config, fires, tracks the four states and links to `/evaluations/new` on
 `done` — no brands, no fields, no `source_hash` needed before the run reads. It is
-gated on `evaluation:create` and pinned (gitlink + `wayfinder.pin` in step).
+gated on `evaluation:create` and pinned (the submodule gitlink).
 `architecture.md` §3/§5 records the second engine seam; `design-principles.md`
 carries the wider-first-run override decision; `docs/guides/create-a-corpus.md`
 describes the surface.
@@ -398,8 +395,8 @@ Raw-bucket *browse* and the synthesis picker stay deferred.
   removed from `validate.sh` #15 ("policed a relationship we do not have").
   Modifying the fork's own features (e.g. the synthesis document source) is
   ordinary fork work under the two-commit rule; the only live caution is that a
-  change to `@rbrasier/domain`'s shape brings the contract test and
-  `wayfinder.pin` bump in step.
+  change to `@rbrasier/domain`'s shape brings the contract test along with the
+  gitlink bump.
 
 ### What the lean vertical deliberately does not do
 

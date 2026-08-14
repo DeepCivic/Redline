@@ -3,8 +3,10 @@ packages:
   - "packages/*"
   # Strategy A: consume Wayfinder's unpublished `@rbrasier/*` workspace packages
   # through this shared workspace. `vendor/wayfinder` is NOT a submodule — it is
-  # materialised at build time from wayfinder.pin by scripts/vendor-wayfinder.sh
-  # and never committed (ADR-0012, validate.sh check #6).
+  # materialised at build time out of the services/wayfinder submodule by
+  # scripts/vendor-wayfinder.sh and never committed (ADR-0012, validate.sh #6).
+  # A copy rather than the glob reaching straight into services/wayfinder,
+  # because that would absorb every package the fork carries.
   #
   # This glob is why pnpm-lock.yaml depends on whether that tree is present:
   # installing without it drops the vendor/wayfinder/packages/domain importer and

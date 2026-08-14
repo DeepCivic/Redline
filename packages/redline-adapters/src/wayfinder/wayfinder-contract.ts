@@ -82,7 +82,7 @@ export const loadWayfinderDomain = async (): Promise<WayfinderDomainContract | n
 
 // --- The frozen contract ------------------------------------------------------
 //
-// Captured from rbrasier/wayfinder at the pinned commit (see wayfinder.pin).
+// Captured from the Wayfinder fork at the services/wayfinder gitlink.
 // Every redline test that used to call a Wayfinder helper as its oracle now
 // asserts against these values instead, which is what lets those suites run with
 // no Wayfinder present. The drift check re-derives all of them from upstream.

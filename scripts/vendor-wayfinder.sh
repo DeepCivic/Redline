@@ -10,35 +10,29 @@
 # We never commit vendor/wayfinder (validate.sh check #6 enforces this); it is a
 # build-time materialisation only. Honours ADR-0001 ("design as if C").
 #
+# The source is the services/wayfinder submodule — the same fork checkout the
+# review UI mounts into, so the tree redline typechecks against and the tree it
+# runs in are one commit by construction, with no second pin to keep in step.
+#
+# Why a copy at all, when the submodule is already on disk: pnpm's workspace glob
+# would absorb *every* package under services/wayfinder/packages/*, dragging
+# @huggingface/transformers, the OpenTelemetry SDK, minio, docx and pdf-parse into
+# redline's install. This copies only what we consume (WAYFINDER_PACKAGES).
+#
 # Usage:
-#   scripts/vendor-wayfinder.sh                     # from ../wayfinder, domain only
+#   scripts/vendor-wayfinder.sh                     # from services/wayfinder, domain only
 #   WAYFINDER_DIR=/path/to/wayfinder scripts/vendor-wayfinder.sh
 #   WAYFINDER_PACKAGES="domain shared" scripts/vendor-wayfinder.sh
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WAYFINDER_DIR="${WAYFINDER_DIR:-$REPO_ROOT/../wayfinder}"
+WAYFINDER_DIR="${WAYFINDER_DIR:-$REPO_ROOT/services/wayfinder}"
 WAYFINDER_PACKAGES="${WAYFINDER_PACKAGES:-domain}"
-
-# The pinned commit (wayfinder.pin) is the reference redline is built against.
-PIN_FILE="$REPO_ROOT/wayfinder.pin"
-PINNED_REF="$(grep -E '^ref=' "$PIN_FILE" 2>/dev/null | cut -d= -f2)"
-PINNED_REPO="$(grep -E '^repo=' "$PIN_FILE" 2>/dev/null | cut -d= -f2)"
 
 if [ ! -d "$WAYFINDER_DIR/packages/domain" ]; then
   echo "ERROR: Wayfinder checkout not found at: $WAYFINDER_DIR" >&2
-  echo "Set WAYFINDER_DIR=/path/to/wayfinder and re-run." >&2
-  echo "The pinned source is $PINNED_REPO @ $PINNED_REF (see wayfinder.pin)." >&2
+  echo "Run 'git submodule update --init', or set WAYFINDER_DIR to a checkout." >&2
   exit 1
-fi
-
-# Vendoring from an unpinned checkout is allowed — it is how you test an
-# upstream bump — but it must never be silent, because the drift check's verdict
-# then describes a commit the pin does not name.
-SOURCE_REF="$(git -C "$WAYFINDER_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")"
-if [ -n "$PINNED_REF" ] && [ "$SOURCE_REF" != "$PINNED_REF" ]; then
-  echo "WARNING: vendoring Wayfinder at $SOURCE_REF, which is not the pinned $PINNED_REF." >&2
-  echo "         Update wayfinder.pin if this bump is intended." >&2
 fi
 
 DEST="$REPO_ROOT/vendor/wayfinder"

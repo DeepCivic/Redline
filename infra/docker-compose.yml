@@ -147,8 +147,8 @@ services:
   #
   # Built from the REPO ROOT with infra/docker/womblex-money.Dockerfile because
   # the image needs both source trees — the engine submodule and the sidecar
-  # package — and installs the engine from the submodule source (the `[womblex]`
-  # pin is an untagged commit not on any index). See that Dockerfile's header.
+  # package — and installs the engine from the submodule source, the only
+  # installable form womblex has. See that Dockerfile's header.
   #
   #   podman compose -f infra/docker-compose.yml --profile money \
   #     run --rm money --evaluation-id <evaluationId>

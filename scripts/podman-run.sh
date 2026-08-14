@@ -12,17 +12,17 @@
 #   scripts/podman-run.sh test            # just test
 #   scripts/podman-run.sh "pnpm typecheck"
 #
-# Requires: podman on the host; a sibling Wayfinder checkout (see WAYFINDER_DIR).
+# Requires: podman on the host; the services/wayfinder submodule initialised.
 #
 # Env overrides:
 #   PODMAN="flatpak-spawn --host podman"   run host podman from inside a flatpak
-#   WAYFINDER_DIR=/path/to/wayfinder        Wayfinder checkout (default ../wayfinder)
+#   WAYFINDER_DIR=/path/to/wayfinder        Wayfinder checkout (default services/wayfinder)
 #   WAYFINDER_PACKAGES="domain shared"      which @rbrasier/* packages to vendor
 #   SCRATCH_BASE=/host/visible/tmp          base dir for the scratch copy
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WAYFINDER_DIR="${WAYFINDER_DIR:-$REPO_ROOT/../wayfinder}"
+WAYFINDER_DIR="${WAYFINDER_DIR:-$REPO_ROOT/services/wayfinder}"
 IMAGE="${IMAGE:-docker.io/library/node:20-bookworm-slim}"
 PNPM_VERSION="${PNPM_VERSION:-9.12.0}"
 PODMAN="${PODMAN:-podman}"
@@ -36,7 +36,7 @@ mkdir -p "$SCRATCH_BASE"
 
 if [ ! -d "$WAYFINDER_DIR/packages/domain" ]; then
   echo "ERROR: Wayfinder checkout not found at: $WAYFINDER_DIR" >&2
-  echo "Set WAYFINDER_DIR=/path/to/wayfinder and re-run." >&2
+  echo "Run 'git submodule update --init', or set WAYFINDER_DIR to a checkout." >&2
   exit 1
 fi
 

@@ -62,16 +62,20 @@ adopted principles and non-goals. The delivery plan tracks outstanding work only
 design, and its item numbers are local to that file and renumbered whenever the
 outstanding set changes.
 
-Both upstream Python engines are **git submodules** consumed for their existing
-capabilities, not reimplemented: `services/womblex` (tracking the engine's latest
-`main` — currently `d6850de`, declared version `0.4.0`; the engine publishes no
-tags, so `validate.sh` #13 compares the declared version against the sidecar's
-`womblex==` extra) and `services/numbatch` (`72bcead`). A submodule holds
-upstream source only — redline's
-own code sits beside it (`services/womblex-ingest`, `services/numbatch-extension`).
-Run `git submodule update --init` on a fresh clone. Wayfinder is also vendored
-from a build-time pin (`wayfinder.pin`, johntooth/wayfinder) because vendoring
-the whole package set would drag it into the pnpm workspace.
+All three upstreams are **git submodules** consumed for their existing
+capabilities, not reimplemented: `services/womblex` (`d6850de`),
+`services/numbatch` (`72bcead`) and the Wayfinder fork `services/wayfinder`
+(johntooth/wayfinder, branch `main`). A submodule holds upstream source only —
+redline's own code sits beside it (`services/womblex-ingest`,
+`services/numbatch-extension`). Run `git submodule update --init` on a fresh
+clone.
+
+**The gitlink is the only pin.** Each submodule tracks its upstream's latest
+`main`, and no SHA or version is restated anywhere else — bumping one is one
+edit. Wayfinder's `@rbrasier/domain` is copied out of `services/wayfinder` into
+`vendor/wayfinder` at build time (`scripts/vendor-wayfinder.sh`) because the pnpm
+workspace glob would otherwise absorb the fork's whole package set; that copy is
+a filter on what is vendored, not a second pin.
 
 Publishing target: the **DeepCivic** org (not johntooth).
 

@@ -58,7 +58,7 @@ redline/
 ├── apps/
 │   └── redline-web/                # specialist control surface + review grid
 ├── services/
-│   ├── womblex/                 # SUBMODULE: the womblex engine @ v0.3.0
+│   ├── womblex/                 # SUBMODULE: the womblex engine @ d6850de
 │   ├── womblex-ingest/          # redline's Parquet→JSON read sidecar
 │   ├── numbatch/                # SUBMODULE: the Numbatch fork @ 72bcead
 │   └── numbatch-extension/      # redline's additive overlay on the fork
@@ -74,10 +74,11 @@ runtime-decoupled) so the plugin only ever depends on Wayfinder's ports. Wayfind
 shared pnpm workspace that includes `vendor/wayfinder/packages/*`.
 
 The tree is **materialised, never committed**: `scripts/vendor-wayfinder.sh` copies
-only the package we consume, from the commit named in [`wayfinder.pin`](./wayfinder.pin).
-It is an **optional** dependency — `pnpm install` and `./validate.sh` are green with no
-Wayfinder present, and the one suite that needs it skips (ADR-0012). To bump Wayfinder,
-edit `wayfinder.pin`.
+only the package we consume out of the `services/wayfinder` submodule, so the tree
+redline typechecks against is the tree it runs in. It is an **optional**
+dependency — `pnpm install` and `./validate.sh` are green with no Wayfinder
+present, and the one suite that needs it skips (ADR-0012). To bump Wayfinder, move
+the submodule.
 
 ## Toolchain
 
