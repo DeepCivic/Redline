@@ -187,12 +187,15 @@ built appears in the picker and you say what you want answered about it.
 
 ## What is not there yet
 
-- **AI chunking is refused, deliberately.** Leaving the chunk-mode override off,
-  or setting only the size and table options, works. Naming a chunking *model*
-  is rejected with a message saying why: it makes chunking a per-document
-  Isaacus call and requires enrich to run before chunk or every document is
-  enriched twice at double cost — an ordering the stage toggles cannot express.
-  It is refused rather than quietly ignored so the bill is never a surprise.
+- **AI chunking is the corpus default; naming a model is not yet on this
+  screen.** Every run already chunks with semantically bounded (AI) boundaries
+  — `infra/womblex/redline.yaml`'s `chunking.chunking_model` — and the sidecar
+  orders `enrich` before `chunk` whenever a model is resolved, so a document is
+  never enriched twice at double cost. What is missing is a way to *name* a
+  different model from this screen: the chunk-mode override the form composes
+  carries size and table options only, so a specialist cannot yet override the
+  corpus default's model here — the sidecar already accepts and applies one on
+  the wire if sent.
 
 - **A corpus extracted outside this screen is a different path.** This screen
   starts a corpus from the raw documents in your bucket. If someone has already
