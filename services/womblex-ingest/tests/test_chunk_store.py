@@ -85,6 +85,42 @@ def test_load_lands_chunk_rows_addressable_by_stable_key() -> None:
     assert [r.chunk_id for r in rows] == [f"{SOURCE_HASH}:0", f"{SOURCE_HASH}:1"]
 
 
+def test_load_document_carries_the_element_range_off_the_shard_row() -> None:
+    # Chunk element addressing (delivery-plan): a raw *.chunks.parquet row already
+    # carries start_char/end_char/elem_order (womblex's CHUNKS_SCHEMA); the load
+    # must not drop them the way it used to.
+    store = InMemoryChunkStore()
+    rows = ShardRows(
+        source_hash=SOURCE_HASH,
+        elements=[],
+        chunks=[
+            {
+                "chunk_index": 0,
+                "text": "narrative body",
+                "content_type": "narrative",
+                "start_char": 0,
+                "end_char": 200,
+            },
+            {
+                "chunk_index": 1,
+                "text": "| a | b |",
+                "content_type": "table",
+                "elem_order": 4,
+            },
+        ],
+    )
+
+    load_document(store, EVAL, rows, embeddings=None)
+
+    fetched = store.fetch_chunks(EVAL, [f"{SOURCE_HASH}:0", f"{SOURCE_HASH}:1"])
+    assert fetched[0].start_char == 0
+    assert fetched[0].end_char == 200
+    assert fetched[0].elem_order is None
+    assert fetched[1].start_char is None
+    assert fetched[1].end_char is None
+    assert fetched[1].elem_order == 4
+
+
 def test_fetch_chunks_returns_byte_identical_text() -> None:
     # The transfer mechanic (ADR-0017): the same query returns the same source
     # text womblex extracted, verbatim, so an LLM copies it into a report slot.
@@ -228,6 +264,48 @@ def test_load_extraction_lands_rows_from_the_json_read_model() -> None:
     assert rows[0].text == "Chunk zero text."
     assert rows[0].chunk_index == 0
     assert rows[1].chunk_index == 1
+
+
+def test_load_extraction_carries_content_type_and_element_range() -> None:
+    # QA regression guard: load_extraction used to hardcode content_type to
+    # "narrative" for every chunk, so a table chunk landed via /ingest (the path
+    # a Create-Corpus-fired run drives) mis-typed silently and carried no element
+    # range at all. Both now ride straight off ChunkRecord.
+    store = InMemoryChunkStore()
+    extraction = DocumentExtraction(
+        documentId=SOURCE_HASH,
+        elements=[],
+        chunks=[
+            ChunkRecord(
+                chunkId=f"{SOURCE_HASH}:0",
+                documentId=SOURCE_HASH,
+                text="narrative body",
+                contentType="narrative",
+                startChar=0,
+                endChar=200,
+            ),
+            ChunkRecord(
+                chunkId=f"{SOURCE_HASH}:1",
+                documentId=SOURCE_HASH,
+                text="| a | b |",
+                contentType="table",
+                elementOrder=4,
+            ),
+        ],
+        tableCells=[],
+    )
+
+    load_extraction(store, EVAL, extraction, embeddings=None)
+
+    rows = store.fetch_chunks(EVAL, [f"{SOURCE_HASH}:0", f"{SOURCE_HASH}:1"])
+    assert rows[0].content_type == "narrative"
+    assert rows[0].start_char == 0
+    assert rows[0].end_char == 200
+    assert rows[0].elem_order is None
+    assert rows[1].content_type == "table"
+    assert rows[1].start_char is None
+    assert rows[1].end_char is None
+    assert rows[1].elem_order == 4
 
 
 def test_load_extraction_joins_the_vector_on_chunk_id() -> None:

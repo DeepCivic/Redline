@@ -36,6 +36,15 @@ def test_chunk_table_carries_the_provenance_keys() -> None:
     assert "chunk_id" in ddl
 
 
+def test_chunk_table_carries_the_element_range_it_was_cut_from() -> None:
+    # Chunk element addressing (delivery-plan): the element range each chunk was
+    # cut from, mirroring womblex's own CHUNKS_SCHEMA columns so a money span can
+    # resolve to the one chunk containing it instead of to its whole document.
+    ddl = REDLINE_CHUNK_STORE_DDL.lower()
+    for column in ("start_char", "end_char", "elem_order"):
+        assert column in ddl, column
+
+
 def test_embedding_is_stored_as_available_data_not_a_vector_index() -> None:
     ddl = REDLINE_CHUNK_STORE_DDL.lower()
     # The embedding rides as data: a float array / jsonb column and a declared

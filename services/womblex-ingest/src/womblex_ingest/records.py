@@ -40,11 +40,25 @@ class ElementRecord:
 
 @dataclass(frozen=True)
 class ChunkRecord:
-    """A womblex chunk: chunkId is `{source_hash}:{chunk_index}`."""
+    """A womblex chunk: chunkId is `{source_hash}:{chunk_index}`.
+
+    `startChar`/`endChar`/`elementOrder` are the element range this chunk was cut
+    from (delivery-plan "Chunk element addressing"), mirroring womblex's own
+    CHUNKS_SCHEMA (store/output.py): a narrative chunk carries startChar/endChar
+    (offsets into the reassembled narrative, the coordinate space a money span's
+    narrative locus reads) and null elementOrder; a table chunk carries
+    elementOrder (the table element it was cut from — null for a
+    spreadsheet-sheet table chunk, which has no single anchor element) and null
+    startChar/endChar (its offsets are into table markdown, not narrative).
+    """
 
     chunkId: str
     documentId: str
     text: str
+    contentType: str = "narrative"
+    startChar: Optional[int] = None
+    endChar: Optional[int] = None
+    elementOrder: Optional[int] = None
 
 
 @dataclass(frozen=True)

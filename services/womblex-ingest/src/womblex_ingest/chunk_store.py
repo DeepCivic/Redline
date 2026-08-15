@@ -49,6 +49,15 @@ class ChunkRow:
     when the embed stage did not run for this chunk — never a pgvector type, because
     the addendum defers the ANN index, and never a numpy/Arrow object, keeping the
     store's surface plain data (the Python-side sibling of redline-domain purity).
+
+    `start_char`/`end_char`/`elem_order` are the element range this chunk was cut
+    from (delivery-plan "Chunk element addressing"), split by `content_type` the
+    same way womblex's own CHUNKS_SCHEMA does — a narrative chunk carries
+    start_char/end_char and null elem_order; a table chunk carries elem_order (its
+    anchor element — null for a spreadsheet-sheet table chunk) and null
+    start_char/end_char. Defaulted to `None` rather than made required: a row that
+    predates this column (or a caller that has not resolved it) is a legitimate
+    "not carried", not a construction error.
     """
 
     document_id: str
@@ -59,6 +68,9 @@ class ChunkRow:
     text: str
     embedding: Optional[List[float]]
     embedding_model: Optional[str]
+    start_char: Optional[int] = None
+    end_char: Optional[int] = None
+    elem_order: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +170,10 @@ def load_document(
     `(source_hash, chunk_index)`; a chunk with no vector (the absent-embed-stage
     path) lands with `embedding=None` — the extraction stays queryable, the vector
     is simply not there (NOT_FOUND on the vector, not a broken load — ADR-0018).
+
+    `start_char`/`end_char`/`elem_order` are the element range this chunk was cut
+    from (delivery-plan "Chunk element addressing"), read straight off the shard
+    row — womblex's CHUNKS_SCHEMA already carries them.
     """
     vectors_by_index: Dict[int, Tuple[List[float], str]] = {}
     if embeddings is not None:
@@ -178,6 +194,9 @@ def load_document(
                 text=str(_require(chunk_row, "text", "chunk_text")),
                 embedding=vector[0] if vector else None,
                 embedding_model=vector[1] if vector else None,
+                start_char=_optional(chunk_row, "start_char"),
+                end_char=_optional(chunk_row, "end_char"),
+                elem_order=_optional(chunk_row, "elem_order", "element_order"),
             )
         )
     store.upsert_chunks(evaluation_id, projected)
@@ -214,12 +233,17 @@ def load_extraction(
     caller that has decoded rows in hand; the two land identical `ChunkRow`s.
 
     Each chunk joins its vector on `chunkId` — the same key both resources carry
-    — and its `chunk_index` is recovered from that key. `content_type`/`page` are
-    absent from the JSON read model (it does not carry them), so they take the
-    store's defaults (`narrative` / ``None``), exactly as `load_document` does for
-    a chunk row that omits them. A chunk with no vector (the absent-embed-stage
-    path) lands with `embedding=None` — the extraction stays queryable
-    (NOT_FOUND on the vector, not a broken load — ADR-0018).
+    — and its `chunk_index` is recovered from that key. `page` is absent from the
+    JSON read model (it does not carry per-chunk page), so it takes the store's
+    ``None`` default. `content_type`/`start_char`/`end_char`/`elem_order` DO ride
+    on `ChunkRecord` (chunk element addressing) and are carried straight through —
+    this is the load path a Create-Corpus-fired run drives (`run_trigger.py`'s
+    resume-on-completion projection), so hardcoding `content_type="narrative"`
+    here would have silently mis-typed every table chunk from that path, and left
+    every chunk's element range absent from `redline_chunks`. A chunk with no
+    vector (the absent-embed-stage path) lands with `embedding=None` — the
+    extraction stays queryable (NOT_FOUND on the vector, not a broken load —
+    ADR-0018).
     """
     vectors_by_chunk_id: Dict[str, Tuple[List[float], str]] = {}
     if embeddings is not None:
@@ -234,11 +258,14 @@ def load_extraction(
                 document_id=document.documentId,
                 chunk_id=chunk.chunkId,
                 chunk_index=_chunk_index_from_id(chunk.chunkId),
-                content_type="narrative",
+                content_type=chunk.contentType,
                 page=None,
                 text=chunk.text,
                 embedding=vector[0] if vector else None,
                 embedding_model=vector[1] if vector else None,
+                start_char=chunk.startChar,
+                end_char=chunk.endChar,
+                elem_order=chunk.elementOrder,
             )
         )
     store.upsert_chunks(evaluation_id, projected)

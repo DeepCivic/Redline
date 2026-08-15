@@ -41,14 +41,30 @@ CREATE TABLE IF NOT EXISTS redline_chunks (
     text            text    NOT NULL,
     embedding       jsonb,
     embedding_model text,
+    start_char      integer,
+    end_char        integer,
+    element_order   integer,
     PRIMARY KEY (evaluation_id, chunk_id)
 );
+
+-- `element_order`, not womblex's own `elem_order`: this table's columns follow
+-- redline_money_spans' naming (also `element_order`), the two-DDL contract this
+-- store's docstring names — the sidecar translates womblex's own vocabulary the
+-- same way it already does for document_id -> source_hash below.
+ALTER TABLE redline_chunks ADD COLUMN IF NOT EXISTS start_char integer;
+ALTER TABLE redline_chunks ADD COLUMN IF NOT EXISTS end_char integer;
+ALTER TABLE redline_chunks ADD COLUMN IF NOT EXISTS element_order integer;
 
 CREATE INDEX IF NOT EXISTS redline_chunks_structure_idx
     ON redline_chunks (evaluation_id, source_hash, chunk_index);
 
 CREATE INDEX IF NOT EXISTS redline_chunks_content_type_idx
     ON redline_chunks (evaluation_id, content_type);
+
+-- Chunk element addressing (delivery-plan): a table-cell/sheet-cell money span
+-- resolves to its chunk by (evaluation_id, source_hash, element_order).
+CREATE INDEX IF NOT EXISTS redline_chunks_element_order_idx
+    ON redline_chunks (evaluation_id, source_hash, element_order);
 """
 
 
@@ -74,8 +90,9 @@ class PostgresChunkStore:
                         """
                         INSERT INTO redline_chunks (
                             evaluation_id, chunk_id, source_hash, chunk_index,
-                            content_type, page, text, embedding, embedding_model
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            content_type, page, text, embedding, embedding_model,
+                            start_char, end_char, element_order
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (evaluation_id, chunk_id) DO UPDATE SET
                             source_hash     = EXCLUDED.source_hash,
                             chunk_index     = EXCLUDED.chunk_index,
@@ -83,7 +100,10 @@ class PostgresChunkStore:
                             page            = EXCLUDED.page,
                             text            = EXCLUDED.text,
                             embedding       = EXCLUDED.embedding,
-                            embedding_model = EXCLUDED.embedding_model
+                            embedding_model = EXCLUDED.embedding_model,
+                            start_char      = EXCLUDED.start_char,
+                            end_char        = EXCLUDED.end_char,
+                            element_order   = EXCLUDED.element_order
                         """,
                         (
                             evaluation_id,
@@ -95,6 +115,9 @@ class PostgresChunkStore:
                             row.text,
                             json.dumps(row.embedding) if row.embedding is not None else None,
                             row.embedding_model,
+                            row.start_char,
+                            row.end_char,
+                            row.elem_order,
                         ),
                     )
             conn.commit()
@@ -107,7 +130,8 @@ class PostgresChunkStore:
                 cur.execute(
                     """
                     SELECT source_hash, chunk_id, chunk_index, content_type,
-                           page, text, embedding, embedding_model
+                           page, text, embedding, embedding_model,
+                           start_char, end_char, element_order
                     FROM redline_chunks
                     WHERE evaluation_id = %s AND chunk_id = ANY(%s)
                     """,
@@ -134,7 +158,8 @@ class PostgresChunkStore:
                 cur.execute(
                     f"""
                     SELECT source_hash, chunk_id, chunk_index, content_type,
-                           page, text, embedding, embedding_model
+                           page, text, embedding, embedding_model,
+                           start_char, end_char, element_order
                     FROM redline_chunks
                     WHERE {' AND '.join(clauses)}
                     ORDER BY source_hash, chunk_index
@@ -145,7 +170,10 @@ class PostgresChunkStore:
 
 
 def _to_chunk_row(row: Sequence[object]) -> ChunkRow:
-    source_hash, chunk_id, chunk_index, content_type, page, text, embedding, model = row
+    (
+        source_hash, chunk_id, chunk_index, content_type, page, text, embedding, model,
+        start_char, end_char, element_order,
+    ) = row
     # psycopg decodes jsonb to a Python list already; guard the str case for a
     # driver/codec that hands back raw text.
     if isinstance(embedding, str):
@@ -159,4 +187,7 @@ def _to_chunk_row(row: Sequence[object]) -> ChunkRow:
         text=str(text),
         embedding=[float(v) for v in embedding] if embedding is not None else None,
         embedding_model=str(model) if model is not None else None,
+        start_char=int(start_char) if start_char is not None else None,
+        end_char=int(end_char) if end_char is not None else None,
+        elem_order=int(element_order) if element_order is not None else None,
     )

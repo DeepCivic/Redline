@@ -172,11 +172,16 @@ class StubWomblexExtractor:
                 text=f"{name}: body paragraph",
             ),
         ]
+        chunk_text = f"{name}: chunk 0"
         chunks = [
             ChunkRecord(
                 chunkId=f"{document_id}:0",
                 documentId=document_id,
-                text=f"{name}: chunk 0",
+                text=chunk_text,
+                contentType="narrative",
+                startChar=0,
+                endChar=len(chunk_text),
+                elementOrder=None,
             )
         ]
         table_cells = [

@@ -167,6 +167,19 @@ export const redlineChunks = pgTable(
     contentType: text("content_type").notNull().default("narrative"),
     page: integer("page"),
     text: text("text").notNull(),
+    // The element range this chunk was cut from (delivery-plan "Chunk element
+    // addressing"), mirroring womblex's own CHUNKS_SCHEMA columns byte-for-byte
+    // (services/womblex/src/womblex/store/output.py) so a money span resolves to
+    // the one chunk containing it instead of to its whole document. A narrative
+    // chunk carries startChar/endChar (offsets into the reassembled narrative,
+    // the same coordinate space redline_money_spans' narrative locus reads) and
+    // null elementOrder (it straddles several elements); a table chunk carries
+    // elementOrder (the table element it came from — null for a spreadsheet-sheet
+    // table chunk, which has no single anchor element) and null startChar/endChar
+    // (its offsets are into table markdown, not narrative).
+    startChar: integer("start_char"),
+    endChar: integer("end_char"),
+    elementOrder: integer("element_order"),
     embedding: jsonb("embedding"),
     embeddingModel: text("embedding_model"),
   },

@@ -108,6 +108,30 @@ describe("DrizzleChunkStore — exact fetch (ADR-0018, exact half)", () => {
     expect(only).not.toHaveProperty("embeddingModel");
     expect(only).not.toHaveProperty("values");
   });
+
+  it("carries the element range a chunk was cut from (delivery-plan: chunk element addressing)", async () => {
+    await seedChunk({
+      chunkId: "hashA:0",
+      chunkIndex: 0,
+      contentType: "narrative",
+      startChar: 120,
+      endChar: 480,
+    });
+    await seedChunk({
+      chunkId: "hashA:1",
+      chunkIndex: 1,
+      contentType: "table",
+      startChar: null,
+      endChar: null,
+      elementOrder: 7,
+    });
+
+    const fetched = await store.fetchChunks("eval-1", ["hashA:0", "hashA:1"]);
+
+    if (!isOk(fetched)) throw new Error("fetch failed");
+    expect(fetched.data[0]).toMatchObject({ startChar: 120, endChar: 480, elementOrder: null });
+    expect(fetched.data[1]).toMatchObject({ startChar: null, endChar: null, elementOrder: 7 });
+  });
 });
 
 describe("DrizzleChunkStore — structural fetch", () => {
