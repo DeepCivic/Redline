@@ -76,6 +76,23 @@ describe("renderRunStatusView", () => {
     expect(model.statusLabel).toBe("Embed stage failed");
   });
 
+  it("labels the graph-refresh stage, which the sidecar inserts rather than the form authoring", () => {
+    // AI chunking runs enrich before chunk, so the sidecar appends graph-refresh
+    // to rebuild the mention->chunk edges. It reaches this view like any other
+    // stage, and without a label it would render as the raw slug beside "Chunk".
+    const model = renderRunStatusView(
+      view({
+        phase: "errored",
+        completedStages: ["enrich", "chunk"],
+        failedStage: "graph-refresh",
+        resumable: true,
+        error: "graph-refresh pass failed",
+      }),
+    );
+
+    expect(model.statusLabel).toBe("Graph refresh stage failed");
+  });
+
   it("keeps polling only while the run is unsettled", () => {
     expect(renderRunStatusView(view({ phase: "extracting" })).shouldKeepPolling).toBe(true);
     expect(renderRunStatusView(view({ phase: "staging" })).shouldKeepPolling).toBe(true);

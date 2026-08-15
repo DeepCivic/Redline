@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 
 from womblex_ingest.main import build_app
 from womblex_ingest.run_trigger import (
+    ALLOWED_STAGES,
     ChunkModeOverride,
     ConfigOverride,
     ExtractionOverride,
@@ -189,15 +190,60 @@ def test_normalise_sequence_orders_chunk_before_embed_by_default() -> None:
 
 
 def test_normalise_sequence_keeps_chunk_before_enrich_with_no_chunking_model() -> None:
-    # Without AI chunking there is nothing for chunk to reuse from enrich, so
-    # the plain-token default ordering is unaffected.
+    # Without AI chunking there is nothing for chunk to reuse from enrich, so the
+    # plain-token default ordering is unaffected — and because the graph is then
+    # built against chunks that already exist, no graph-refresh is needed either.
     assert normalise_sequence(["enrich", "chunk"]) == ["chunk", "enrich"]
 
 
 def test_normalise_sequence_orders_enrich_before_chunk_when_a_chunking_model_is_set() -> None:
+    # graph-refresh follows chunk: enriching first means the graph is written
+    # before any chunk exists, so every mention lands chunk_index = -1 until the
+    # refresh rebuilds the mention->chunk edges (see the test below).
     assert normalise_sequence(
         ["chunk", "embed", "enrich", "money"], chunking_model="kanon-2-enricher"
-    ) == ["enrich", "chunk", "embed", "money"]
+    ) == ["enrich", "chunk", "graph-refresh", "embed", "money"]
+
+
+def test_normalise_sequence_appends_graph_refresh_after_chunk_when_enrich_leads() -> None:
+    # womblex `analyse/graph_refresh.py`: enriching before chunking leaves
+    # `*.enrichment_entities.parquet` mentions at `chunk_index = -1` and the
+    # graph-edges sidecar without mention->chunk edges, because no chunks existed
+    # yet. redline's IGraphStore filters entities by chunkIndex and walks
+    # `mentioned_in` to chunk text, so without the refresh the navigation
+    # mechanic resolves nothing. The stage is offline, API-free and idempotent.
+    assert normalise_sequence(["enrich", "chunk"], chunking_model="kanon-2-enricher") == [
+        "enrich",
+        "chunk",
+        "graph-refresh",
+    ]
+
+
+def test_normalise_sequence_adds_no_graph_refresh_when_enrich_was_not_authored() -> None:
+    # No enrich means no graph to refresh, and graph-refresh's contract requires
+    # the entities + edges sidecars enrich writes — inserting it would fail a
+    # stage over inputs that were never produced.
+    assert normalise_sequence(["chunk", "embed"], chunking_model="kanon-2-enricher") == [
+        "chunk",
+        "embed",
+    ]
+
+
+def test_normalise_sequence_adds_no_graph_refresh_when_chunk_was_not_authored() -> None:
+    # Enrich alone produces a graph with no chunks to map onto; the refresh
+    # requires the chunks sidecar, so there is nothing for it to do.
+    assert normalise_sequence(["enrich", "money"], chunking_model="kanon-2-enricher") == [
+        "enrich",
+        "money",
+    ]
+
+
+def test_graph_refresh_is_not_authorable() -> None:
+    # It is inserted by the sidecar as a dependency, never chosen on a form —
+    # a specialist cannot author it, and cannot omit it when it is needed.
+    assert "graph-refresh" not in ALLOWED_STAGES
+    with pytest.raises(UnknownStage):
+        normalise_sequence(["chunk", "graph-refresh"])
 
 
 def test_normalise_sequence_still_enforces_chunk_before_embed_with_a_chunking_model() -> None:
@@ -280,7 +326,7 @@ def test_trigger_runs_enrich_before_chunk_when_the_resolved_config_has_a_chunkin
     started = trigger.start(plan)
     _wait_terminal(trigger, started["runId"])
 
-    assert stages.calls == ["enrich", "chunk", "embed", "money"]
+    assert stages.calls == ["enrich", "chunk", "graph-refresh", "embed", "money"]
 
 
 def test_trigger_resolves_the_chunking_model_against_the_plans_override() -> None:
@@ -312,7 +358,7 @@ def test_trigger_resolves_the_chunking_model_against_the_plans_override() -> Non
     _wait_terminal(trigger, started["runId"])
 
     assert resolver.calls == [override]
-    assert stages.calls == ["enrich", "chunk", "embed", "money"]
+    assert stages.calls == ["enrich", "chunk", "graph-refresh", "embed", "money"]
 
 
 def test_trigger_rejects_a_stage_outside_the_allow_list() -> None:
@@ -962,7 +1008,7 @@ def test_post_runs_accepts_an_ai_chunking_model_and_orders_enrich_before_chunk()
     )
 
     assert response.status_code == 202
-    assert stages.calls == ["enrich", "chunk"]
+    assert stages.calls == ["enrich", "chunk", "graph-refresh"]
 
 
 # Pins the override against the *real* engine config rather than the stand-in

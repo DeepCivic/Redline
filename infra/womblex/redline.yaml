@@ -97,9 +97,17 @@ pii:
 # delivery-plan items 3-7 read it, so it is on rather than off — but it is REAL
 # Isaacus spend (`kanon-2-enricher`), unlike chunking's vendored tokeniser, and
 # it is not part of `womblex run`/`worker`: it is a separate
-# `run-stage --stage enrich` pass that must follow chunk. Chunks are a
-# non-strict input, so enrich-before-chunk still succeeds — and lands every
-# entity with chunk_index = -1, a graph that cannot be joined to chunk text.
+# `run-stage --stage enrich` pass.
+#
+# Enrich now runs BEFORE chunk, because `chunking_model` above makes chunk reuse
+# the Document enrich persists. Chunks are a non-strict input to enrich, so that
+# order still succeeds — but it lands every entity with chunk_index = -1 and no
+# mention->chunk edges, a graph that cannot be joined to chunk text. That is not
+# left standing: the sidecar inserts `graph-refresh` after chunk whenever both
+# stages run (`run_trigger.py`'s `normalise_sequence`), which rebuilds the edges
+# offline from the char offsets both sidecars already carry. Reversing the two
+# without also dropping `chunking_model` would reinstate the double enrichment
+# charge; dropping `graph-refresh` would silently break the navigation mechanic.
 enrichment:
   enabled: true
 

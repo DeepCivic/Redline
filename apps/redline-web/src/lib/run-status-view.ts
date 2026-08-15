@@ -10,11 +10,14 @@ import type { RunPhase, RunStatusView } from "@redline/redline-domain";
 // spinner that never resolves — lives here as `isErrored`/`failedStage`/`canResume`
 // and `shouldKeepPolling`, not in the shell.
 
+// `graph-refresh` is not authorable — the sidecar inserts it after chunk when AI
+// chunking forces enrich to lead — but it reaches this view like any other stage.
 const STAGE_LABELS: Record<string, string> = {
   chunk: "Chunk",
   embed: "Embed",
   enrich: "Enrich",
   money: "Money",
+  "graph-refresh": "Graph refresh",
 };
 
 const PHASE_LABELS: Record<RunPhase, string> = {

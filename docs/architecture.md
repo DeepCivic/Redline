@@ -598,8 +598,18 @@ carried as provenance, not as part of the join key (see §7).
    with no separate `POST /ingest` in between; that is the join the two-screen
    flow needs. The load runs only after every stage completed and fails the run
    loudly on a store error. The
-   allow-listed stage *sequence* is authored; the dependency (chunk before embed)
-   is enforced sidecar-side. What does **not** change: redline still does not
+   allow-listed stage *sequence* is authored; the dependencies are enforced
+   sidecar-side. Those are: chunk before embed, always; and — whenever the
+   effective `chunking.chunking_model` is set, which `infra/womblex/redline.yaml`
+   now makes the corpus default — **enrich** before chunk, so semchunk reuses the
+   Document enrich persists rather than self-enriching at double cost, followed
+   by a **`graph-refresh`** pass after chunk. That third stage is not authorable
+   and not optional: enriching first necessarily writes the graph before any
+   chunk exists, leaving every mention at `chunk_index = -1` with no
+   mention→chunk edges, and the refresh rebuilds them offline from char offsets
+   both sidecars already carry (womblex `analyse/graph_refresh.py` — API-free and
+   idempotent). Without it the AI-chunking ordering would buy coherent chunks by
+   breaking the graph traversal invariant 7 depends on. What does **not** change: redline still does not
    reimplement batching, retry or scale-out — those stay the engine's
    (`cloud/worker.py`, its Postgres queue). redline drives and observes; it does
    not wrap. Resume is not its own logic: womblex's `enqueue` is idempotent on

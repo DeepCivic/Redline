@@ -334,8 +334,16 @@ Raw-bucket *browse* and the synthesis picker stay deferred.
   input `strict=False` with the comment *"Ordering requirement, not a hard
   dependency: without the sidecar the chunker self-enriches (double cost, same
   output). Warn, don't fail."* The constraint the refusal was built on does not
-  exist; the real cost is a duplicate Isaacus charge, avoidable by ordering
-  enrich first. Recorded here rather than quietly fixed because it has now
+  exist; the cost of the wrong order is a duplicate Isaacus charge, avoidable by
+  ordering enrich first. **"A duplicate charge, not a wrong result" was too
+  strong, and the build caught it.** Ordering enrich first is correct for the
+  chunker but writes the graph before any chunk exists, so every mention lands
+  `chunk_index = -1` with no mention→chunk edges — the navigation mechanic
+  `IGraphStore` walks. womblex ships the repair (`analyse/graph_refresh.py`,
+  offline, API-free, idempotent), and the sidecar now inserts `graph-refresh`
+  after chunk whenever enrich and chunk both run. So the ordering is right *and*
+  it carries a third stage; the refusal was still wrong, but this is what it
+  cost to get the alternative correct. Recorded here rather than quietly fixed because it has now
   regressed once: a decision that keeps returning needs a written reason it is
   wrong, not just a reverting commit. The requirement it violated is that chunks
   read by embed, enrich and the evaluation tool be semantically bounded — a

@@ -55,6 +55,16 @@ _STAGE_RANK = {"chunk": 0, "embed": 1, "enrich": 2, "money": 3}
 # needs `chunk`, and `money` stays independent, so only chunk and enrich swap.
 _STAGE_RANK_WITH_AI_CHUNKING = {"enrich": 0, "chunk": 1, "embed": 2, "money": 3}
 
+# Not authorable, and not optional when it applies. Enriching before chunking
+# writes the graph while no chunks exist, so every mention lands
+# `chunk_index = -1` and the edges sidecar carries no mention->chunk edges
+# (womblex `analyse/graph_refresh.py`). redline's `IGraphStore` filters entities
+# by chunk and walks `mentioned_in` to chunk text — the navigation mechanic — so
+# without this the AI-chunking ordering above would buy coherent chunks by
+# silently breaking the graph. The stage is offline, API-free and idempotent, so
+# the sidecar inserts it rather than asking a form to remember it.
+GRAPH_REFRESH_STAGE = "graph-refresh"
+
 RunPhase = Literal["extracting", "staging", "done", "errored"]
 
 # The four engine operations, injected so the sequencing logic is testable. Each
@@ -235,7 +245,9 @@ def normalise_sequence(
     `[embed, chunk]` becomes `[chunk, embed]` while an already-valid order is
     unchanged. When `chunking_model` is set, `_STAGE_RANK_WITH_AI_CHUNKING`
     swaps chunk and enrich instead, so AI chunking reuses enrich's Document
-    rather than self-enriching at double cost.
+    rather than self-enriching at double cost — and `GRAPH_REFRESH_STAGE` is
+    inserted after chunk to repair the mention->chunk edges that ordering
+    necessarily leaves unbuilt.
     """
     seen: List[str] = []
     for stage in stage_sequence:
@@ -246,8 +258,16 @@ def normalise_sequence(
             )
         if stage not in seen:
             seen.append(stage)
-    rank = _STAGE_RANK_WITH_AI_CHUNKING if chunking_model else _STAGE_RANK
-    return sorted(seen, key=lambda stage: rank[stage])
+    if not chunking_model:
+        return sorted(seen, key=lambda stage: _STAGE_RANK[stage])
+
+    ordered = sorted(seen, key=lambda stage: _STAGE_RANK_WITH_AI_CHUNKING[stage])
+    # Both are required: the refresh reads the entities/edges sidecars enrich
+    # writes and the chunks sidecar chunk writes, so with either absent there is
+    # nothing to repair and the stage would fail on missing inputs.
+    if "enrich" in ordered and "chunk" in ordered:
+        ordered.insert(ordered.index("chunk") + 1, GRAPH_REFRESH_STAGE)
+    return ordered
 
 
 class RunTrigger:
