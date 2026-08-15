@@ -32,6 +32,77 @@
 
 ---
 
+## 0. Evaluation-surface removal — outstanding remediation (READ FIRST)
+
+**The Evaluation feature was deleted on 2026-08-15 as a product pivot.** Only
+*whole* Evaluation-specific files were removed; every change that needed a
+surgical edit was deliberately left, and is listed here.
+
+> **Neither repo builds in this state.** Barrels, containers and manifests still
+> reference deleted modules. Do not attempt a release, a `./validate.sh` run or a
+> gitlink bump until §0.2 is done. This is a known, recorded mid-pivot state, not
+> a regression to bisect.
+
+**What redline is after this pivot:** a corpus-ingest-and-report substrate. A
+specialist uploads documents into a named run (Create Corpus), womblex
+extracts/chunks/embeds/enriches/prices it, and the resulting chunks, graph,
+money-spans and extraction JSON serve two independent consumers — the fork's
+Create Corpus UI and `apps/redline-mcp`'s report tools. There is no Evaluation
+aggregate, no classification/adjudication/lens stack, no review grid, no pricing
+pivots and no Numbatch dependency.
+
+**Decisions already taken (do not relitigate):** `apps/redline-mcp` survives
+untouched (it never depended on the Evaluation entity); Create Corpus survives
+and must be decoupled from the Evaluation router/permission/container it
+currently shares; the Numbatch integration goes entirely.
+
+### 0.1 What was deleted
+
+96 files in this repo, 35 in the fork: the whole `redline-domain` entities
+directory and its seven Evaluation ports; the entire `packages/redline-application`
+package (every use case in it was Evaluation-specific); the Evaluation
+persistence, lens, adjudication and Numbatch adapters; the eight Evaluation view
+models and brains in `apps/redline-web/src/lib`; and in the fork, the whole
+`/evaluations` route tree, its two components, seven e2e specs, and the seed /
+manifest / report-verifier / language-model libs.
+
+### 0.2 Outstanding remediation, in dependency order
+
+| # | Where | What is left |
+|---|---|---|
+| 1 | `packages/redline-domain/src/index.ts` | 18 dangling `export *` lines for deleted entities and ports. |
+| 2 | `packages/redline-domain/src/ports/ports.test.ts` | Mixed file — imports deleted Evaluation entities but also covers surviving ports. Trim to the survivors rather than deleting. |
+| 3 | `packages/redline-adapters/src/index.ts` | Dangling exports at the Numbatch, evaluation-repository, lens-reader/writer, candidate-deriver and adjudicator blocks. |
+| 4 | `packages/redline-adapters/src/persistence/schema.ts` | Drop the 8 Evaluation tables (`redline_evaluations`, `_vendors`, `_response_groups`, `_responses`, `_lenses`, `_topics`, `_hard_rules`, `_lens_bindings`). Keep `redline_chunks`, `_money_spans`, `_graph_entities`, `_graph_edges`. A stale `row-mapping.ts` comment at line 10 also needs removing. |
+| 5 | `packages/redline-adapters/src/persistence/` | Add `0007_redline_drop_evaluation_tables.sql` dropping those 8 tables in FK-safe order and append it to `MIGRATION_FILES`. **Forward-only:** every migration here is `IF NOT EXISTS`-guarded and re-applied on every boot, so old migrations must not be edited or deleted. |
+| 6 | `apps/redline-web/src/lib/container.ts` | Replace `WorkflowContainer`/`WorkflowController` with a 3-field corpus container (`stagedCorpusReader`, `stagedCorpusWriter`, `runTrigger`) and a controller keeping only `listStagedCorpora`, `listStagedDocuments`, `corpus()`, `runStatus()`. Drop `productName`, `buildColdStartClassifier`, `buildMoneySpanFinancialExtractor`. |
+| 7 | `apps/redline-web/src/lib/report-export.ts` (+ test) | Decouple from the deleted `excel-export.ts` — it needs only `SheetCell`/`SheetData`/workbook shapes, which can be local. Its data source (`AssembledReport`) was never Evaluation-specific. |
+| 8 | `apps/redline-web/src/index.ts`, `container-test-fixtures.ts`, `container-wiring.test.ts`, `container.test.ts` | Prune to the surviving corpus/run-status/report-export surface. |
+| 9 | Manifests | Remove `@redline/redline-application` from `packages/redline-adapters/package.json:24`, `apps/redline-web/package.json:23`, `services/wayfinder/apps/web/package.json:28`, and `tsconfig.json:7`. |
+| 10 | `validate.sh` | Delete check 5 (redline-application purity — the directory is gone); check 11 and the `RUFF_TARGETS` entry in check 13 go with the Numbatch removal below. |
+| 11 | Numbatch removal | `git submodule deinit services/numbatch` + `.gitmodules` entry. Note `services/numbatch-extension` is **not** a submodule — it is a tracked directory, removed with a plain `git rm -r`. |
+| 12 | Fork: `apps/web/src/server/routers/evaluation.ts` (+ test) | Split: delete the eight Evaluation procedures, keep `createCorpus`/`runStatus`/`resumeRun` plus `stagedCorpora`/`stagedDocuments`, and move them to a `corpus.*` namespace. |
+| 13 | Fork: `apps/web/src/lib/container-redline.ts` (+ test) | Trim to the three surviving ports once item 6 lands. |
+| 14 | Fork: permissions | Delete `evaluation:review`; rename `evaluation:create` → `corpus:create` in `packages/domain/src/entities/permission.ts` and `packages/adapters/src/auth/seed-roles.ts`. Verified 1:1 — the surviving surface is exactly what `evaluation:create` already gated. |
+| 15 | Fork: `apps/web/src/components/sidebar.tsx` | Remove the Evaluations nav entry; re-gate Create Corpus on the renamed key. |
+| 16 | Fork: `create-corpus/_content.tsx` + `e2e/redline-create-corpus.spec.ts` | Remove the "Compose the evaluation" CTA linking to the deleted `/evaluations/new`. |
+| 17 | Fork: `apps/web/src/lib/redline-link.test.ts` | Package-resolution smoke test; drop its `@redline/redline-application` assertion. |
+| 18 | Docs | Rewrite `architecture.md` to the substrate framing above; strip the Evaluation half of this file (§2, §2.1, §3's lens/classification items, §4); revisit `design-principles.md` — **D1, D2, D6, D8 and D9 are about the comprehension lens or boundary decisions and no longer hold**; D7 needs rewording (its "resolutions are additive overlays" half went with them, its womblex-sidecar half stands); D4, D5 and D10 survive unchanged. The first five non-goals are lens re-entry conditions. `.claude/CLAUDE.md` needs its Project Identity and Architecture Rules updated (the `redline-application` bullet and the Apps-import bullet). |
+
+### 0.3 QA findings from the deleted mount
+
+A review of the post-run population mount found seven issues. **Five died with
+the code** (the `/review` redirect breaking create-only users; `populated: false`
+having no retry path; `stage: "review"` being asserted rather than read; the
+create mutation blocking on the whole reading pass; the create spec's weak
+`element=` assertion, which an unclassified row satisfied). Two are worth
+carrying forward as *lessons* rather than fixes: a long-running mutation with no
+recovery path needs a served retry before it ships, and an exit test must assert
+the thing it claims — `element=` matched `?element=0`, which is what an
+unread document produces.
+
+---
+
 ## 1. The build-step contract
 
 - One build step including its test. If the exit test needs two unrelated things
