@@ -49,17 +49,41 @@ redaction:
   enabled: false
 
 chunking:
-  # Token chunking, no `chunking_model` — so no AI-chunking API call is made. That
-  # does NOT make the stage keyless: upstream refuses the whole stage without one.
-  # `run_chunking` / `chunk_shards` return early when `isaacus_available()` is
-  # false (a network-free check for the isaacus package + ISAACUS_API_KEY), before
-  # any tokeniser is loaded — even though the engine vendors the Kanon-2 tokeniser
-  # in-tree at src/womblex/_models/kanon-2-tokenizer/ and prefers it offline.
-  # A policy gate, not a capability limit; see architecture.md §7.1. Moot in
-  # practice, since `embed` needs the key anyway.
+  # AI chunking (semchunk 4): boundaries follow the Kanon-2 enricher's structure
+  # spans instead of a 480-token budget split, so a chunk is a coherent unit —
+  # required because the chunk is what says which thing a money figure relates
+  # to, and a budget-cut chunk can straddle two line items or bisect one. This
+  # is the corpus default, not an opt-in someone has to remember (delivery-plan
+  # "Semantically bounded chunks, on by default").
+  #
+  # `chunking_model` set here means the stage was never keyless anyway — the
+  # engine refuses without ISAACUS_API_KEY regardless (`run_chunking` /
+  # `chunk_shards` return early when `isaacus_available()` is false), and `embed`
+  # needs the key too. See architecture.md §7.1.
+  #
+  # Ordering matters: `chunking_model` auto-enables `enrichment.persist_document`
+  # (WomblexConfig._wire_ai_chunking_reuse), and chunk reuses that Document only
+  # if `enrich` already ran — the sidecar's `normalise_sequence` enforces enrich
+  # before chunk whenever a chunking model is resolved (`run_trigger.py`), so a
+  # run authored in any order avoids the double Isaacus charge a stray `chunk`
+  # before `enrich` would otherwise cause.
+  #
+  # `enabled: false` is NOT "chunking is off" — it only gates `batch.py`'s
+  # in-batch compute during `run`/`worker` (`operations/chunk.py:33`), which
+  # `write_batch_parquet` discards unread (`DocumentResult.chunks` never reaches
+  # a shard). `run-stage --stage chunk` (the pass that actually writes
+  # `*.chunks.parquet`) never reads this flag — confirmed absent from
+  # `process/chunk_stage.py` and `cloud/stage_contracts.py`'s chunk contract —
+  # so real chunking is unaffected. With `chunking_model` unset this in-batch
+  # compute-and-drop cost nothing but wall clock; with it set, leaving this
+  # `true` would silently spend a full AI-chunking Isaacus call per document
+  # during extraction, throw the result away, then pay for it again for real in
+  # the chunk stage — the same double-charge shape as the enrich-ordering issue
+  # above, from a different cause.
   tokenizer: "isaacus/kanon-2-tokenizer"
+  chunking_model: kanon-2-enricher
   chunk_size: 480
-  enabled: true
+  enabled: false
   chunk_tables: true
 
 # Downstream text layers redline does not read.
@@ -73,9 +97,17 @@ pii:
 # delivery-plan items 3-7 read it, so it is on rather than off — but it is REAL
 # Isaacus spend (`kanon-2-enricher`), unlike chunking's vendored tokeniser, and
 # it is not part of `womblex run`/`worker`: it is a separate
-# `run-stage --stage enrich` pass that must follow chunk. Chunks are a
-# non-strict input, so enrich-before-chunk still succeeds — and lands every
-# entity with chunk_index = -1, a graph that cannot be joined to chunk text.
+# `run-stage --stage enrich` pass.
+#
+# Enrich now runs BEFORE chunk, because `chunking_model` above makes chunk reuse
+# the Document enrich persists. Chunks are a non-strict input to enrich, so that
+# order still succeeds — but it lands every entity with chunk_index = -1 and no
+# mention->chunk edges, a graph that cannot be joined to chunk text. That is not
+# left standing: the sidecar inserts `graph-refresh` after chunk whenever both
+# stages run (`run_trigger.py`'s `normalise_sequence`), which rebuilds the edges
+# offline from the char offsets both sidecars already carry. Reversing the two
+# without also dropping `chunking_model` would reinstate the double enrichment
+# charge; dropping `graph-refresh` would silently break the navigation mechanic.
 enrichment:
   enabled: true
 

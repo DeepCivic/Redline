@@ -598,8 +598,18 @@ carried as provenance, not as part of the join key (see §7).
    with no separate `POST /ingest` in between; that is the join the two-screen
    flow needs. The load runs only after every stage completed and fails the run
    loudly on a store error. The
-   allow-listed stage *sequence* is authored; the dependency (chunk before embed)
-   is enforced sidecar-side. What does **not** change: redline still does not
+   allow-listed stage *sequence* is authored; the dependencies are enforced
+   sidecar-side. Those are: chunk before embed, always; and — whenever the
+   effective `chunking.chunking_model` is set, which `infra/womblex/redline.yaml`
+   now makes the corpus default — **enrich** before chunk, so semchunk reuses the
+   Document enrich persists rather than self-enriching at double cost, followed
+   by a **`graph-refresh`** pass after chunk. That third stage is not authorable
+   and not optional: enriching first necessarily writes the graph before any
+   chunk exists, leaving every mention at `chunk_index = -1` with no
+   mention→chunk edges, and the refresh rebuilds them offline from char offsets
+   both sidecars already carry (womblex `analyse/graph_refresh.py` — API-free and
+   idempotent). Without it the AI-chunking ordering would buy coherent chunks by
+   breaking the graph traversal invariant 7 depends on. What does **not** change: redline still does not
    reimplement batching, retry or scale-out — those stay the engine's
    (`cloud/worker.py`, its Postgres queue). redline drives and observes; it does
    not wrap. Resume is not its own logic: womblex's `enqueue` is idempotent on
@@ -943,12 +953,20 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
    in-batch when `chunking.enabled` (`batch.py:63-64`) and then drops it at write
    time — `write_batch_parquet` passes only `(doc_id, path, extraction)` to
    `write_results` (`operations/persist.py:18-27`), and `DocumentResult.chunks`
-   never reaches a shard — so a keyed run does the work twice. That is wasted CPU
-   and wall clock, not Isaacus spend: redline sets no `chunking_model`, so chunking
-   is local `semchunk` over the vendored tokeniser. `chunking.enabled: false` for
-   the `run` pass avoids it and is safe for `run-stage --stage chunk`, which
-   ignores the flag; `womblex chunk --config` refuses outright when it is false
-   (`cli/pipeline.py:417-419`), so do not flip it if anyone uses that form.
+   never reaches a shard — so a keyed run does the work twice. `chunking.enabled:
+   false` for the `run`/worker pass avoids it and is safe for `run-stage --stage
+   chunk`, which ignores the flag entirely (absent from `process/chunk_stage.py`
+   and the chunk `StageContract`); `womblex chunk --config` refuses outright when
+   it is false (`cli/pipeline.py:417-419`), so do not flip it if anyone uses that
+   form. **This stopped being free.** While redline set no `chunking_model`, the
+   duplicate was wasted CPU/wall-clock only — `run_chunking` (`operations/chunk.py`)
+   read `config.chunking.chunking_model` regardless of caller, so once
+   `infra/womblex/redline.yaml` set one (semantically bounded chunks, on by
+   default), the in-batch pass would have spent a real per-document Isaacus AI-
+   chunking call and discarded it, then paid for it again for real in `run-stage
+   --stage chunk` — the same double-charge shape as the enrich-ordering issue
+   above, from an unrelated cause. `infra/womblex/redline.yaml` sets
+   `chunking.enabled: false` for exactly this reason now.
 
 2. **Retrieval requires Isaacus.** `*.embeddings.parquet` is produced only by
    `kanon-2-embedder` (Isaacus). redline's retrieval classification
@@ -1035,11 +1053,15 @@ vendored womblex source contradicts. Recorded here so they are not re-derived:
 
 7. **Three Isaacus-gated stages, not two — and only one is satisfied offline.**
    Earlier text framed the boundary as chunk-and-embed. `enrich` declares the same
-   need (`kanon-2-enricher`), and it is now enabled in redline's profile. Of the
-   three, only `chunk` is satisfied by a placeholder key, because its tokeniser is
-   vendored in-tree and it makes no call; `embed` and `enrich` both spend against
-   a real credential. A deployment without an Isaacus account gets extraction and
-   chunks and nothing else.
+   need (`kanon-2-enricher`), and it is now enabled in redline's profile. At the
+   `chunking.chunking_model` unset default, `chunk` alone is satisfied by a
+   placeholder key, because its tokeniser is vendored in-tree and it makes no
+   call, while `embed` and `enrich` both spend against a real credential.
+   **redline's own profile no longer sits at that default.**
+   `infra/womblex/redline.yaml` sets `chunking.chunking_model: kanon-2-enricher`
+   (semantically bounded chunks, on by default), so on redline's actual corpus
+   runs `chunk` spends too — a placeholder key satisfies nothing here, and a
+   deployment without a real Isaacus account gets extraction and nothing else.
 
 8. **The column-evidenced money path contributed nothing on a native-text
    corpus — measured, not assumed.** The pricing design leans on womblex's finding

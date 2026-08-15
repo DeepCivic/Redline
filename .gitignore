@@ -34,3 +34,10 @@ services/womblex-ingest/tests/corpus-local/*
 # CI materialises vendor/wayfinder at build time via scripts/vendor-wayfinder.sh;
 # local Podman dev vendors into its own scratch copy. Either way, keep it untracked.
 vendor/
+
+# uv's resolver lock for the sidecar. Not the project's workflow: this package's
+# documented dev path is `python3 -m venv && pip install -e '.[dev]'` (see its
+# README), and no other Python service here carries a lock. `uv run` writes this
+# whenever someone uses uv to get a quick test env, so keep it local rather than
+# committing a second, drifting source of dependency truth beside pyproject.toml.
+services/womblex-ingest/uv.lock

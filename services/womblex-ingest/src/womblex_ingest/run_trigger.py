@@ -48,6 +48,23 @@ ALLOWED_STAGES = ("chunk", "embed", "enrich", "money")
 # chunk/embed pair is normalised.
 _STAGE_RANK = {"chunk": 0, "embed": 1, "enrich": 2, "money": 3}
 
+# The AI-chunking ordering (architecture §7.1; womblex `cloud/stage_contracts.py`
+# `_chunk_conditional`): semchunk 4 reuses the enrich stage's persisted Document
+# when `chunking.chunking_model` is set, so `enrich` must run before `chunk` or
+# chunk self-enriches at double Isaacus cost for the same output. `embed` still
+# needs `chunk`, and `money` stays independent, so only chunk and enrich swap.
+_STAGE_RANK_WITH_AI_CHUNKING = {"enrich": 0, "chunk": 1, "embed": 2, "money": 3}
+
+# Not authorable, and not optional when it applies. Enriching before chunking
+# writes the graph while no chunks exist, so every mention lands
+# `chunk_index = -1` and the edges sidecar carries no mention->chunk edges
+# (womblex `analyse/graph_refresh.py`). redline's `IGraphStore` filters entities
+# by chunk and walks `mentioned_in` to chunk text — the navigation mechanic — so
+# without this the AI-chunking ordering above would buy coherent chunks by
+# silently breaking the graph. The stage is offline, API-free and idempotent, so
+# the sidecar inserts it rather than asking a form to remember it.
+GRAPH_REFRESH_STAGE = "graph-refresh"
+
 RunPhase = Literal["extracting", "staging", "done", "errored"]
 
 # The four engine operations, injected so the sequencing logic is testable. Each
@@ -74,6 +91,13 @@ StatsFn = Callable[[str], Dict[str, int]]
 # evaluation screen". Receives the run id and evaluation id, which scope the same
 # `proc/{evaluationId}/runs/{run_id}/documents` prefix the stages published under.
 LoadFn = Callable[[str, str], None]
+
+# Resolves the *effective* `chunking.chunking_model` — the file default layered
+# with any authored override, the same layering `apply_config_override` does —
+# so ordering can react to a corpus-wide default (redline.yaml) as well as a
+# per-run override. Injected like the five operations above, so sequencing is
+# testable without loading a real engine config.
+ResolveChunkingModelFn = Callable[[Optional["ConfigOverride"]], Optional[str]]
 
 
 @dataclass(frozen=True)
@@ -132,29 +156,6 @@ class UnknownStage(Exception):
     """A requested stage is not in the authorable allow-list."""
 
 
-class UnsupportedOverride(Exception):
-    """An authored override is refused rather than silently dropped."""
-
-
-def validate_config_override(override: Optional[ConfigOverride]) -> None:
-    """Refuse an override the engine cannot honour, before a run is fired."""
-    if override is None or override.chunk_mode is None:
-        return
-    if override.chunk_mode.chunking_model is None:
-        return
-    # Setting chunking_model switches chunking to a per-document Isaacus call and
-    # auto-enables enrichment.persist_document, which then requires enrich to run
-    # BEFORE chunk or the document is enriched twice at double cost. The authorable
-    # stage sequence cannot express that ordering (the sidecar normalises chunk
-    # before embed and leaves enrich where it was authored), so accepting this
-    # would sell an API bill from a checkbox with no way to avoid the double
-    # charge. Refused, not dropped — a silent drop is the defect this seam closes.
-    raise UnsupportedOverride(
-        "chunking_model is not authorable: AI chunking requires enrich to run "
-        "before chunk, which the authorable stage sequence cannot express"
-    )
-
-
 def apply_config_override(config, override: Optional[ConfigOverride]):  # type: ignore[no-untyped-def]
     """Layer an authored override over the loaded config, returning a new one.
 
@@ -165,7 +166,6 @@ def apply_config_override(config, override: Optional[ConfigOverride]):  # type: 
     if override is None:
         return config
 
-    validate_config_override(override)
     chunk_mode = override.chunk_mode
     applied = config.model_copy(deep=True)
 
@@ -174,6 +174,8 @@ def apply_config_override(config, override: Optional[ConfigOverride]):  # type: 
             applied.chunking.chunk_size = chunk_mode.chunk_size
         if chunk_mode.chunk_tables is not None:
             applied.chunking.chunk_tables = chunk_mode.chunk_tables
+        if chunk_mode.chunking_model is not None:
+            applied.chunking.chunking_model = chunk_mode.chunking_model
 
     money = override.money_vocabulary
     if money is not None:
@@ -233,13 +235,19 @@ class _RunState:
     error: Optional[str] = None
 
 
-def normalise_sequence(stage_sequence: List[str]) -> List[str]:
+def normalise_sequence(
+    stage_sequence: List[str], *, chunking_model: Optional[str] = None
+) -> List[str]:
     """Validate against the allow-list and order by the enforced dependency.
 
     Raises `UnknownStage` for an off-list stage. Duplicates collapse — a stage
     runs at most once per sequence. The sort is stable on `_STAGE_RANK`, so
     `[embed, chunk]` becomes `[chunk, embed]` while an already-valid order is
-    unchanged.
+    unchanged. When `chunking_model` is set, `_STAGE_RANK_WITH_AI_CHUNKING`
+    swaps chunk and enrich instead, so AI chunking reuses enrich's Document
+    rather than self-enriching at double cost — and `GRAPH_REFRESH_STAGE` is
+    inserted after chunk to repair the mention->chunk edges that ordering
+    necessarily leaves unbuilt.
     """
     seen: List[str] = []
     for stage in stage_sequence:
@@ -250,7 +258,16 @@ def normalise_sequence(stage_sequence: List[str]) -> List[str]:
             )
         if stage not in seen:
             seen.append(stage)
-    return sorted(seen, key=lambda stage: _STAGE_RANK[stage])
+    if not chunking_model:
+        return sorted(seen, key=lambda stage: _STAGE_RANK[stage])
+
+    ordered = sorted(seen, key=lambda stage: _STAGE_RANK_WITH_AI_CHUNKING[stage])
+    # Both are required: the refresh reads the entities/edges sidecars enrich
+    # writes and the chunks sidecar chunk writes, so with either absent there is
+    # nothing to repair and the stage would fail on missing inputs.
+    if "enrich" in ordered and "chunk" in ordered:
+        ordered.insert(ordered.index("chunk") + 1, GRAPH_REFRESH_STAGE)
+    return ordered
 
 
 class RunTrigger:
@@ -262,6 +279,7 @@ class RunTrigger:
         run_stage: RunStageFn,
         stats: StatsFn,
         load: LoadFn,
+        resolve_chunking_model: ResolveChunkingModelFn,
         run_in_background: bool = True,
     ) -> None:
         self._enqueue = enqueue
@@ -269,18 +287,21 @@ class RunTrigger:
         self._run_stage = run_stage
         self._stats = stats
         self._load = load
+        self._resolve_chunking_model = resolve_chunking_model
         self._run_in_background = run_in_background
         self._runs: Dict[str, _RunState] = {}
         self._lock = threading.Lock()
 
     def start(self, plan: RunPlan) -> dict:
-        """Begin a run: validate the sequence and override, then fire it.
+        """Begin a run: validate the sequence, then fire it.
 
-        The override is checked here rather than at the first stage that reads it,
-        so a refused one fails the request instead of a run already extracting.
+        Sequencing reacts to the *effective* chunking model — the file default
+        layered with any authored override — not the request's stage_sequence
+        alone, so a corpus-wide AI-chunking default orders enrich before chunk
+        even when the request never names an override.
         """
-        sequence = normalise_sequence(plan.stage_sequence)
-        validate_config_override(plan.config_override)
+        chunking_model = self._resolve_chunking_model(plan.config_override)
+        sequence = normalise_sequence(plan.stage_sequence, chunking_model=chunking_model)
         run_id = str(uuid.uuid4())
         state = _RunState(
             run_id=run_id,
@@ -407,6 +428,7 @@ def run_trigger_from_env() -> Optional["RunTrigger"]:
         run_stage=_engine_run_stage(dsn, store_uri, config_path),
         stats=_engine_stats(dsn),
         load=_engine_load(settings),
+        resolve_chunking_model=_engine_resolve_chunking_model(config_path),
     )
 
 
@@ -527,6 +549,18 @@ def _engine_run_stage(dsn: str, store_uri: str, config_path: Optional[str]) -> R
             )
 
     return run_stage
+
+
+def _engine_resolve_chunking_model(config_path: Optional[str]) -> ResolveChunkingModelFn:
+    def resolve_chunking_model(override: Optional[ConfigOverride]) -> Optional[str]:
+        # Reuses the same layering `_engine_run_stage` applies per pass, so
+        # sequencing sees exactly the config a stage would run against — the
+        # file's `chunking.chunking_model` (redline.yaml's corpus default) unless
+        # an authored override names a different one.
+        config = apply_config_override(_load_config(config_path), override)
+        return config.chunking.chunking_model
+
+    return resolve_chunking_model
 
 
 def _engine_stats(dsn: str) -> StatsFn:

@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 
 from womblex_ingest.main import build_app
 from womblex_ingest.run_trigger import (
+    ALLOWED_STAGES,
     ChunkModeOverride,
     ConfigOverride,
     ExtractionOverride,
@@ -38,9 +39,9 @@ from womblex_ingest.run_trigger import (
     RunPlan,
     RunTrigger,
     StageError,
-    UnsupportedOverride,
     UnknownStage,
     apply_config_override,
+    normalise_sequence,
 )
 from tests.conftest import FakeObjectStorage, StubExtractor
 
@@ -127,8 +128,29 @@ class FakeLoader:
             raise RuntimeError("redline_chunks projection failed")
 
 
+class FakeChunkingModelResolver:
+    """Stands in for the effective `chunking.chunking_model` — the file default
+    layered with any authored override, mirroring what `apply_config_override`
+    would compute against the real engine config (architecture §7.1).
+
+    Records each override it was asked to resolve, so a test can assert the
+    plan's own override reached the resolver rather than being ignored.
+    """
+
+    def __init__(self, chunking_model: str | None = None) -> None:
+        self.chunking_model = chunking_model
+        self.calls: List[ConfigOverride | None] = []
+
+    def resolve(self, override: ConfigOverride | None) -> str | None:
+        self.calls.append(override)
+        return self.chunking_model
+
+
 def _build(
-    queue: FakeQueue, stages: FakeStages, loader: FakeLoader | None = None
+    queue: FakeQueue,
+    stages: FakeStages,
+    loader: FakeLoader | None = None,
+    chunking_model: str | None = None,
 ) -> RunTrigger:
     return RunTrigger(
         enqueue=queue.enqueue,
@@ -136,6 +158,7 @@ def _build(
         run_stage=stages.run,
         stats=queue.stats,
         load=(loader or FakeLoader()).load,
+        resolve_chunking_model=FakeChunkingModelResolver(chunking_model).resolve,
         # Run inline so the tests are deterministic — the production wiring runs
         # the passes on a background thread (a run is minutes-long, status polled).
         run_in_background=False,
@@ -152,6 +175,92 @@ def _wait_terminal(trigger: RunTrigger, run_id: str) -> dict:
 
 
 DEFAULT_SEQUENCE = ["chunk", "embed", "enrich", "money"]
+
+
+# --- Sequencing rules, direct ------------------------------------------------
+#
+# `normalise_sequence` enforces the one hard dependency (embed needs chunk)
+# always, and — when a chunking model is set — the ordering AI chunking needs
+# (enrich before chunk) that the authored sequence alone cannot express
+# (architecture §7.1; womblex `cloud/stage_contracts.py::_chunk_conditional`).
+
+
+def test_normalise_sequence_orders_chunk_before_embed_by_default() -> None:
+    assert normalise_sequence(["embed", "chunk"]) == ["chunk", "embed"]
+
+
+def test_normalise_sequence_keeps_chunk_before_enrich_with_no_chunking_model() -> None:
+    # Without AI chunking there is nothing for chunk to reuse from enrich, so the
+    # plain-token default ordering is unaffected — and because the graph is then
+    # built against chunks that already exist, no graph-refresh is needed either.
+    assert normalise_sequence(["enrich", "chunk"]) == ["chunk", "enrich"]
+
+
+def test_normalise_sequence_orders_enrich_before_chunk_when_a_chunking_model_is_set() -> None:
+    # graph-refresh follows chunk: enriching first means the graph is written
+    # before any chunk exists, so every mention lands chunk_index = -1 until the
+    # refresh rebuilds the mention->chunk edges (see the test below).
+    assert normalise_sequence(
+        ["chunk", "embed", "enrich", "money"], chunking_model="kanon-2-enricher"
+    ) == ["enrich", "chunk", "graph-refresh", "embed", "money"]
+
+
+def test_normalise_sequence_appends_graph_refresh_after_chunk_when_enrich_leads() -> None:
+    # womblex `analyse/graph_refresh.py`: enriching before chunking leaves
+    # `*.enrichment_entities.parquet` mentions at `chunk_index = -1` and the
+    # graph-edges sidecar without mention->chunk edges, because no chunks existed
+    # yet. redline's IGraphStore filters entities by chunkIndex and walks
+    # `mentioned_in` to chunk text, so without the refresh the navigation
+    # mechanic resolves nothing. The stage is offline, API-free and idempotent.
+    assert normalise_sequence(["enrich", "chunk"], chunking_model="kanon-2-enricher") == [
+        "enrich",
+        "chunk",
+        "graph-refresh",
+    ]
+
+
+def test_normalise_sequence_adds_no_graph_refresh_when_enrich_was_not_authored() -> None:
+    # No enrich means no graph to refresh, and graph-refresh's contract requires
+    # the entities + edges sidecars enrich writes — inserting it would fail a
+    # stage over inputs that were never produced.
+    assert normalise_sequence(["chunk", "embed"], chunking_model="kanon-2-enricher") == [
+        "chunk",
+        "embed",
+    ]
+
+
+def test_normalise_sequence_adds_no_graph_refresh_when_chunk_was_not_authored() -> None:
+    # Enrich alone produces a graph with no chunks to map onto; the refresh
+    # requires the chunks sidecar, so there is nothing for it to do.
+    assert normalise_sequence(["enrich", "money"], chunking_model="kanon-2-enricher") == [
+        "enrich",
+        "money",
+    ]
+
+
+def test_graph_refresh_is_not_authorable() -> None:
+    # It is inserted by the sidecar as a dependency, never chosen on a form —
+    # a specialist cannot author it, and cannot omit it when it is needed.
+    assert "graph-refresh" not in ALLOWED_STAGES
+    with pytest.raises(UnknownStage):
+        normalise_sequence(["chunk", "graph-refresh"])
+
+
+def test_normalise_sequence_still_enforces_chunk_before_embed_with_a_chunking_model() -> None:
+    assert normalise_sequence(["embed", "chunk"], chunking_model="kanon-2-enricher") == [
+        "chunk",
+        "embed",
+    ]
+
+
+def test_normalise_sequence_with_a_chunking_model_but_no_enrich_authored() -> None:
+    # A specialist who authors chunk+embed only (no enrich) still gets AI
+    # chunking's cost, not its correction — enrich is a stage the authored
+    # sequence chooses, not one this function may add on its own.
+    assert normalise_sequence(["chunk", "embed"], chunking_model="kanon-2-enricher") == [
+        "chunk",
+        "embed",
+    ]
 
 
 # --- Triggering the fixed sequence ------------------------------------------
@@ -203,6 +312,53 @@ def test_trigger_enforces_chunk_before_embed_regardless_of_order() -> None:
     _wait_terminal(trigger, started["runId"])
 
     assert stages.calls == ["chunk", "embed"]
+
+
+def test_trigger_runs_enrich_before_chunk_when_the_resolved_config_has_a_chunking_model() -> None:
+    # semchunk 4 AI chunking reuses the enrich stage's persisted Document
+    # (stage_contracts.py's `_chunk_conditional`); running chunk first makes it
+    # self-enrich instead, at double Isaacus cost for the same output.
+    queue = FakeQueue()
+    stages = FakeStages()
+    trigger = _build(queue, stages, chunking_model="kanon-2-enricher")
+
+    plan = RunPlan(evaluation_id="eval-ai-order", stage_sequence=DEFAULT_SEQUENCE)
+    started = trigger.start(plan)
+    _wait_terminal(trigger, started["runId"])
+
+    assert stages.calls == ["enrich", "chunk", "graph-refresh", "embed", "money"]
+
+
+def test_trigger_resolves_the_chunking_model_against_the_plans_override() -> None:
+    # Ordering is decided from the *effective* config (file default layered with
+    # any authored override), not the request in isolation — so the resolver
+    # must see exactly the override the plan carried, the same input
+    # `apply_config_override` would layer over the file.
+    queue = FakeQueue()
+    stages = FakeStages()
+    resolver = FakeChunkingModelResolver("kanon-2-enricher")
+    trigger = RunTrigger(
+        enqueue=queue.enqueue,
+        run_worker=queue.run_worker,
+        run_stage=stages.run,
+        stats=queue.stats,
+        load=FakeLoader().load,
+        resolve_chunking_model=resolver.resolve,
+        run_in_background=False,
+    )
+    override = ConfigOverride(chunk_mode=ChunkModeOverride(chunk_size=640))
+
+    started = trigger.start(
+        RunPlan(
+            evaluation_id="eval-resolve",
+            stage_sequence=DEFAULT_SEQUENCE,
+            config_override=override,
+        )
+    )
+    _wait_terminal(trigger, started["runId"])
+
+    assert resolver.calls == [override]
+    assert stages.calls == ["enrich", "chunk", "graph-refresh", "embed", "money"]
 
 
 def test_trigger_rejects_a_stage_outside_the_allow_list() -> None:
@@ -689,22 +845,24 @@ def test_an_unset_field_within_a_group_inherits_rather_than_nulling() -> None:
 
 # `WomblexConfig._wire_ai_chunking_reuse` auto-enables enrichment.persist_document
 # when chunking_model is set, and warns that enrich must run BEFORE chunk or the
-# document is enriched twice, at double API cost. The Create Corpus stage toggles
-# cannot express that ordering — the sidecar normalises chunk before embed and
-# leaves enrich where it was authored — so a specialist ticking an AI model would
-# buy an API bill from a checkbox with no way to avoid the double charge. Refused
-# here rather than carried, because a silent drop is exactly the defect this seam
-# is closing.
-def test_an_ai_chunking_model_is_refused_rather_than_silently_applied() -> None:
+# document is enriched twice, at double API cost. That ordering is now the
+# sidecar's own to enforce (`normalise_sequence`'s conditional rank, above), so
+# the field is carried rather than refused — refusing it once fixed nothing on
+# its own the second time this came up (delivery-plan "Superseded decisions").
+# Leaving it unset in `apply_config_override` while accepting it on the wire
+# would trade the refusal for a silent drop, the defect every other group here
+# is written to avoid.
+def test_chunk_mode_override_applies_chunking_model_to_the_copy() -> None:
     config = StubConfig()
     override = ConfigOverride(
-        chunk_mode=ChunkModeOverride(chunk_size=480, chunking_model="kanon-2")
+        chunk_mode=ChunkModeOverride(chunk_size=480, chunking_model="kanon-2-enricher")
     )
 
-    with pytest.raises(UnsupportedOverride) as refused:
-        apply_config_override(config, override)
+    applied = apply_config_override(config, override)
 
-    assert "chunking_model" in str(refused.value)
+    assert applied.chunking.chunking_model == "kanon-2-enricher"
+    # The loaded file config is never mutated — the same rule every other group
+    # in this override keeps.
     assert config.chunking.chunking_model is None
 
 
@@ -820,26 +978,37 @@ def test_post_runs_runs_extraction_against_the_requested_ocr_engine() -> None:
     assert extracted_with.extraction.ocr.dpi == 400
 
 
-def test_post_runs_refuses_an_ai_chunking_model_rather_than_dropping_it() -> None:
+def test_post_runs_accepts_an_ai_chunking_model_and_orders_enrich_before_chunk() -> None:
     queue = FakeQueue()
     stages = FakeStages()
-    client = _client(queue, stages)
+    # `_client` builds its trigger with no chunking model resolved; this proof
+    # needs the resolver to see one, so it wires its own app rather than reusing
+    # `_client`'s default.
+    app = build_app(
+        storage=FakeObjectStorage(),
+        extractor=StubExtractor(),
+        bucket="redline",
+        run_trigger=_build(queue, stages, chunking_model="kanon-2-enricher"),
+    )
+    client = TestClient(app)
 
     response = client.post(
         "/runs",
         json={
             "evaluationId": "eval-ai",
-            "stageSequence": ["chunk"],
+            "stageSequence": ["chunk", "enrich"],
             "configOverride": {
-                "chunkMode": {"chunkingModel": "kanon-2", "chunkSize": 480, "chunkTables": True},
+                "chunkMode": {
+                    "chunkingModel": "kanon-2-enricher",
+                    "chunkSize": 480,
+                    "chunkTables": True,
+                },
             },
         },
     )
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "INVALID_REQUEST"
-    assert "chunking_model" in response.json()["error"]["message"]
-    assert stages.calls == []
+    assert response.status_code == 202
+    assert stages.calls == ["enrich", "chunk", "graph-refresh"]
 
 
 # Pins the override against the *real* engine config rather than the stand-in
@@ -854,7 +1023,9 @@ def test_the_override_matches_the_real_engine_config_shape() -> None:
         extraction=womblex_config.ExtractionConfig(),
     )
     override = ConfigOverride(
-        chunk_mode=ChunkModeOverride(chunk_size=640, chunk_tables=False),
+        chunk_mode=ChunkModeOverride(
+            chunk_size=640, chunk_tables=False, chunking_model="kanon-2-enricher"
+        ),
         money_vocabulary=MoneyVocabularyOverride(
             extra_header_terms=["schedule of rates"], default_currency="NZD"
         ),
@@ -865,6 +1036,9 @@ def test_the_override_matches_the_real_engine_config_shape() -> None:
 
     assert applied.chunking.chunk_size == 640
     assert applied.chunking.chunk_tables is False
+    # `chunking_model` is the real key `ChunkingConfig` carries (config.py) —
+    # verified against the pinned engine, not assumed.
+    assert applied.chunking.chunking_model == "kanon-2-enricher"
     assert applied.money.default_currency == "NZD"
     assert applied.money.columns.extra_header_terms == ["schedule of rates"]
     # `extraction.ocr.engine` / `.dpi` are the real keys `run_extraction` threads

@@ -32,7 +32,6 @@ from womblex_ingest.run_trigger import (
     RunPlan,
     RunTrigger,
     UnknownStage,
-    UnsupportedOverride,
 )
 from womblex_ingest.runs import Run, RunRegistry
 from womblex_ingest.storage import ObjectNotFound, ObjectStorage
@@ -307,8 +306,6 @@ def build_app(
             )
         except UnknownStage as bad_stage:
             return _error(422, "INVALID_REQUEST", str(bad_stage))
-        except UnsupportedOverride as refused:
-            return _error(422, "INVALID_REQUEST", str(refused))
         return JSONResponse(status_code=202, content=started)
 
     @app.get("/runs/{run_id}")
