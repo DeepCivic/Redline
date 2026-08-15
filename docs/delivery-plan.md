@@ -127,7 +127,7 @@ Postgres, which is how `packages/redline-adapters`' own suite already works
 **Goal: a specialist starts a corpus from the browser — uploads raw documents,
 authors the run config, triggers the womblex run, watches it drain, and then
 composes an evaluation over the result — with no terminal in the loop.** Most of
-that is built (see below); three steps remain before the loop closes.
+that is built (see below); two steps remain before the loop closes.
 
 **What is built.** The full ingest half. `IStagedCorpusWriter` /
 `MinioStagedCorpusWriter` stage a specialist's bytes under
@@ -143,7 +143,8 @@ the first-run extraction/OCR settings (`extraction.ocr.engine` / `.dpi`, layered
 at the extraction worker because that is the only pass that reads them), and now
 `chunkMode.chunkingModel` — carried and applied rather than refused, ordered so
 `enrich` runs before `chunk` whenever a model is resolved (semantically bounded
-chunks, landed). The Create Corpus tab
+chunks, landed), and now nameable from the screen rather than only inherited.
+The Create Corpus tab
 is the cold-start ingest surface: it names the run, uploads raw documents, authors
 the config, fires, tracks the four states and links to `/evaluations/new` on
 `done` — no brands, no fields, no `source_hash` needed before the run reads. It is
@@ -165,7 +166,6 @@ rule makes the mount two.
 
 | Step | Package(s) | What it is |
 |---|---|---|
-| Expose the chunk-mode model on Create Corpus | wayfinder (two commits) | The served surface carries no `chunkingModel` input at all; the domain port and `create-corpus-view`'s `aiChunking` flag already do. Exposes the override so a specialist can name a model or leave the corpus default — the sidecar already accepts and orders it correctly (semantically bounded chunks landed). _Exit: the create-corpus spec drives the field and a named model reaches the sidecar and is applied._ |
 | Chunk element addressing | adapters + womblex-ingest | `redline_money_spans` addresses a figure as `(document_id, parent_element_order, row_index, column_index)`; `redline_chunks` carries only `(source_hash, chunk_index)`. The join is document-level, so a figure resolves to *its document's chunks*, never to the chunk containing it. Carry the element range each chunk was cut from. Without this, semantic boundaries improve retrieval but the money→context resolution stays document-wide. _Exit: a money span resolves to the single chunk whose element range contains it._ |
 | Post-run population, fork mount | wayfinder (two commits) | The tRPC procedure behind `evaluation:create` that calls `WorkflowController.populate` on create, so an evaluation arrives with its fields resolved against the corpus and the report tools have anchored findings to be pointed at. The failure needs its own state — reading failing over a successfully extracted corpus is not a failed stage and must not present as one. _Exit: the create spec's live test reaches an evaluation whose responses carry source anchors, rather than one with documents and none._ |
 
@@ -303,23 +303,20 @@ Deferred until the lean vertical is complete. In dependency order:
 dependency order → workspace extraction and release.**
 
 The ingest surface, the run trigger/status seam, the shard load on completion,
-the first-run OCR config, semantically bounded chunks (on by default) and the
-post-run population brain (`WorkflowController.populate`) are all built. What is
-left, in order:
+the first-run OCR config, semantically bounded chunks (on by default, and now
+nameable per-run from Create Corpus) and the post-run population brain
+(`WorkflowController.populate`) are all built. What is left, in order:
 
-1. **Expose the chunk-mode model on Create Corpus** — the fork mount for the
-   field the domain and view model already carry; the sidecar already accepts
-   and orders it.
-2. **Chunk element addressing** — carry the element range on chunks so a money
+1. **Chunk element addressing** — carry the element range on chunks so a money
    span resolves to its containing chunk rather than to its document. Depends on
    semantically bounded chunks only in the sense that addressing incoherent
    chunks is not worth doing.
-3. **Post-run population, fork mount** — the tRPC procedure behind
+2. **Post-run population, fork mount** — the tRPC procedure behind
    `evaluation:create` that calls `populate` on create, so an evaluation composed
    over a freshly-run corpus arrives with its responses built rather than empty.
    Until it lands, that composition still reads an empty response set from the
    served path even though the brain that fills it exists. Independently
-   testable of the other two — could run in parallel.
+   testable of the other — could run in parallel.
 
 Raw-bucket *browse* and the synthesis picker stay deferred.
 
