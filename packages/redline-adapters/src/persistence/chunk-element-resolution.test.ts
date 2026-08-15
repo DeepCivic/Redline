@@ -171,6 +171,48 @@ describe("resolveChunkForMoneySpan — table_cell locus (elementOrder anchor)", 
   });
 });
 
+describe("resolveChunkForMoneySpan — provenance scoping", () => {
+  // Offsets and element orders are per-document sequences, so another document's
+  // chunk can match on the numbers alone. A confidently wrong provenance anchor
+  // is worse than none, so the document is checked before anything else.
+  it("never resolves a span to a chunk from a different document, by offset", () => {
+    const chunks = [
+      narrativeChunk({
+        chunkId: "hashB:0",
+        documentId: "hashB",
+        startChar: 0,
+        endChar: 500,
+      }),
+    ];
+
+    const resolved = resolveChunkForMoneySpan(narrativeSpan({ documentId: "hashA" }), chunks);
+
+    expect(resolved).toBeNull();
+  });
+
+  it("never resolves a span to a chunk from a different document, by element order", () => {
+    const chunks = [tableChunk({ chunkId: "hashB:1", documentId: "hashB", elementOrder: 4 })];
+
+    const resolved = resolveChunkForMoneySpan(
+      tableCellSpan({ documentId: "hashA", parentElementOrder: 4 }),
+      chunks,
+    );
+
+    expect(resolved).toBeNull();
+  });
+
+  it("picks its own document's chunk when both documents carry a matching range", () => {
+    const chunks = [
+      narrativeChunk({ chunkId: "hashB:0", documentId: "hashB", startChar: 0, endChar: 500 }),
+      narrativeChunk({ chunkId: "hashA:0", documentId: "hashA", startChar: 0, endChar: 500 }),
+    ];
+
+    const resolved = resolveChunkForMoneySpan(narrativeSpan({ documentId: "hashA" }), chunks);
+
+    expect(resolved?.chunkId).toBe("hashA:0");
+  });
+});
+
 describe("resolveChunkForMoneySpan — sheet_cell locus (no chunk anchor exists yet)", () => {
   it("returns null: a spreadsheet-sheet chunk carries no elementOrder to match", () => {
     // collect_tables_from_elements leaves elem_order null for every sheet chunk
