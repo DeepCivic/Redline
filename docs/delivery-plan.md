@@ -39,9 +39,19 @@
 surgical edit was deliberately left, and is listed here.
 
 > **Neither repo builds in this state.** Barrels, containers and manifests still
-> reference deleted modules. Do not attempt a release, a `./validate.sh` run or a
-> gitlink bump until §0.2 is done. This is a known, recorded mid-pivot state, not
-> a regression to bisect.
+> reference deleted modules. Do not attempt a release or read anything into a
+> failing `./validate.sh` until §0.2 is done. This is a known, recorded mid-pivot
+> state, not a regression to bisect.
+>
+> **The gitlink deliberately points at an unmerged fork commit**
+> (`johntooth/wayfinder` `5d236db1`, on branch
+> `claude/create-corpus-post-run-25j23d`). This breaks the usual two-commit rule
+> — normally the fork PR merges to `main` first and only then does the gitlink
+> move — and `validate.sh` #14 fails because of it. It was done anyway because
+> the alternative is worse: an unbumped gitlink pairs this post-deletion tree
+> with the *pre-deletion* fork, so a fresh clone would resolve `@redline/*`
+> against code that still has the Evaluation surface. Re-point it at the merge
+> commit as soon as the fork PR lands (item 19).
 
 **What redline is after this pivot:** a corpus-ingest-and-report substrate. A
 specialist uploads documents into a named run (Create Corpus), womblex
@@ -88,6 +98,7 @@ manifest / report-verifier / language-model libs.
 | 16 | Fork: `create-corpus/_content.tsx` + `e2e/redline-create-corpus.spec.ts` | Remove the "Compose the evaluation" CTA linking to the deleted `/evaluations/new`. |
 | 17 | Fork: `apps/web/src/lib/redline-link.test.ts` | Package-resolution smoke test; drop its `@redline/redline-application` assertion. |
 | 18 | Docs | Rewrite `architecture.md` to the substrate framing above; strip the Evaluation half of this file (§2, §2.1, §3's lens/classification items, §4); revisit `design-principles.md` — **D1, D2, D6, D8 and D9 are about the comprehension lens or boundary decisions and no longer hold**; D7 needs rewording (its "resolutions are additive overlays" half went with them, its womblex-sidecar half stands); D4, D5 and D10 survive unchanged. The first five non-goals are lens re-entry conditions. `.claude/CLAUDE.md` needs its Project Identity and Architecture Rules updated (the `redline-application` bullet and the Apps-import bullet). |
+| 19 | Gitlink | Merge the fork branch to `johntooth/wayfinder` `main`, then re-point `services/wayfinder` at the merge commit. Until then `validate.sh` #14 fails by design — see the header note. |
 
 ### 0.3 QA findings from the deleted mount
 
