@@ -162,7 +162,13 @@ flowchart TB
   including the `DrizzleChunkStore` `IChunkStore` reader over `redline_chunks`
   (the sidecar writes that table; this adapter reads it — see §4/§5).
 - **`redline_chunks`** is the chunk store, **written by the sidecar's ingest**:
-  chunk rows + provenance + the embedding as data.
+  chunk rows + provenance + the embedding as data, plus the element range each
+  chunk was cut from (`startChar`/`endChar` for a narrative chunk,
+  `elementOrder` for a table chunk — chunk element addressing). Pure
+  `resolveChunkForMoneySpan` (`persistence/`) resolves a money span to the one
+  chunk containing it from there, given the candidate chunks a caller already
+  fetched; a `sheet_cell` span always resolves to none — a spreadsheet-sheet
+  chunk carries no single anchor element to match against.
 - **`services/womblex`** is built from its **own** Dockerfile and run through its
   **own** cloud runner (Postgres job queue, scalable worker, native S3 staging).
   Only its `embed` stage reaches Isaacus.

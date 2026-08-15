@@ -118,6 +118,47 @@ def test_chunk_accepts_the_chunk_text_alias() -> None:
     assert chunk.text == "aliased"
 
 
+def test_chunk_carries_the_element_range_it_was_cut_from() -> None:
+    # Chunk element addressing (delivery-plan): a narrative chunk's start_char/
+    # end_char is what a money span's narrative locus resolves against.
+    chunk = map_chunk(
+        SOURCE_HASH,
+        {
+            "chunk_index": 2,
+            "text": "body",
+            "content_type": "narrative",
+            "start_char": 120,
+            "end_char": 480,
+        },
+    )
+
+    assert chunk.contentType == "narrative"
+    assert chunk.startChar == 120
+    assert chunk.endChar == 480
+    assert chunk.elementOrder is None
+
+
+def test_table_chunk_carries_its_anchor_element_order() -> None:
+    # A table chunk's start_char/end_char are into table markdown, not the
+    # narrative — null on the shard row (CHUNKS_SCHEMA), and elem_order is the
+    # one anchor it carries (the table element it was cut from).
+    chunk = map_chunk(
+        SOURCE_HASH,
+        {"chunk_index": 0, "text": "| a | b |", "content_type": "table", "elem_order": 4},
+    )
+
+    assert chunk.contentType == "table"
+    assert chunk.startChar is None
+    assert chunk.endChar is None
+    assert chunk.elementOrder == 4
+
+
+def test_chunk_content_type_defaults_to_narrative_when_absent() -> None:
+    chunk = map_chunk(SOURCE_HASH, {"chunk_index": 0, "text": "body"})
+
+    assert chunk.contentType == "narrative"
+
+
 def table_cells_row(**overrides: object) -> dict:
     """One row exactly as womblex's `TABLE_CELLS_SCHEMA` writes it.
 

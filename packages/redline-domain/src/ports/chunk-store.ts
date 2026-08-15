@@ -33,6 +33,24 @@ export interface ChunkRow {
   readonly contentType: string; // womblex's own tag (e.g. "narrative", "table")
   readonly page: number | null; // a legitimate nullable — not every chunk carries a page
   readonly text: string; // verbatim, byte-identical — copied into report slots, never paraphrased
+  // The element range this chunk was cut from (delivery-plan "Chunk element
+  // addressing"), so a money span resolves to the one chunk containing it rather
+  // than to its whole document. Nullable but required, like `page` above: the
+  // store always populates all three, so making them optional would add an
+  // "absent" state on top of "null" that no producer can actually emit and every
+  // consumer would have to narrow past.
+  //   narrative chunk — startChar/endChar, offsets into the reassembled
+  //     narrative. The same coordinate space MoneySpanRow's narrative locus
+  //     reads *for a given text_source layer* — womblex applies the overlay
+  //     before reassembly at both the chunk and money sites off one
+  //     `config.text_source`, so within a run they agree. elementOrder is null
+  //     (a narrative chunk straddles several elements).
+  //   table chunk — elementOrder, the table element it was cut from (null for a
+  //     spreadsheet-sheet table chunk, which has no single anchor element);
+  //     startChar/endChar null (offsets are into table markdown, not narrative).
+  readonly startChar: number | null;
+  readonly endChar: number | null;
+  readonly elementOrder: number | null;
 }
 
 // A structural predicate over the exact-fetch surface. Every field is optional;

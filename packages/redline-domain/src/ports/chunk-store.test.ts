@@ -82,6 +82,9 @@ const row = (over: Partial<ChunkRow> & Pick<ChunkRow, "chunkId" | "chunkIndex">)
   contentType: "narrative",
   page: null,
   text: "a verbatim passage",
+  startChar: null,
+  endChar: null,
+  elementOrder: null,
   ...over,
 });
 

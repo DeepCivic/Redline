@@ -131,6 +131,10 @@ old extraction unjoinable to the new one.
 
 **Chunk mode**
 
+- *AI chunking model* — blank inherits the corpus default (semantically bounded
+  chunking, since `infra/womblex/redline.yaml` names one); named, it pins this
+  run to that model instead. The sidecar orders `enrich` before `chunk`
+  whenever a model resolves, either way.
 - *Chunk size (tokens)* — a whole positive number. Defaults to 480.
 - *Chunk tables* — whether tables are chunked. On by default.
 
@@ -186,16 +190,6 @@ built appears in the picker and you say what you want answered about it.
 ---
 
 ## What is not there yet
-
-- **AI chunking is the corpus default; naming a model is not yet on this
-  screen.** Every run already chunks with semantically bounded (AI) boundaries
-  — `infra/womblex/redline.yaml`'s `chunking.chunking_model` — and the sidecar
-  orders `enrich` before `chunk` whenever a model is resolved, so a document is
-  never enriched twice at double cost. What is missing is a way to *name* a
-  different model from this screen: the chunk-mode override the form composes
-  carries size and table options only, so a specialist cannot yet override the
-  corpus default's model here — the sidecar already accepts and applies one on
-  the wire if sent.
 
 - **A corpus extracted outside this screen is a different path.** This screen
   starts a corpus from the raw documents in your bucket. If someone has already

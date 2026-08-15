@@ -223,12 +223,23 @@ def map_chunk(source_hash: str, row: Row) -> ChunkRecord:
     `chunk_id`. We *always* recompose the id from `(source_hash, chunk_index)` so
     the extraction and embeddings resources join on the identity ADR-0014 pins,
     rather than trusting two independently-produced strings to agree.
+
+    `startChar`/`endChar`/`elementOrder` carry the element range this chunk was
+    cut from (delivery-plan "Chunk element addressing") straight off the shard
+    row — womblex's CHUNKS_SCHEMA already writes them, split by content type
+    (narrative gets offsets, a table chunk gets its anchor element order, see
+    `ChunkRecord`'s docstring). `content_type` defaults to `narrative`, matching
+    the store's own default for a producer that omits it.
     """
     chunk_index = int(_require(row, "chunk_index"))
     return ChunkRecord(
         chunkId=f"{source_hash}:{chunk_index}",
         documentId=source_hash,
         text=str(_require(row, "text", "chunk_text")),
+        contentType=str(_optional(row, "content_type") or "narrative"),
+        startChar=_optional(row, "start_char"),
+        endChar=_optional(row, "end_char"),
+        elementOrder=_optional(row, "elem_order", "element_order"),
     )
 
 

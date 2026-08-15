@@ -56,6 +56,11 @@ export {
 // ChunkRow carries no vector (ADR-0017), and findSimilar refuses with
 // NOT_IMPLEMENTED until the pgvector/ANN index lands (ADR-0018 addendum).
 export { DrizzleChunkStore } from "./persistence/drizzle-chunk-store";
+// Chunk element addressing (delivery-plan §2.1): resolves a money span to the
+// single chunk whose element range contains it, given the candidate chunks a
+// caller already fetched (typically fetchByStructure({ documentId })). Pure —
+// no store — since both operands are already-fetched domain rows.
+export { resolveChunkForMoneySpan } from "./persistence/chunk-element-resolution";
 // The enrichment-graph store (ADR-0017/0018): the report assembler's navigation
 // surface over redline_graph_entities / redline_graph_edges, which the
 // womblex-ingest sidecar's enrich load path writes and this adapter reads. Entity

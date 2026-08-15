@@ -40,6 +40,9 @@ const CHUNK_COLUMNS = {
   contentType: redlineChunks.contentType,
   page: redlineChunks.page,
   text: redlineChunks.text,
+  startChar: redlineChunks.startChar,
+  endChar: redlineChunks.endChar,
+  elementOrder: redlineChunks.elementOrder,
 } as const;
 
 // The minimal drizzle surface the store uses. Kept structural so both the
