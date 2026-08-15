@@ -296,14 +296,22 @@ over a finished corpus, its groups and lens persisted but no responses — throu
 `IngestDocuments` → `AssignDocumentsToGroups` (over the persisted groups) →
 `BuildEvaluationTable`, and is re-runnable, returning an existing response set
 untouched rather than double-writing it when a resumed run finds one already
-built. What is still script-only is the *mount*: no tRPC procedure calls
-`populate` on create yet, so `scripts/seed-redline-evaluation.ts` — which reads a
-corpus manifest and drives `IngestDocuments` → `saveLens` →
-`AssignDocumentsToGroups` → `BuildEvaluationTable`, printing the evaluation id
-that opens the review grid and feeds `E2E_REDLINE_EVALUATION_ID` — stays the only
-path that populates a served evaluation end to end. It is also the only path that
-can write a lens *with* hard rules, and the deliberate fallback for de-risking a
-live run without a browser.
+built. The fork mounts it: the `evaluation:create` tRPC procedure calls
+`populate` right after `CreateEvaluation` composes the evaluation, so a
+specialist who creates one over a freshly-run corpus lands on the review grid
+with responses already built rather than an evaluation with documents and none.
+Population failing is not composition failing — the reading passes can fail
+independently of the create write, so the procedure never throws for a
+population failure; it returns the created evaluation with `populated: false`
+and a `populationError` message, and the create screen routes to the grouping
+landing with that reason shown rather than to an empty review grid.
+`scripts/seed-redline-evaluation.ts` — which reads a corpus manifest and drives
+`IngestDocuments` → `saveLens` → `AssignDocumentsToGroups` →
+`BuildEvaluationTable` directly, printing the evaluation id that opens the
+review grid and feeds `E2E_REDLINE_EVALUATION_ID` — stays the only path that can
+write a lens *with* hard rules (the browser create screen only ever supplies
+topics), and the deliberate fallback for de-risking a live run without a
+browser.
 
 ### Why womblex is split into a pod + a sidecar
 

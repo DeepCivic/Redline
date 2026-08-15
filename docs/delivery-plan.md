@@ -89,19 +89,19 @@ against that rule, and `MoneySpanFinancialExtractor`'s contract (one AUD figure
 per (document, requirement)) is one reading above it — a narrowing to hold at
 arm's length rather than entrench.
 
-**The browser now starts a run and follows it to a loaded corpus; redline's own
-reading brain is built but not yet mounted on create.** The Create Corpus tab
-uploads raw documents, fires the womblex run against the config it authored, and
-the tracker follows the run to `done` — which projects the run's own shards into
-`redline_chunks`, so the corpus a browser made is visible to `/evaluations/new`.
-redline's *own* post-run sequence — `IngestDocuments`, grouping, the cold-start
-classifier and `BuildEvaluationTable` — is now chained behind one served brain,
-`WorkflowController.populate` (redline-web), which the seed script and the
-controller's own suite drive. What is still missing is the fork mount: no tRPC
-procedure calls `populate` on create, so a specialist who composes an evaluation
-over a freshly-run corpus today still lands on one with documents and no
-responses — `openReviewGrid` and `openPricingPivot` both read persisted responses
-and neither builds them. Closing that is the one outstanding step below.
+**The browser now starts a run and follows it all the way to a populated
+evaluation.** The Create Corpus tab uploads raw documents, fires the womblex run
+against the config it authored, and the tracker follows the run to `done` — which
+projects the run's own shards into `redline_chunks`, so the corpus a browser made
+is visible to `/evaluations/new`. redline's *own* post-run sequence —
+`IngestDocuments`, grouping, the cold-start classifier and `BuildEvaluationTable`
+— is chained behind one served brain, `WorkflowController.populate` (redline-web),
+and the fork mount now calls it: `evaluation:create` drives `populate` itself
+right after composing the evaluation, so a specialist who composes one over a
+freshly-run corpus lands on a review grid with responses already built, not one
+with documents and none. A population failure carries its own state on the
+response rather than presenting as a rejected create — the evaluation already
+exists and is reachable even when the reading passes over it fail.
 
 **The fixture corpus is a test fixture and will grow heterogeneous.** It is not
 what redline is built against and it is not a scope boundary. Documents that are
@@ -122,12 +122,13 @@ Postgres, which is how `packages/redline-adapters`' own suite already works
 
 ---
 
-## 2.1 The Create Corpus programme (next priority)
+## 2.1 The Create Corpus programme (done)
 
 **Goal: a specialist starts a corpus from the browser — uploads raw documents,
 authors the run config, triggers the womblex run, watches it drain, and then
-composes an evaluation over the result — with no terminal in the loop.** Most of
-that is built (see below); one step remains before the loop closes.
+composes an evaluation over the result — with no terminal in the loop.** The loop
+now closes end to end; the notes below are what shipped and what stays
+deliberately deferred.
 
 **What is built.** The full ingest half. `IStagedCorpusWriter` /
 `MinioStagedCorpusWriter` stage a specialist's bytes under
@@ -158,20 +159,19 @@ money span to the one chunk containing it instead of to its whole document
 (chunk element addressing, landed; a sheet_cell span still resolves to no chunk,
 since a spreadsheet-sheet chunk carries no anchor element to match against).
 
-**What remains: post-run population, mounted.** The brains half is built:
-`WorkflowController.populate` (redline-web) takes a settled evaluation — created
-over a finished corpus, its groups and lens persisted but no responses — through
-the reading passes the seed script drives (`IngestDocuments` → `advance` over the
-persisted groups → `buildTable`), and is re-runnable: a resumed run that finds a
-response set already built returns it untouched rather than double-writing it.
-What is left is the fork mount — the tRPC procedure that calls `populate` on
-create, so an evaluation composed over a freshly-run corpus arrives with its
-responses built rather than empty. This is one step, two commits because the fork
-rule makes the mount two.
-
-| Step | Package(s) | What it is |
-|---|---|---|
-| Post-run population, fork mount | wayfinder (two commits) | The tRPC procedure behind `evaluation:create` that calls `WorkflowController.populate` on create, so an evaluation arrives with its fields resolved against the corpus and the report tools have anchored findings to be pointed at. The failure needs its own state — reading failing over a successfully extracted corpus is not a failed stage and must not present as one. _Exit: the create spec's live test reaches an evaluation whose responses carry source anchors, rather than one with documents and none._ |
+**Post-run population is mounted.** `WorkflowController.populate` (redline-web)
+takes a settled evaluation — created over a finished corpus, its groups and lens
+persisted but no responses — through the reading passes the seed script drives
+(`IngestDocuments` → `advance` over the persisted groups → `buildTable`), and is
+re-runnable: a resumed run that finds a response set already built returns it
+untouched rather than double-writing it. The fork mount — two commits, the
+procedure and the gitlink bump — calls `populate` right after
+`evaluation:create` composes the evaluation, so a specialist who creates one over
+a freshly-run corpus lands on the review grid with responses already built. A
+population failure is carried as its own state on the response (`populated: false`,
+`populationError`) rather than presenting as a rejected create, since the
+evaluation already exists and is reachable even when the reading passes over it
+fail.
 
 redline *drives and observes* the engine's run but does not reimplement its
 batching, retry or scale-out — those stay the engine's (`cloud/worker.py`, its
@@ -303,21 +303,16 @@ Deferred until the lean vertical is complete. In dependency order:
 
 ## 5. Sequencing
 
-**The order is: lean vertical (done) → Create Corpus programme → housekeeping in
-dependency order → workspace extraction and release.**
+**The order is: lean vertical (done) → Create Corpus programme (done) →
+housekeeping in dependency order → workspace extraction and release.**
 
 The ingest surface, the run trigger/status seam, the shard load on completion,
 the first-run OCR config, semantically bounded chunks (on by default, and now
 nameable per-run from Create Corpus), chunk element addressing and the post-run
-population brain (`WorkflowController.populate`) are all built. What is left:
-
-1. **Post-run population, fork mount** — the tRPC procedure behind
-   `evaluation:create` that calls `populate` on create, so an evaluation composed
-   over a freshly-run corpus arrives with its responses built rather than empty.
-   Until it lands, that composition still reads an empty response set from the
-   served path even though the brain that fills it exists.
-
-Raw-bucket *browse* and the synthesis picker stay deferred.
+population brain (`WorkflowController.populate`), now mounted on
+`evaluation:create`, are all built. Nothing is outstanding on the Create Corpus
+programme; housekeeping (§3) is next, in dependency order. Raw-bucket *browse*
+and the synthesis picker stay deferred.
 
 ### Superseded decisions
 
