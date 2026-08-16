@@ -43,7 +43,7 @@ DATABASE_URL=postgresql://redline:redline-dev@localhost:5433/redline \
 The migration is idempotent, so re-running it is a no-op.
 
 Confirm the sidecar answers before moving on: it is the extraction seam the
-identifier-token pre-pass and the review grid both read through.
+report tools read through, and the run trigger the Create Corpus screen fires.
 
 ## 2. The fork's infrastructure
 
@@ -70,19 +70,12 @@ The redline block at the end of `.env.example` is what wires the mount:
 |---|---|
 | `REDLINE_DATABASE_URL` | redline's Postgres from step 1 — **never** Wayfinder's `DATABASE_URL` |
 | `REDLINE_WOMBLEX_INGEST_URL` | the sidecar from step 1 (default `http://localhost:8000`) |
-| `REDLINE_ADJUDICATOR_BASE_URL` | any OpenAI-compatible chat/completions endpoint |
-| `REDLINE_ADJUDICATOR_API_KEY` | that endpoint's key |
-| `REDLINE_ADJUDICATOR_MODEL` | the model id to adjudicate with |
-| `REDLINE_PRODUCT_NAME` | the product name the summary prompt names |
+| `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `REDLINE_BUCKET` | redline's object store, which the Create Corpus screen stages uploads into |
 
 **Leaving `REDLINE_DATABASE_URL` blank is a supported state.** The fork then
-boots as plain Wayfinder with the `/evaluations` routes unavailable, rather than
+boots as plain Wayfinder with the `/create-corpus` route unavailable, rather than
 failing its fail-fast env parse. `resolveRedlineModule` returns `null` and
 nothing else in the container notices.
-
-The adjudicator is **not** optional in the same way: cold-start classification is
-hard rules plus LLM adjudication, so `REDLINE_ADJUDICATOR_*` must point at a
-reachable OpenAI-compatible endpoint or nothing classifies.
 
 `pnpm install` here runs `onnxruntime-node`'s postinstall, which downloads a
 native binary. On a restricted network it fails the whole install; the fork's own
@@ -91,10 +84,11 @@ gets you a working web app when that download is blocked.
 
 ---
 
-## 4. A corpus, and the evaluation over it
+## 4. A corpus
 
-Run the engine over the corpus first. The shards it lands are what everything
-downstream reads:
+Run the engine over the corpus. The shards it lands are what everything
+downstream reads. The Create Corpus screen does this from the browser; the
+terminal path below is the way to de-risk a run without one:
 
 ```bash
 KEEP_UP=1 \
@@ -105,10 +99,10 @@ WOMBLEX_CORPUS=services/womblex-ingest/tests/corpus-local \
 
 Both environment variables are load-bearing, and neither is the script's default:
 
-- **`WOMBLEX_EVAL_ID` must equal the manifest's `evaluationId`.** The sidecar
-  reads shards from `proc/{evaluationId}/` and `real_extractor.extract` ignores
-  the document names it is handed — it returns whatever is under that prefix. A
-  run under any other id is invisible to the evaluation.
+- **`WOMBLEX_EVAL_ID` is the corpus id.** The sidecar reads shards from
+  `proc/{corpusId}/` and `real_extractor.extract` ignores the document names it is
+  handed — it returns whatever is under that prefix. A run under any other id is
+  invisible to every read.
 - **`KEEP_UP=1`, or the run destroys its own output.** The script's cleanup is
   `compose down -v`, which removes the MinIO volume along with the containers.
 
@@ -143,80 +137,17 @@ Four things about that order are not obvious from the config:
   is CPU and wall clock, not Isaacus spend: redline sets no `chunking_model`, so
   chunking is local semchunk over a vendored tokeniser.
 
-Then seed an evaluation from a manifest. Pass an **absolute** path: `pnpm
---filter` runs the script with the package directory as its working directory,
-so a relative path resolves against `apps/web` rather than where you typed it.
-
-```bash
-cd services/wayfinder
-pnpm --filter @wayfinder/web seed:redline "$(pwd)/../../manifest.json"
-```
-
-It prints the evaluation id, the `/evaluations/:id/review` URL, and the
-`E2E_REDLINE_EVALUATION_ID=` line the Playwright specs gate on.
-
-Steps 2 and 3 are prerequisites, not just neighbours: the script resolves the
-governed language model through `getContainer()`, which fail-fast parses
-Wayfinder's whole env and opens its database. A fork stack that is not up fails
-here as an env parse error that says nothing about seeding.
-
-### The manifest, and the one thing that will catch you
-
-**`documentIds` are womblex `source_hash` values, not filenames.** `source_hash`
-is womblex's document identity (`shard_reader.py`) — a sha256 that does not
-exist until the engine has extracted the document. So the manifest can only be
-written *after* step 4's engine run, and the ids come from the run's
-`manifest.parquet` (the published `source_hash` → `doc_id`/filename table), not
-from anything you can read off the corpus directory.
-
-```json
-{
-  "evaluationId": "cloud-rft-2026",
-  "evaluationName": "Cloud Hosting RFT 2026",
-  "lens": {
-    "lensId": "cloud-rft-2026-lens",
-    "name": "Cloud hosting evaluation",
-    "topics": [
-      { "id": "hosting", "name": "Hosting", "definition": "Compute, storage and network provisioning." },
-      { "id": "support", "name": "Support", "definition": "Service levels, response times and escalation." }
-    ],
-    "rules": [
-      { "id": "rule-sla", "pattern": "A-03", "topicId": "support" }
-    ]
-  },
-  "vendors": [
-    { "id": "acme", "displayName": "Acme Cloud" },
-    { "id": "globex", "displayName": "Globex Hosting" }
-  ],
-  "groups": [
-    { "id": "acme-response", "label": "Acme", "vendorIds": ["acme"], "documentIds": ["<acme-source-hash>"] },
-    { "id": "globex-response", "label": "Globex", "vendorIds": ["globex"], "documentIds": ["<globex-source-hash>"] }
-  ]
-}
-```
-
-A document belongs to exactly one group: the manifest parser rejects a document
-claimed by two, naming both. Rules are matched by specificity then declaration
-order, so their order in the file is load-bearing.
-
-**A rule's `pattern` matches an identifier token, never prose.** The pre-pass
-splits element text into separator-free tokens and keeps only those carrying a
-letter *and* a digit (`A-03`, `ISO27001`, `C-C14`); `*` is the only wildcard.
-So `"service level"` matches nothing — it has a space no token can — and
-`"price"` matches nothing either — no digit. `makeHardRule` now rejects such a
-pattern outright, naming the rule, rather than letting it silently never fire.
-
 ## What you can and cannot reach
 
-Once both stacks are up, the `/evaluations` index is linked from the sidebar and
-`/evaluations/:id/{review,pivots,grouping}` and
-`/evaluations/:id/documents/:documentId` are served — all gated on the
-`evaluation:review` permission, which is seeded to a specialist role, so an
-ordinary non-admin test account can reach them.
+Once both stacks are up, **Create Corpus** is linked from the sidebar and
+`/create-corpus` is served, gated on the `corpus:create` permission, which is
+seeded to a specialist role, so an ordinary non-admin test account can reach it.
+From there a specialist names a run, uploads its documents, authors the config
+and watches the run drain.
 
-Not yet in place, and tracked in `delivery-plan.md`: **nothing served creates or
-edits an evaluation.** The seeding script above is the only write path, and the
-lens still comes from the hand-written manifest. The grouping page is read-only.
+What the run lands is read through `apps/redline-mcp`'s report tools rather than
+through a screen — bring the `report` compose profile up and register the server
+in Wayfinder to reach them.
 
 ## Isaacus
 
@@ -243,15 +174,14 @@ account.
   `infra/womblex/redline.yaml`, because the pilot-report items read the graph.
   This is the first real Isaacus spend beyond embeddings.
 
-Chunks are what the cold-start classifier reads — `IChunkStore`'s row has no
-embedding field, and similarity search is deferred — so the
-embeddings are inert for this path. The store-load path writes `embedding=None`
-without complaint.
+Chunks are what every store-backed read is over — `IChunkStore`'s row has no
+embedding field, and similarity search is deferred — so the embeddings are inert
+for now. The store-load path writes `embedding=None` without complaint.
 
 **A UAT run now needs a real Isaacus key**, because the script drives `embed`
 and `enrich`. To run without an account, set `ISAACUS_API_KEY=uat-local` and
 `enrichment.enabled: false`, and expect the script to fail at `embed` — you get
-extraction and chunks, which is enough for the cold-start classifier and not
+extraction and chunks, which is enough for the deterministic reads and not
 enough for the graph.
 
 `linking.enabled` stays **false**, and is not the same thing as enrichment. The
