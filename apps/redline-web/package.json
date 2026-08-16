@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Specialist control surface (workflow manager) and review grid. Wires the application use-cases to the real adapters.",
+  "description": "Corpus control surface: the Create Corpus brain, run-status view models and the report sheet builder.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
@@ -20,7 +20,6 @@
   },
   "dependencies": {
     "@redline/redline-adapters": "workspace:*",
-    "@redline/redline-application": "workspace:*",
     "@redline/redline-domain": "workspace:*",
     "@redline/redline-shared": "workspace:*",
     "write-excel-file": "^4.1.1"

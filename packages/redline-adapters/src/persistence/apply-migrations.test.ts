@@ -26,8 +26,33 @@ describe("the migration set", () => {
       const tables = await database.query<{ table_name: string }>(
         "select table_name from information_schema.tables where table_name like 'redline\\_%' order by table_name",
       );
-      expect(tables.rows.map((row) => row.table_name)).toContain("redline_evaluations");
-      expect(tables.rows.map((row) => row.table_name)).toContain("redline_lenses");
+      expect(tables.rows.map((row) => row.table_name)).toEqual([
+        "redline_chunks",
+        "redline_graph_edges",
+        "redline_graph_entities",
+        "redline_money_spans",
+      ]);
+    } finally {
+      await database.close();
+    }
+  });
+
+  // Migrations are forward-only: 0000-0003 still create the Evaluation tables on
+  // every boot and 0007 drops them, so a database first migrated before the pivot
+  // and one first migrated after it must reach the same end state.
+  it("leaves a money span standing once its evaluation parent is dropped", async () => {
+    const database = new PGlite();
+    try {
+      await applyMigrations((sql) => database.exec(sql));
+      await database.exec(
+        `insert into redline_money_spans
+           (id, evaluation_id, document_id, locus, text, value, negative, confidence)
+         values ('span-1', 'corpus-1', 'hashA', 'narrative', '$80,000', 80000, false, 0.9)`,
+      );
+
+      const spans = await database.query<{ id: string }>("select id from redline_money_spans");
+
+      expect(spans.rows.map((row) => row.id)).toEqual(["span-1"]);
     } finally {
       await database.close();
     }

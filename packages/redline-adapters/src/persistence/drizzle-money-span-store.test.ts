@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { isOk } from "@redline/redline-domain";
 import { applyMigrations } from "./apply-migrations";
 import { schema } from "./db";
-import { redlineEvaluations, redlineMoneySpans, type NewMoneySpanRow } from "./schema";
+import { redlineMoneySpans, type NewMoneySpanRow } from "./schema";
 import { DrizzleMoneySpanStore } from "./drizzle-money-span-store";
 
 // A real Postgres round-trip in-process (PGlite = Postgres in WASM), loaded from
@@ -19,10 +19,6 @@ import { DrizzleMoneySpanStore } from "./drizzle-money-span-store";
 let pg: PGlite;
 let database: ReturnType<typeof drizzle>;
 let store: DrizzleMoneySpanStore;
-
-const seedEvaluation = async (id: string) => {
-  await database.insert(redlineEvaluations).values({ id, name: "RFT", stage: "review" });
-};
 
 // A header-evidenced bare-number table cell — the ~98.7% case: the cell text is a
 // plain number, its money-ness and currency came from the column verdict.
@@ -98,7 +94,6 @@ beforeEach(async () => {
   await applyMigrations((sql) => pg.exec(sql));
   database = drizzle(pg, { schema });
   store = new DrizzleMoneySpanStore(database);
-  await seedEvaluation("eval-1");
 });
 
 afterEach(async () => {
@@ -320,7 +315,6 @@ describe("DrizzleMoneySpanStore — round-trip", () => {
   });
 
   it("scopes spans by evaluation", async () => {
-    await seedEvaluation("eval-2");
     await seedSpan(tableCell({ id: "e1", evaluationId: "eval-1", value: "1.0000" }));
     await seedSpan(tableCell({ id: "e2", evaluationId: "eval-2", value: "2.0000" }));
 

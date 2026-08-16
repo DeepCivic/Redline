@@ -18,6 +18,7 @@ export const MIGRATION_FILES = [
   "0004_redline_money_spans_full_span.sql",
   "0005_redline_graph.sql",
   "0006_redline_chunks_element_range.sql",
+  "0007_redline_drop_evaluation_tables.sql",
 ] as const;
 
 export type SqlExecutor = (sql: string) => Promise<unknown>;

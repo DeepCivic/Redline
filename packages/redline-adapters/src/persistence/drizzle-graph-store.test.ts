@@ -5,7 +5,6 @@ import { isOk } from "@redline/redline-domain";
 import { applyMigrations } from "./apply-migrations";
 import { schema } from "./db";
 import {
-  redlineEvaluations,
   redlineGraphEdges,
   redlineGraphEntities,
   type NewGraphEdgeRow,
@@ -23,10 +22,6 @@ import { DrizzleGraphStore } from "./drizzle-graph-store";
 let pg: PGlite;
 let database: ReturnType<typeof drizzle>;
 let store: DrizzleGraphStore;
-
-const seedEvaluation = async (id: string) => {
-  await database.insert(redlineEvaluations).values({ id, name: "RFT", stage: "review" });
-};
 
 const entity = (over: Partial<NewGraphEntityRow>): NewGraphEntityRow => ({
   evaluationId: "eval-1",
@@ -65,7 +60,6 @@ beforeEach(async () => {
   await applyMigrations((sql) => pg.exec(sql));
   database = drizzle(pg, { schema });
   store = new DrizzleGraphStore(database);
-  await seedEvaluation("eval-1");
 });
 
 afterEach(async () => {
@@ -198,7 +192,6 @@ describe("DrizzleGraphStore — round-trip", () => {
   });
 
   it("scopes the availability probe to one evaluation", async () => {
-    await seedEvaluation("eval-2");
     await seedEntity(entity({ evaluationId: "eval-1", entityId: "one" }));
 
     const result = await store.hasEntities("eval-2");
@@ -209,7 +202,6 @@ describe("DrizzleGraphStore — round-trip", () => {
   });
 
   it("scopes entities and edges by evaluation", async () => {
-    await seedEvaluation("eval-2");
     await seedEntity(entity({ evaluationId: "eval-1", entityId: "one" }));
     await seedEntity(entity({ evaluationId: "eval-2", entityId: "two" }));
     await seedEdge(edge({ evaluationId: "eval-1", sourceId: "s", targetId: "one", propKey: "" }));

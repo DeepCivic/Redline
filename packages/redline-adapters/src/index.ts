@@ -1,13 +1,8 @@
 // @redline/redline-adapters — port implementations against real systems.
 //
-// Thread 4: WomblexExtractionReader implements IProcurementExtractionReader over
-// the womblex-ingest sidecar's Parquet→JSON read seam.
-// Thread 5: NumbatchClassifier implements IProcurementClassifier over the
-// Numbatch batch-inference API (topic_id → requirementId).
-// Thread 8: NumbatchFinancialExtractor implements IFinancialExtractor over the
-// financial extension's read seam (topic_id → requirementId; currency numeric).
-// Thread 9: DrizzleEvaluationRepository implements IEvaluationRepository over the
-// redline_ Postgres schema (ADR-0002).
+// Two systems, and no third: the womblex engine (its sidecar's read, trigger and
+// status seams, plus the object store a run reads its input from) and redline's
+// own Postgres, where the rows a run lands are queried in place.
 export {
   WomblexExtractionReader,
   type HttpClient,
@@ -25,43 +20,22 @@ export {
   type RunTriggerHttpResponse,
   type HttpWomblexRunTriggerOptions,
 } from "./womblex/http-womblex-run-trigger";
-export {
-  NumbatchClassifier,
-  type HttpClient as NumbatchHttpClient,
-  type HttpRequest as NumbatchHttpRequest,
-  type HttpResponse as NumbatchHttpResponse,
-  type NumbatchClassifierOptions,
-  type NumbatchProfileBinding,
-} from "./numbatch/numbatch-classifier";
-export {
-  NumbatchFinancialExtractor,
-  type HttpClient as NumbatchFinancialHttpClient,
-  type HttpResponse as NumbatchFinancialHttpResponse,
-  type NumbatchFinancialExtractorOptions,
-  type NumbatchProfileBinding as NumbatchFinancialProfileBinding,
-} from "./numbatch/numbatch-financial-extractor";
-export {
-  DrizzleEvaluationRepository,
-} from "./persistence/drizzle-evaluation-repository";
-// The money-span query surface (ADR-0017/0018): a store-backed IMoneySpanStore
+// The money-span query surface: a store-backed IMoneySpanStore
 // over womblex's `money` sidecar, materialised into the redline_ schema by the
 // sidecar's load path. Addressable financial expressions as womblex wrote them —
-// all three loci, no requirement alignment, no roll-up, nothing interpreted.
-export {
-  DrizzleMoneySpanStore,
-} from "./persistence/drizzle-money-span-store";
-// The chunk store (ADR-0017/0018): the store-side
-// query surface over redline_chunks, which the womblex-ingest sidecar's load
-// path writes and this adapter reads. Exact fetch + structural fetch; the domain
-// ChunkRow carries no vector (ADR-0017), and findSimilar refuses with
-// NOT_IMPLEMENTED until the pgvector/ANN index lands (ADR-0018 addendum).
+// all three loci, no roll-up, nothing interpreted.
+export { DrizzleMoneySpanStore } from "./persistence/drizzle-money-span-store";
+// The chunk store: the store-side query surface over redline_chunks, which the
+// womblex-ingest sidecar's load path writes and this adapter reads. Exact fetch
+// + structural fetch; the domain ChunkRow carries no vector, and findSimilar
+// refuses with NOT_IMPLEMENTED until the pgvector/ANN index lands.
 export { DrizzleChunkStore } from "./persistence/drizzle-chunk-store";
-// Chunk element addressing (delivery-plan §2.1): resolves a money span to the
-// single chunk whose element range contains it, given the candidate chunks a
+// Chunk element addressing: resolves a money span to the single chunk whose
+// element range contains it, given the candidate chunks a
 // caller already fetched (typically fetchByStructure({ documentId })). Pure —
 // no store — since both operands are already-fetched domain rows.
 export { resolveChunkForMoneySpan } from "./persistence/chunk-element-resolution";
-// The enrichment-graph store (ADR-0017/0018): the report assembler's navigation
+// The enrichment-graph store: the report assembler's navigation
 // surface over redline_graph_entities / redline_graph_edges, which the
 // womblex-ingest sidecar's enrich load path writes and this adapter reads. Entity
 // filtering + edge traversal in both directions; the graph LOCATES source rows,
@@ -79,39 +53,7 @@ export {
   type StagedCorpusPutClient,
   type MinioStagedCorpusWriterOptions,
 } from "./storage/minio-staged-corpus-writer";
-export {
-  createStagedCorpusWriter,
-  type RedlineStorageOptions,
-} from "./storage/redline-storage";
-// The persisted lens (ADR-0009/ADR-0020): the reader
-// behind IClassificationLensReader, over redline_lenses / redline_topics /
-// redline_hard_rules / redline_lens_bindings. Topics and rules are read from the
-// store; `candidates` are derived per call by the identifier-token pre-pass,
-// which is this adapter's second collaborator.
-export {
-  DrizzleClassificationLensReader,
-  type DrizzleClassificationLensReaderDependencies,
-} from "./persistence/drizzle-classification-lens-reader";
-// The write half, over the same four tables: the minimum that lets the corpus
-// driver seed the lens it is about to classify against. Whole-lens, transactional
-// and idempotent per lens, so a re-run replaces rather than colliding with the
-// one-lens-per-evaluation index. Not the authoring surface (deferred).
-export { DrizzleClassificationLensWriter } from "./persistence/drizzle-classification-lens-writer";
-export {
-  makeExtractionHardRuleCandidateDeriver,
-  type DeriveHardRuleCandidates,
-} from "./lens/hard-rule-candidate-deriver";
-// The adjudication seam (ADR-0008 cold-start leg): an IAdjudicator over an
-// OpenAI-style chat/completions LLM endpoint. It settles what hard rules and
-// structural fetch left unclear — the model picks one candidate topic and gives
-// a one-sentence rationale, and may never invent an off-list topic.
-export {
-  HttpAdjudicator,
-  type AdjudicatorHttpClient,
-  type AdjudicatorHttpRequest,
-  type AdjudicatorHttpResponse,
-  type HttpAdjudicatorOptions,
-} from "./adjudication/http-adjudicator";
+export { createStagedCorpusWriter, type RedlineStorageOptions } from "./storage/redline-storage";
 export {
   createRedlinePostgres,
   schema as redlineSchema,

@@ -229,9 +229,6 @@ beforeAll(async () => {
   postgres = new PGlite();
   const database = drizzle(postgres, { schema: redlineSchema });
   await applyMigrations((sql) => postgres.exec(sql));
-  await database
-    .insert(redlineSchema.redlineEvaluations)
-    .values({ id: EVALUATION_ID, name: "RFT-2026-11", stage: "review" });
   await seedChunks(database);
   await seedMoneySpans(database);
   await seedGraph(database);

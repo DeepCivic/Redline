@@ -1,9 +1,5 @@
-import type { EvaluationWorkbook, SheetCell, SheetData } from "./excel-export";
-
-// The report sheet seam (delivery-plan §2 item 1 / architecture §5.1). The other
-// half of the export target already exists: buildEvaluationWorkbook turns the grid
-// + pivots into `write-excel-file` sheet data. What was missing is the seam where
-// an *assembled report* becomes sheets — the half a specialist actually receives.
+// The report sheet seam (architecture §5.1): where an *assembled report* becomes
+// sheets — the half a specialist actually receives.
 //
 // It is split from the assembly loop (fork-side, ReportAssembler in
 // @rbrasier/adapters) because it is independently testable: a fixed report
@@ -19,6 +15,21 @@ import type { EvaluationWorkbook, SheetCell, SheetData } from "./excel-export";
 // passage text stays byte-identical (a plain text cell, never re-parsed), and the
 // value stays uninterpreted (never re-read as a number). A specialist opening the
 // workbook can resolve every fact back to a source location.
+
+// A `write-excel-file` cell. `type` is the native constructor the library reads
+// to decide the Excel cell type; `null` writes a blank cell. Verified against the
+// library's bundled types, not training data (CLAUDE.md).
+export type SheetCell =
+  | { value: string; type: StringConstructor; fontWeight?: "bold"; hyperlink?: string }
+  | { value: number; type: NumberConstructor }
+  | null;
+
+export type SheetData = SheetCell[][];
+
+export interface ReportWorkbook {
+  readonly sheets: readonly SheetData[];
+  readonly sheetNames: readonly string[];
+}
 
 // One transferred passage: a chunk's text (or a contiguous fragment of it), cited
 // by the stable chunkId it came from.
@@ -52,9 +63,9 @@ export interface ReportSection {
 }
 
 export interface AssembledReport {
-  // Whether an enrichment graph was reachable for this evaluation. A report over a
-  // graph-less evaluation carries an explicit unavailability, not a silently
-  // thinner report — so the workbook states it rather than leaving it implicit.
+  // Whether an enrichment graph was reachable for this corpus. A report over a
+  // graph-less corpus carries an explicit unavailability, not a silently thinner
+  // report — so the workbook states it rather than leaving it implicit.
   readonly graphAvailable: boolean;
   readonly sections: readonly ReportSection[];
 }
@@ -115,9 +126,47 @@ export const buildReportSheetData = (report: AssembledReport): SheetData => {
   return [availability, blankRow(), ...body];
 };
 
-// The full report workbook: one named report sheet. Mirrors buildEvaluationWorkbook's
-// shape so the same toWriterSheets / writeEvaluationWorkbook path serialises it.
-export const buildReportWorkbook = (report: AssembledReport): EvaluationWorkbook => ({
+// The full report workbook: one named report sheet.
+export const buildReportWorkbook = (report: AssembledReport): ReportWorkbook => ({
   sheets: [buildReportSheetData(report)],
   sheetNames: [REPORT_SHEET_NAME],
 });
+
+// Pairs each built sheet's data with its name in the shape `write-excel-file`
+// consumes (an array of `{ name, data }` objects — verified against its bundled
+// types, not training data — CLAUDE.md). Pure so the mapping is unit-tested
+// without the browser writer.
+export const toWriterSheets = (
+  workbook: ReportWorkbook,
+): readonly { name: string; data: SheetData }[] =>
+  workbook.sheets.map((data, index) => ({ name: workbook.sheetNames[index]!, data }));
+
+const isoDate = (date: Date): string => new Date(date).toISOString().slice(0, 10);
+
+// A slugged, dated filename — mirrors Wayfinder's insightsExportFileName.
+export const reportExportFileName = (corpusId: string, date: Date): string => {
+  const stem = corpusId
+    .trim()
+    .replace(/[^\w-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-+/g, "-");
+  return `${stem || "corpus"}-report-${isoDate(date)}.xlsx`;
+};
+
+export interface WriteReportWorkbookInput {
+  readonly corpusId: string;
+  readonly workbook: ReportWorkbook;
+}
+
+// Writes an already-built workbook to a `.xlsx` in the browser and triggers the
+// download. The workbook is built server-side so the write side is the only thing
+// on the client, and the writer is lazy-loaded (dynamic import) so it stays out
+// of the initial bundle — exactly as Wayfinder's exportInsightsXlsx does.
+export const writeReportWorkbook = async (input: WriteReportWorkbookInput): Promise<void> => {
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+  const sheets = toWriterSheets(input.workbook).map((sheet) => ({
+    name: sheet.name,
+    data: sheet.data as SheetCell[][],
+  }));
+  await writeXlsxFile(sheets).toFile(reportExportFileName(input.corpusId, new Date()));
+};

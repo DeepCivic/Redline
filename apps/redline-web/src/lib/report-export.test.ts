@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { toWriterSheets } from "./excel-export";
 import {
   buildReportSheetData,
   buildReportWorkbook,
+  toWriterSheets,
   REPORT_SHEET_NAME,
   type AssembledReport,
 } from "./report-export";
@@ -134,10 +134,9 @@ describe("buildReportWorkbook", () => {
     expect(workbook.sheets[0].length).toBeGreaterThan(0);
   });
 
-  it("flows through the same writer seam the evaluation workbook uses", () => {
-    // The report workbook is an EvaluationWorkbook, so toWriterSheets /
-    // writeEvaluationWorkbook serialise it unchanged — the report is delivered
-    // down the same deterministic browser-writer path, not a second one.
+  it("pairs each sheet with its name for the browser writer", () => {
+    // toWriterSheets is the one shape `write-excel-file` consumes, so the report
+    // reaches the specialist down a deterministic path with no writer loaded.
     const workbook = buildReportWorkbook(report({ sections: [groundedSection] }));
     const sheets = toWriterSheets(workbook);
     expect(sheets).toHaveLength(1);

@@ -72,9 +72,6 @@ importers:
       '@redline/redline-adapters':
         specifier: workspace:*
         version: link:../../packages/redline-adapters
-      '@redline/redline-application':
-        specifier: workspace:*
-        version: link:../../packages/redline-application
       '@redline/redline-domain':
         specifier: workspace:*
         version: link:../../packages/redline-domain
@@ -97,9 +94,6 @@ importers:
 
   packages/redline-adapters:
     dependencies:
-      '@redline/redline-application':
-        specifier: workspace:*
-        version: link:../redline-application
       '@redline/redline-domain':
         specifier: workspace:*
         version: link:../redline-domain
@@ -129,25 +123,6 @@ importers:
       tsx:
         specifier: ^4.19.0
         version: 4.23.1
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vite:
-        specifier: ^6.0.0
-        version: 6.4.3(@types/node@20.19.43)(tsx@4.23.1)
-      vitest:
-        specifier: ^4.1.0
-        version: 4.1.10(@types/node@20.19.43)(@vitest/coverage-v8@4.1.10)(vite@6.4.3(@types/node@20.19.43)(tsx@4.23.1))
-
-  packages/redline-application:
-    dependencies:
-      '@redline/redline-domain':
-        specifier: workspace:*
-        version: link:../redline-domain
-      '@redline/redline-shared':
-        specifier: workspace:*
-        version: link:../redline-shared
-    devDependencies:
       typescript:
         specifier: ^5.6.0
         version: 5.9.3

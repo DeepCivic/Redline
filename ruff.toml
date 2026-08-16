@@ -19,11 +19,10 @@ line-length = 120
 # from the Node scope and as validate.sh #9 excludes them from the size guard.
 # services/wayfinder is the Wayfinder fork submodule (ADR-0019): its tree —
 # including any Python it carries — is the fork's, not redline's, so it is
-# excluded too. redline's own overlays — services/womblex-ingest,
-# services/numbatch-extension — sit beside them and ARE linted.
+# excluded too. redline's own Python — services/womblex-ingest — sits beside
+# them and IS linted.
 extend-exclude = [
     "services/womblex",
-    "services/numbatch",
     "services/wayfinder",
     "vendor",
 ]
