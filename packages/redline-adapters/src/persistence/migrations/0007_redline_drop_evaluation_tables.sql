@@ -8,10 +8,14 @@
 -- redline_graph_edges.
 --
 -- Migrations here are forward-only and re-applied on every boot, so 0000-0003
--- still create these tables and this file still drops them. That is the cost of
--- never editing a landed migration, and it is deliberate: an operator's database
--- reaches the same end state whether it was first migrated before or after the
--- pivot.
+-- still create these tables and this file still drops them on every boot. An
+-- operator's database therefore reaches the same end state whether it was first
+-- migrated before or after the pivot.
+--
+-- That re-apply cycle is why 0001's money-span FK now also traps
+-- foreign_key_violation: the boot after this file first runs, 0000 recreates an
+-- empty redline_evaluations and 0001 re-validates the FK against it, which a
+-- loaded redline_money_spans cannot satisfy.
 --
 -- redline_money_spans survives but carried an FK into redline_evaluations, so
 -- that constraint is dropped explicitly rather than left to CASCADE — a drop of

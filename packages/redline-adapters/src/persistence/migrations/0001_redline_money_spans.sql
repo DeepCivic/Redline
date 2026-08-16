@@ -20,10 +20,18 @@ CREATE TABLE IF NOT EXISTS "redline_money_spans" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
+-- 0007 drops this constraint along with redline_evaluations, so on any database
+-- that has booted since the pivot this ADD is vestigial and must not be fatal.
+-- Every migration re-applies on every boot, so 0000 recreates an *empty*
+-- redline_evaluations and this statement then re-validates against it: with money
+-- spans already loaded, that raises foreign_key_violation rather than
+-- duplicate_object, and an untrapped raise here stops the service from starting.
+-- Both are swallowed — the constraint is either already present (healthy
+-- pre-pivot database) or deliberately absent (post-0007).
 DO $$ BEGIN
 	ALTER TABLE "redline_money_spans" ADD CONSTRAINT "redline_money_spans_evaluation_id_fk"
 		FOREIGN KEY ("evaluation_id") REFERENCES "redline_evaluations"("id") ON DELETE cascade;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
+EXCEPTION WHEN duplicate_object OR foreign_key_violation THEN null; END $$;
 
 -- The two access paths the store answers: a whole-document read and the
 -- structural (document, table element) address. Indexed so both stay cheap as

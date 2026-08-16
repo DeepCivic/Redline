@@ -57,4 +57,28 @@ describe("the migration set", () => {
       await database.close();
     }
   });
+
+  // The boot *after* the one that dropped the Evaluation tables. 0000 recreates an
+  // empty redline_evaluations and 0001 re-adds the money-span FK against it, so a
+  // store holding spans re-validates orphan rows and raises foreign_key_violation.
+  // Untrapped, that stops the service starting — which the plain re-apply test
+  // above cannot catch, because it never loads a row before re-applying.
+  it("re-applies over a loaded store, the boot after the Evaluation tables went", async () => {
+    const database = new PGlite();
+    try {
+      await applyMigrations((sql) => database.exec(sql));
+      await database.exec(
+        `insert into redline_money_spans
+           (id, evaluation_id, document_id, locus, text, value, negative, confidence)
+         values ('span-1', 'corpus-1', 'hashA', 'narrative', '$80,000', 80000, false, 0.9)`,
+      );
+
+      await applyMigrations((sql) => database.exec(sql));
+
+      const spans = await database.query<{ id: string }>("select id from redline_money_spans");
+      expect(spans.rows.map((row) => row.id)).toEqual(["span-1"]);
+    } finally {
+      await database.close();
+    }
+  });
 });

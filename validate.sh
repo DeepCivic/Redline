@@ -204,7 +204,7 @@ fi
 
 # ── 10. pnpm-lock.yaml was resolved against the vendored Wayfinder tree ──────
 # pnpm-workspace.yaml globs vendor/wayfinder/packages/* into the workspace, but
-# vendor/ is never committed (check #6) — so the lockfile is a function of state
+# vendor/ is never committed (check #5) — so the lockfile is a function of state
 # that is deliberately absent from the repo. `pnpm install` WITHOUT vendoring
 # first silently drops the vendor/wayfinder/packages/domain importer and flips its
 # transitive deps to `optional`; committing that fails CI's --frozen-lockfile
@@ -235,12 +235,12 @@ else
 fi
 
 # ── 11. Python lint (ruff) over redline's own Python ─────────────────────────
-# The Python half of check #3's lint pass. Rules and exclusions live in ruff.toml
+# The Python half of check #2's lint pass. Rules and exclusions live in ruff.toml
 # at the root — including the two upstream submodules, which we never modify
 # (ADR-0015). Unlike the pytest checks above, ruff's output is NOT silenced: a
 # lint failure is only actionable with its diagnostics. SKIPs cleanly when python3
 # is absent or ruff cannot be installed, so an offline host still gates on the
-# rest, matching checks #10 and #11.
+# rest, matching check #9.
 section "11. ruff lint (redline's own Python)"
 RUFF_TARGETS=()
 [ -d services/womblex-ingest ] && RUFF_TARGETS+=(services/womblex-ingest)

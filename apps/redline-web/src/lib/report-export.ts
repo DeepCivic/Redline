@@ -17,10 +17,13 @@
 // workbook can resolve every fact back to a source location.
 
 // A `write-excel-file` cell. `type` is the native constructor the library reads
-// to decide the Excel cell type; `null` writes a blank cell. Verified against the
-// library's bundled types, not training data (CLAUDE.md).
+// to decide the Excel cell type; `null` writes a blank cell. Verified against
+// write-excel-file@4.1.1's bundled `types/SheetData.d.ts` +
+// `types/CellStyleProperties.d.ts`, not training data (CLAUDE.md) — which is why
+// there is no `hyperlink`: the library carries no such cell property, so
+// declaring one would promise a deep-link it silently writes as plain text.
 export type SheetCell =
-  | { value: string; type: StringConstructor; fontWeight?: "bold"; hyperlink?: string }
+  | { value: string; type: StringConstructor; fontWeight?: "bold" }
   | { value: number; type: NumberConstructor }
   | null;
 
@@ -133,13 +136,16 @@ export const buildReportWorkbook = (report: AssembledReport): ReportWorkbook => 
 });
 
 // Pairs each built sheet's data with its name in the shape `write-excel-file`
-// consumes (an array of `{ name, data }` objects — verified against its bundled
-// types, not training data — CLAUDE.md). Pure so the mapping is unit-tested
-// without the browser writer.
+// consumes: an array of `{ data, sheet }` objects. The name key is **`sheet`**,
+// not `name` — verified against write-excel-file@4.1.1's
+// `types/SheetOptions.d.ts` and its runtime default
+// (`sheetOptions.sheet || "Sheet" + (i + 1)`), so a `name` key is ignored and the
+// tab silently comes out as "Sheet1". Pure, so the mapping is unit-tested without
+// the browser writer.
 export const toWriterSheets = (
   workbook: ReportWorkbook,
-): readonly { name: string; data: SheetData }[] =>
-  workbook.sheets.map((data, index) => ({ name: workbook.sheetNames[index]!, data }));
+): readonly { sheet: string; data: SheetData }[] =>
+  workbook.sheets.map((data, index) => ({ sheet: workbook.sheetNames[index]!, data }));
 
 const isoDate = (date: Date): string => new Date(date).toISOString().slice(0, 10);
 
@@ -164,9 +170,9 @@ export interface WriteReportWorkbookInput {
 // of the initial bundle — exactly as Wayfinder's exportInsightsXlsx does.
 export const writeReportWorkbook = async (input: WriteReportWorkbookInput): Promise<void> => {
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
-  const sheets = toWriterSheets(input.workbook).map((sheet) => ({
-    name: sheet.name,
-    data: sheet.data as SheetCell[][],
+  const sheets = toWriterSheets(input.workbook).map((entry) => ({
+    sheet: entry.sheet,
+    data: entry.data as SheetCell[][],
   }));
   await writeXlsxFile(sheets).toFile(reportExportFileName(input.corpusId, new Date()));
 };

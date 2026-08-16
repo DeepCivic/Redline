@@ -1,5 +1,5 @@
 // The redline_ Postgres schema (redline owns its own Postgres). Every table uses
-// the redline_ prefix (enforced by validate.sh #7), snake_case columns, and the
+// the redline_ prefix (enforced by validate.sh #6), snake_case columns, and the
 // id / created_at / updated_at convention inherited from Wayfinder (CLAUDE.md).
 //
 // Every table here holds what a womblex run landed — money spans, chunks and the

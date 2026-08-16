@@ -140,7 +140,7 @@ describe("buildReportWorkbook", () => {
     const workbook = buildReportWorkbook(report({ sections: [groundedSection] }));
     const sheets = toWriterSheets(workbook);
     expect(sheets).toHaveLength(1);
-    expect(sheets[0]!.name).toBe(REPORT_SHEET_NAME);
+    expect(sheets[0]!.sheet).toBe(REPORT_SHEET_NAME);
     expect(sheets[0]!.data).toBe(workbook.sheets[0]);
   });
 });

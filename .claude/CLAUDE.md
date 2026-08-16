@@ -106,9 +106,13 @@ Enforced by `validate.sh` and ESLint — skills that write code must respect the
   are snake_case. The four surviving tables mirror what the womblex sidecar's load
   path writes, so they follow **its** DDL rather than the id/created_at/updated_at
   convention — the schema is the sidecar's wire contract, not redline's choice.
-- Migrations are **forward-only**. Every file is `IF NOT EXISTS`-guarded and
-  re-applied on every boot, so a landed migration is never edited or deleted —
-  correcting one means adding another.
+- Migrations are **forward-only**, and every file is `IF NOT EXISTS`-guarded and
+  re-applied *in full on every boot*. So correcting a migration's **effect** means
+  adding another file, never rewriting history. The one edit a landed file may
+  take is **widening an error guard** it re-executes anyway — a later migration
+  cannot repair a failure that happens before it runs (0001's money-span FK is the
+  worked example: 0007 drops the table it references, so its ADD must tolerate
+  `foreign_key_violation` or the next boot dies at 0001).
 - We **never modify Wayfinder's tree**. `vendor/wayfinder` is read-only reuse only,
   and is excluded from lint/format/build/test scope (`--filter=@redline/*`).
 

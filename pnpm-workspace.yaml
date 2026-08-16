@@ -4,7 +4,7 @@ packages:
   # Strategy A: consume Wayfinder's unpublished `@rbrasier/*` workspace packages
   # through this shared workspace. `vendor/wayfinder` is NOT a submodule — it is
   # materialised at build time out of the services/wayfinder submodule by
-  # scripts/vendor-wayfinder.sh and never committed (ADR-0012, validate.sh #6).
+  # scripts/vendor-wayfinder.sh and never committed (validate.sh #5).
   # A copy rather than the glob reaching straight into services/wayfinder,
   # because that would absorb every package the fork carries.
   #
@@ -12,5 +12,5 @@ packages:
   # installing without it drops the vendor/wayfinder/packages/domain importer and
   # flips its transitive deps to `optional`. The committed lockfile is the
   # *vendored* one, which is what CI's --frozen-lockfile install expects. Vendor
-  # before installing, or check #12 will catch the rewrite.
+  # before installing, or check #10 will catch the rewrite.
   - "vendor/wayfinder/packages/*"
