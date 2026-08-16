@@ -41,3 +41,358 @@ User defines report columns. Each column has:
    - One row per document.
    - One column per field.
    - Unresolved/flagged values are visible for review.
+
+---
+
+# Delivery detail
+
+> Everything above this line is the product statement and is not edited. Everything
+> below is the detail a session needs to build against it.
+
+## 0. Status — read before anything else
+
+**This file is the only live plan.** It supersedes `docs/delivery-plan.md`,
+`docs/architecture.md` (including §5.1 "What a report is", whose narrative-sections
+definition is replaced by the column/row grid above) and `docs/design-principles.md`.
+§11 itemises their removal.
+
+**The repo does not build.** Three scope cuts in two days (`a018a2a`, `2b7531d`,
+`59d4156`) removed the Evaluation surface, the corpus control plane, the materialised
+store and the sheet renderer — *whole files only*, by design. Dangling barrels, an MCP
+container wiring deleted adapters, a sidecar `main.py` importing deleted modules, four
+stale manifests and four `validate.sh` checks with no subject are what is left. This is
+a recorded mid-cut state, not a regression to bisect. Repairing it is **build step 0**,
+not separate work.
+
+**What survived is more useful than it looks.** `apps/redline-mcp/src/lib/report-tools.ts`
+still holds all ten tools — see §3.
+
+### Decisions taken 2026-08-16
+
+| Question | Decision |
+|---|---|
+| Where the base LLM extraction call runs | **redline** — not the fork, not the sidecar |
+| Where definitions, runs, rows and values persist | **redline** — it re-owns a Postgres, for the report domain only |
+| "corpus search, embeddings" in the base call | **Point-only for v1** — see §1.1 |
+| How aggressive the removal itinerary is | **Extreme** — §11 |
+
+## 1.1 v1 scope: retrieval is point-only
+
+The product statement says the base call has "corpus search, embeddings". **v1 gives it
+neither.** The model is *pointed* at rows — structural fetch by document/page/content
+type, and graph traversal from an entity to the chunk that mentions it — and never
+discovers them by similarity. It transfers facts it is directed to.
+
+This is a deliberate narrowing of the statement above, recorded rather than done
+quietly. womblex writes `*.embeddings.parquet` (`store/output.py`, `EMBEDDINGS_SCHEMA`:
+`source_hash`, `chunk_index`, `content_type`, `model`, `task`, `dim`, `vector`) and
+ships **no index** — vectors sit on disk, nothing ranks them.
+
+**Re-entry condition:** when a corpus is large enough that structural + graph pointing
+demonstrably misses fields a human finds, build the search seam. It belongs sidecar-side
+(query embed via Isaacus `kanon-2-embedder` at `task: retrieval/query`, cosine over the
+corpus's vectors), because that is where the vectors already are. Do not build it before
+a measurement says pointing is insufficient.
+
+## 2. Data model
+
+Destined for `packages/redline-domain`. Result pattern at every boundary; no throwing
+across packages.
+
+```ts
+type FieldStatus = "verified" | "generated" | "missing" | "needs_review";
+
+type ColumnConstraint =
+  | { kind: "financial"; currency?: string }
+  | { kind: "date" }
+  | { kind: "regex"; pattern: string }
+  | { kind: "enum"; allowed: readonly string[] };
+
+interface ReportColumn {
+  columnId: string;
+  name: string;
+  semanticDescription: string;
+  constraint?: ColumnConstraint;
+  summaryGeneration: boolean;
+}
+
+interface Evidence {
+  documentId: string;   // womblex source_hash
+  chunkId: string;      // "{source_hash}:{chunk_index}"
+  quotedText: string;   // contiguous substring of that chunk — see §4
+}
+
+interface FieldValue {
+  columnId: string;
+  rawValue: string | null;        // as the model returned it, never rewritten
+  normalisedValue: string | null; // constraint output; null when normalisation failed
+  status: FieldStatus;
+  evidence: readonly Evidence[];
+  reason: string | null;          // why it is missing or needs review
+}
+
+interface ReportRow { documentId: string; values: readonly FieldValue[] }
+interface ReportRun {
+  runId: string; corpusId: string; definitionId: string;
+  documentIds: readonly string[]; status: "pending" | "running" | "complete" | "failed";
+}
+```
+
+**`evaluationId` → `corpusId` happens here.** The ports and schema are being written
+fresh, so this is the one moment the rename costs nothing. It was deferred before
+because it spanned TypeScript, Python and SQL simultaneously; it no longer does. The
+surviving `IProcurementExtractionReader`
+(`packages/redline-domain/src/ports/procurement-extraction-reader.ts`) still takes
+`evaluationId` and is renamed with it.
+
+## 3. Architecture — where each piece lives
+
+| Layer | Path | Role |
+|---|---|---|
+| Engine | `services/womblex` (submodule) | writes Parquet shards to object storage. Unchanged; never reimplemented |
+| Read seam | `services/womblex-ingest` | Parquet → JSON. **Grows** run-scoped routes for documents, chunks, graph and money spans |
+| Ports + types | `packages/redline-domain` | the §2 types, `IExtractionModel`, the corpus read ports |
+| Implementations | `packages/redline-adapters` | Drizzle stores, the LLM client, sidecar HTTP readers |
+| Tool surface | `apps/redline-mcp` | the ten tools, re-pointed at the sidecar |
+| Engine process | `apps/redline-report` (**new**) | the per-document loop; the HTTP API the fork calls |
+| UI | `services/wayfinder` (fork) | column editor, document picker, run + progress, review grid, export |
+
+### 3.1 The large reuse: the tools already exist
+
+`apps/redline-mcp/src/lib/report-tools.ts` (416 lines) still defines all ten tools:
+
+- `fetch_chunks`, `fetch_chunks_by_structure`
+- `fetch_money_spans_by_document`, `fetch_money_spans_by_structure`
+- `read_extraction_elements`, `read_extraction_chunks`, `read_extraction_table_cells`
+- `graph_find_entities`, `graph_edges_from`, `graph_edges_to`
+
+They fail to compile only because the **ports behind them** were deleted — seven were
+Drizzle readers over the removed schema. The tool shapes, their descriptions, their
+stable-ordering contract and the `graphAvailable: false` disambiguation (an empty
+traversal over a real graph versus no graph loaded) are all intact and all correct for
+this plan. They are exactly the "tools, corpus search, embeddings and a graph overlay"
+the product statement asks for, minus search.
+
+**They need re-pointing at the sidecar, not redesigning.** Budget step 4 accordingly.
+
+### 3.2 One tool surface, two mounts
+
+The engine binds `buildReportTools(...)` in-process and converts the `inputShape` zod
+objects to the model's tool schema. `apps/redline-mcp` stays the external mount over
+streamable HTTP. Neither is written twice, and a tool added for the engine is available
+to an outside consumer for free.
+
+## 4. The extraction call contract
+
+One base call per document with the tools attached — never one call per column. That
+keeps spend at M calls rather than N×M, and it is why evidence must be asked for
+explicitly in the response shape: a per-column call would have carried the column
+implicitly, and this does not.
+
+Response: one object per column, `{ columnId, value, evidence[], absent, reason }`.
+
+Three rules the model is never trusted on. The first two are carried verbatim from the
+deleted `HttpAdjudicator`
+(`git show 64bd20a^:packages/redline-adapters/src/adjudication/http-adjudicator.ts` —
+its wire shape is the widely-implemented chat/completions JSON-mode contract, so any
+OpenAI-compatible endpoint satisfies it without an adapter change):
+
+1. **A column that was not offered is rejected outright.**
+2. **Evidence citing a chunk no tool returned in this call is rejected outright.**
+3. **`quotedText` must be a contiguous substring of the cited chunk** — checked
+   mechanically after the call against the bytes the tool returned, never eyeballed.
+
+Rule 3 is the provenance claim, restated for a grid instead of a narrative. A value
+whose quote does not survive the substring check becomes `needs_review`. It is **never
+dropped silently and never rewritten** — a silently reworded quote no longer resolves to
+its source, which is the whole thing this product sells.
+
+## 5. Constraints and normalisation
+
+**financial — prefer a money span, do not parse a string.** Where the evidence anchors
+to a womblex money span, use it. `MONEY_SPANS_SCHEMA`
+(`/home/user/womblex/src/womblex/store/money_output.py`) carries an exact
+`decimal128(38,4)` `value` with **sign and multiplier already folded in**, plus
+`currency`, `currency_source`, `evidence`, `modifier` ("up to", "approximately" — left
+unfolded deliberately) and the `range_group`/`range_role` pair linking a range's two
+endpoints. Re-applying `multiplier` or `negative` to `value` double-counts; the schema
+warns about exactly this.
+
+Fall back to parsing a raw string only when no span anchors, and then through **one**
+shared parser that preserves sign, disambiguates separators, and **refuses genuinely
+ambiguous digit groupings rather than guessing**. This is the measured lesson of
+findings F2/F3 in the (now-deleted) 2026-07-28 review: a parser that strips everything
+outside `[0-9.]` turned `$1.234,56` into `1.23456`, `$1 234,50` into `123450.0`,
+`-$500.00` into `500.0` and `($1,234.56)` into `1234.56` — a credit summed as a debit.
+Two independent parsers is how that happened; do not build a second one.
+
+- **date** — ISO 8601 out. AU day-first default. Ambiguous → `needs_review`.
+- **regex** — must fullmatch, not search.
+- **enum** — case-insensitive compare, canonical case out.
+
+Any normalisation failure yields `needs_review` with `rawValue` preserved beside it.
+
+## 6. Statuses and the review gate
+
+| Status | Means |
+|---|---|
+| `verified` | at least one evidence citation passed rule 3 and, if constrained, normalised cleanly |
+| `generated` | a `summary_generation` column's output — authored prose, not a transferred fact |
+| `missing` | the model returned nothing and said why |
+| `needs_review` | evidence failed, normalisation failed, or a value came back with no evidence at all |
+
+`generated` is **never** `verified`, however good it looks: it is the model's own prose,
+so it needs the same approval a flagged value does. Only `verified` or user-approved
+values reach the final report. Everything else is held back and stays visible in the
+sheet — a blank cell and a withheld cell must never look the same.
+
+## 7. Summary generation
+
+A second call per `(document, summary column)`, never the base call.
+
+Cache the **chunk read** per `(runId, documentId)` so N summary columns do not re-read
+the same passages N times. Finding F9 measured that exact duplicate spend on the deleted
+surface: one summarise call per classification row over identical passages, pure cost,
+no behaviour difference. Cache the read, not the summary — each summary column asks a
+different question.
+
+## 8. Export
+
+One row per document, one column per field, flagged values visible for review.
+
+Reuse the deleted writers' shapes rather than designing afresh:
+`git show 64bd20a^:apps/redline-web/src/lib/excel-export.ts` (220 lines) and
+`git show 2b7531d^:apps/redline-web/src/lib/report-export.ts` (178 lines). Both are
+framework-free and were unit-tested; the second already absorbed the browser writer.
+
+## 9. Known blockers
+
+1. **A corpus run twice serves every document twice.** `RealWomblexExtractor.extract`
+   (`services/womblex-ingest/src/womblex_ingest/real_extractor.py`) lists the whole
+   `proc/{corpusId}/` prefix and concatenates by suffix, merging every run under it;
+   `elementOrder` then identifies nothing. The engine lands each run under
+   `proc/{corpusId}/runs/{runId}/documents/`. **Every read route this plan adds must be
+   run-scoped**, and the existing one must be fixed. No report row is trustworthy until
+   it is — a document silently doubled produces doubled evidence and plausible,
+   wrong values.
+2. **The tree does not build** (§0). Build step 0.
+3. **The fork half is unlanded.** The gitlink is stale at `5d236db1`. `validate.sh` #12
+   *skips* while the submodule is unpopulated and only bites once it is initialised —
+   so a green-looking run on a fresh clone proves nothing about the pin. Two prior fork
+   changes must fold into one commit, not land separately.
+4. **Submodules are unpopulated in a fresh session.** `git submodule status` shows both
+   `services/wayfinder` and `services/womblex` uninitialised, so the fork's structure is
+   unverified until `git submodule update --init` runs. The fork step begins by
+   reading it, not by assuming its shape.
+
+## 10. Build steps
+
+One commit each, tests-first, **≤500 changed lines**, with an explicit exit test. A step
+whose exit test joins two independently-testable behaviours is two steps.
+
+0. **Remediate to green.** Barrels, `report-tools.ts`, the MCP container, the sidecar's
+   `main.py`, four manifests, `validate.sh`, the compose profiles. Absorbs
+   `delivery-plan.md` §0.3 items 1–8 and 10.
+   _Exit: `./validate.sh` green._
+1. **Report domain.** The §2 types and ports; `evaluationId` → `corpusId` throughout.
+   _Exit: a conformance fake satisfies every port; Result shape holds at each boundary._
+2. **Persistence.** redline Postgres schema + forward-only migration `0000` +
+   Drizzle stores for definitions, runs, rows and values. `redline_` prefix, snake_case.
+   _Exit: a definition and a run round-trip; a re-applied migration is a no-op._
+3. **Sidecar run-scoped read routes.** Documents (from `manifest.parquet`:
+   `source_hash`, `doc_id`, `filename`, `status`), chunks (`CHUNKS_SCHEMA`:
+   `source_hash`, `chunk_index`, `text`, `start_char`, `end_char`, `content_type`,
+   `has_redaction`, `page_start`, `page_end`, `elem_order`), graph (`ENTITY_SCHEMA` +
+   `GRAPH_EDGE_SCHEMA`), money spans (`MONEY_SPANS_SCHEMA`). Fixes blocker 1.
+   _Exit: a corpus with two runs serves each document once, from the named run._
+4. **Sidecar-backed adapters** replacing the deleted Drizzle readers; re-point the seven
+   tools. _Exit: all ten tools answer against a sidecar fixture, ordering stable._
+5. **The `IExtractionModel` seam** and its three rejection rules.
+   _Exit: an unoffered column, a fabricated chunk id and a non-substring quote are each
+   rejected; the wire shape is asserted against a fake, not a live endpoint._
+6. **The per-document loop.** One base call, evidence verification, status assignment.
+   _Exit: one document yields one row with a status on every column._
+7. **Constraint normalisers**, money-span-first (§5).
+   _Exit: the F2 table (`$1.234,56`, `$1 234,50`, `-$500.00`, `($1,234.56)`) parses
+   correctly or refuses; no case guesses._
+8. **Summary generation** as a second call, with the chunk-read cache.
+   _Exit: N summary columns over one document read its chunks once._
+9. **`apps/redline-report`** process + wiring in `lib/container.ts`.
+   _Exit: define columns, start a run, poll, fetch rows over HTTP._
+10. **Export** with flagged values visible.
+    _Exit: a run with one `needs_review` value exports it visibly, not blank._
+11. **The fork surface** — two commits: the fork PR merged to `main`, then the gitlink
+    bump. Folds in the unlanded fork work (blocker 3).
+    _Exit: the served route drives a run end to end._
+
+## 11. Removal itinerary — #noLegacyShit
+
+Before deleting the docs below, four things in them are worth keeping and are already
+carried into this file: the money-parse lesson (§5), the duplicate-summarisation cost
+(§7), the `proc/` prefix bug (§9.1) and the verbatim/provenance rule (§4, rule 3).
+Nothing else in them survives the cuts.
+
+### Documents — delete outright
+
+| Path | Lines | Why it is legacy |
+|---|---|---|
+| `docs/architecture.md` | 952 | describes a store, control plane and sheet renderer that are deleted; §5.1's report definition is superseded by the grid above |
+| `docs/design-principles.md` | 141 | D5 cites a Postgres schema that is gone; §2's engine-config allow-list governs a deleted Create Corpus surface |
+| `docs/delivery-plan.md` | 240 | superseded by this file; fold §0.3 into build step 0 first |
+| `docs/NEXT-STEPS-create-corpus-e2e.md` | 252 | a podman handover for a deleted surface, with host-specific pod names |
+| `docs/guides/create-a-corpus.md` | 195 | documents the deleted Create Corpus UI |
+| `docs/guides/two-stack-local-run.md` | 190 | drives deleted services and profiles |
+| `docs/reviews/2026-07-28-technical-review.md` | 310 | reviews Numbatch, the Evaluation repository and the lens — all deleted |
+
+Keep `docs/guides/local-dev-and-validation.md`, minus its vendoring section.
+
+### Code and configuration
+
+- **Barrels** — dangling `export *` lines in `packages/redline-domain/src/index.ts` and
+  `packages/redline-adapters/src/index.ts`.
+- **Sidecar** — the `/runs`, `/runs/{id}/resume` and `/runs/{id}` routes plus `runs.py`;
+  both `/embeddings` routes; the Postgres wiring on `POST /ingest`; the embedding DTOs
+  in `records.py`.
+- **`packages/redline-adapters`** — the `minio` dependency and the `@rbrasier/domain`
+  optional dependency. **`drizzle.config.ts` and the Drizzle dependencies stay** —
+  Postgres returns for the report domain (step 2), which also makes `validate.sh` #6
+  (table naming) live again rather than a removal candidate.
+- **Workspace** — `pnpm-workspace.yaml`'s `vendor/wayfinder/packages/*` glob and its
+  comment block, now that `scripts/vendor-wayfinder.sh` is deleted.
+- **`validate.sh`** — #5 (vendor not committed) and #10 (lockfile rewritten by an
+  unvendored install) police vendoring that no longer happens. **#13 is not merely
+  subjectless, it fails now**: it greps `infra/docker/womblex-money.Dockerfile` for
+  `ARG EXTRAS=`, and that Dockerfile was deleted in `59d4156`, so the check takes its
+  fail branch on every run. **#6 and #12 stay.**
+- **`infra/docker-compose.yml`** — the `ingest`, `money`, `stage` and `redline` profiles
+  and the `money` + `stage` services. `redline-postgres` **returns**, under `report`.
+- **`infra/docker-compose.run-sidecar.yml`** — orphaned twice over: it builds from the
+  deleted `infra/docker/womblex-money.Dockerfile` and exists to run `run_trigger.py`,
+  which went with the control plane. It goes with `validate.sh` #13.
+- **`infra/uat`** — `REDLINE_ADJUDICATOR_*` becomes the extraction model's config; the
+  Create Corpus env notes and the run-sidecar comment go.
+- **`scripts/thread-03-smoke.sh`** — drives the `ingest` profile and `POST /ingest`,
+  both removed. **`scripts/womblex-engine-smoke.sh` stays** — it stages a corpus and
+  drains the engine through its own CLI, which is how a corpus is made now.
+- **`.claude/CLAUDE.md`** — the `redline-web` references, `scripts/vendor-wayfinder.sh`,
+  the migrations rule tied to the deleted schema, and the E2E deviation row with its
+  three Create Corpus paragraphs.
+- **`ADR-00xx` comments** — across `packages/`, `apps/`, `services/`, `infra/`. The
+  register is abandoned and settled as such; 22 files still carry citations that resolve
+  to nothing (`grep -rln 'ADR-00' packages apps services infra`). Read a surviving number
+  as a pointer into git history until it is removed, except where it is plainly
+  upstream's — womblex's own register does still exist.
+- **Fork** — `corpus.ts`, `container-redline.ts`, the `/create-corpus` route and its e2e
+  spec, the sidebar entry and the `corpus:create` permission.
+
+## 12. Open questions
+
+1. **Does `apps/redline-mcp` survive as a process, or only as the in-process tool
+   library?** It costs a Dockerfile, a compose profile and a container, and the engine
+   does not need it — §3.2 binds the tools directly. It is worth keeping only if an
+   outside consumer wants them. Decide at step 9, not now.
+2. **Which model backs `IExtractionModel`.** The UAT stack ships Wayfinder's own
+   provider set (`AI_DEFAULT_PROVIDER: anthropic`, plus OpenAI/Mistral/Groq/Bedrock keys
+   and Langfuse) and redline's own `REDLINE_ADJUDICATOR_*` pair defaulted to Groq.
+   redline now owns the call, so it owns the choice — but pointing at Langfuse for
+   observability is close to free.
