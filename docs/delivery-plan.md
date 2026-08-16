@@ -32,32 +32,51 @@
 
 ---
 
-## 0. Second deletion — outstanding remediation (READ FIRST)
+## 0. Scope cut to the MCP tools — outstanding remediation (READ FIRST)
 
-**The corpus control plane, the materialised store and the report sheet renderer
-were deleted on 2026-08-16**, a second scope cut after the Evaluation surface went
-the day before. Only *whole* files were removed; every change needing a surgical
-edit was deliberately left, and is listed here.
+**redline was cut back to the MCP report tools plus the Wayfinder deployment
+scaffolding on 2026-08-16**, in two steps the same day, after the Evaluation
+surface went the day before. Only *whole* files were removed at each step; every
+change needing a surgical edit was deliberately left, and is listed here.
 
-> **The repo does not build in this state.** Barrels, the MCP container and four
-> manifests reference deleted modules. This is a known, recorded mid-cut state,
-> not a regression to bisect.
+> **The repo does not build in this state.** Barrels, the MCP container, the
+> sidecar's `main.py` and four manifests reference deleted modules. This is a
+> known, recorded mid-cut state, not a regression to bisect.
 
 ### 0.1 What redline is after this
 
-**A JSON proxy over womblex extraction, exposed as three MCP tools.** The
-`womblex-ingest` sidecar reads the engine's Parquet shards and serves elements,
-chunks and table cells as JSON; `WomblexExtractionReader` consumes that seam; and
-`apps/redline-mcp` serves `read_extraction_elements`, `read_extraction_chunks` and
-`read_extraction_table_cells` over streamable HTTP. Nothing else survives.
+**The MCP report tools over womblex extraction, and the scaffolding that deploys
+them into Wayfinder.** Concretely:
 
-### 0.2 What was deleted, and what went with it
+- `apps/redline-mcp` — the tool surface, served over streamable HTTP, plus its
+  Dockerfile and the `report` compose profile.
+- `services/womblex-ingest` — the read sidecar: it reads the engine's Parquet
+  shards from object storage and serves elements, chunks and table cells as JSON.
+- `packages/redline-domain` — `Result`, `DomainError` and one port,
+  `IProcurementExtractionReader`.
+- `packages/redline-adapters` — `WomblexExtractionReader` over that seam, and its
+  wire narrowing.
+- `services/wayfinder` (submodule), `infra/`, `validate.sh` — the deployment
+  scaffolding.
+
+**Three tools survive, not ten.** `read_extraction_elements`,
+`read_extraction_chunks` and `read_extraction_table_cells` read through the
+sidecar. The other seven — both chunk fetches, both money-span fetches and all
+three graph traversals — were Drizzle readers over the store, and went with it.
+That includes `fetch_chunks`, the byte-identity re-fetch the provenance claim
+rested on.
+
+### 0.2 What was deleted
 
 | Deleted | Also gone, as a consequence |
 |---|---|
-| The corpus control plane — `apps/redline-web` in full, `MinioStagedCorpusWriter`, `HttpWomblexRunTrigger`, the sidecar's `run_trigger.py`, and the `IStagedCorpusWriter` / `IWomblexRunTrigger` / `RunConfigOverride` ports | Starting or watching a run from a browser. A corpus is made from a terminal again, driving the engine's own CLI. |
-| The materialised store — the whole `persistence/` layer (four store adapters, the schema, all eight migrations), the `IChunkStore` / `IMoneySpanStore` / `IGraphStore` / `IStagedCorpusReader` ports, and the sidecar's chunk and money-span load paths | **Seven of the ten MCP report tools.** `fetch_chunks`, `fetch_chunks_by_structure`, both money-span fetches and all three graph traversals are store-backed. `fetch_chunks` was the byte-identity re-fetch the provenance claim rested on. redline no longer owns a Postgres. |
-| The report sheet renderer — `report-export.ts` and the `AssembledReport` shape it declared | The workbook a specialist received. Nothing in redline now renders a report. |
+| The corpus control plane — `apps/redline-web` in full, `MinioStagedCorpusWriter`, `HttpWomblexRunTrigger`, the sidecar's `run_trigger.py`, and the writer / run-trigger / config-override ports | Starting or watching a run from a browser. A corpus is made from a terminal, driving the engine's own CLI. |
+| The materialised store — the whole `persistence/` layer (four store adapters, the schema, all eight migrations), the chunk / money-span / graph / staged-corpus-reader ports, and the sidecar's two load paths | Seven of the ten MCP tools. redline no longer owns a Postgres. |
+| The report sheet renderer — `report-export.ts` and the `AssembledReport` shape | The workbook a specialist received. Nothing in redline renders a report. |
+| The money stage — the sidecar's `money_stage.py` and its Dockerfile | The `money` compose profile has no entrypoint. Money spans are neither produced nor read. |
+| The embedding seam — the sidecar's `embedding.py` and the two `/embeddings` routes | The query-embed path. Nothing consumed it once the store went. |
+| `packages/redline-shared` — a three-line placeholder no code imported | — |
+| The Wayfinder typed-reuse seam — `wayfinder-contract.ts` and `scripts/vendor-wayfinder.sh` | `@rbrasier/domain` has no consumer, so `vendor/wayfinder` need not be materialised. This is **build-time typed reuse**, not the deployment scaffolding, which stays. |
 
 ### 0.3 Outstanding remediation, in dependency order
 
@@ -67,21 +86,21 @@ chunks and table cells as JSON; `WomblexExtractionReader` consumes that seam; an
 | 2 | `packages/redline-adapters/src/index.ts` | Dangling exports at the run-trigger, money-span, chunk-store, chunk-element, graph-store, staged-corpus-reader, storage and `db`/`applyMigrations` blocks. |
 | 3 | `apps/redline-mcp/src/lib/report-tools.ts` (+ test) | Mixed file — trim to the three extraction tools; the four store dependencies and seven tools go. |
 | 4 | `apps/redline-mcp/src/lib/mcp-server.ts`, `container.ts` (+ tests) | Same: drop the store wiring, keep the extraction reader. |
-| 5 | `services/womblex-ingest/src/womblex_ingest/main.py` | Mixed — remove the `/runs` routes, the chunk-store load on `POST /ingest`, and the Postgres wiring. Keep the extraction and embedding routes. |
-| 6 | `services/womblex-ingest/src/womblex_ingest/money_stage.py` (+ test) | Mixed — the `money` op invocation still publishes Parquet, but its span-load half is dead with the store. |
-| 7 | Manifests | `@redline/redline-web` is gone from the workspace; `drizzle-orm`, `postgres`, `minio`, `drizzle-kit`, `@electric-sql/pglite` and the `db:*` scripts leave `redline-adapters`. `tsconfig.json` and the fork's `apps/web/package.json` reference the deleted app. |
-| 8 | `validate.sh` | Check 6 (Drizzle table naming) has no schema to check; check 13 (the run-sidecar's `isaacus` extra) is about a run path that no longer exists. |
+| 5 | `services/womblex-ingest/src/womblex_ingest/main.py` (+ `test_ingest_api.py`) | Mixed — remove the `/runs` and `/embeddings` routes, the chunk-store load on `POST /ingest`, and the Postgres wiring. Keep `/health`, `/ingest`, `/status` and `/extractions`. |
+| 6 | `services/womblex-ingest/src/womblex_ingest/records.py` | Mixed — the embedding DTOs go, the extraction ones stay. |
+| 7 | Manifests | `drizzle-orm`, `postgres`, `minio`, `drizzle-kit`, `@electric-sql/pglite`, the `db:*` scripts and the `@rbrasier/domain` optional dependency leave `redline-adapters`; `@redline/redline-shared` and `@redline/redline-web` leave the workspace, `tsconfig.json` and the fork's `apps/web/package.json`. |
+| 8 | `validate.sh` | Check 5 (no committed Wayfinder source), check 6 (Drizzle table naming), check 10 (the lockfile's vendored importer) and check 13 (the run-sidecar's `isaacus` extra) all police things that no longer exist. `pnpm-workspace.yaml`'s `vendor/wayfinder` glob goes with them. |
 | 9 | Fork | `corpus.ts`, `container-redline.ts`, the `/create-corpus` route and its e2e spec, the sidebar entry and `corpus:create` all mount a control plane that is gone. **This compounds with the still-unlanded fork change** below. |
-| 10 | Infra | The `redline-postgres` service and the `ingest` / `money` / `redline` / `report` compose profiles no longer describe the stack. |
-| 11 | Docs | `architecture.md` and `design-principles.md` describe the substrate this cut removed. Both need rewriting again, or retiring. |
+| 10 | Infra | The `redline-postgres` service and the `ingest` / `money` / `stage` / `redline` compose profiles no longer describe the stack. The `report` profile is the one that still does. |
+| 11 | Docs | `architecture.md` and `design-principles.md` describe a substrate these cuts removed. Both need rewriting or retiring — the direction has moved twice in two days, so retiring may be cheaper than a third pass. |
 
-### 0.4 Still unlanded from the previous cut
+### 0.4 Still unlanded from the first cut
 
 The fork-side Evaluation removal is written and green but was never pushed —
 `johntooth/wayfinder` was outside the authoring session's repository scope. The
 gitlink still points at `5d236db1`, and `validate.sh` #12 fails by design. Item 9
-above lands on top of it, so the two fork changes should be sequenced together
-rather than merged separately.
+above invalidates most of that change, so **do not land it separately**: fold the
+two into one fork commit.
 
 ---
 
@@ -103,97 +122,52 @@ rather than merged separately.
 
 ## 2. Outstanding
 
-In dependency order.
+**All outstanding work is the remediation in §0.3.** Nothing else is tracked:
+every item this file carried before the cuts — the `corpusId` rename, the run-id
+selector, raw-bucket browse, the vector similarity index, the synthesis document
+picker — was work on a surface that has since been deleted. They are not deferred;
+they have no subject. Reaching for any of them means designing afresh.
 
-### 2.1 Land the fork half
-
-The fork-side removal is written and green (`apps/web` typechecks, lints and its
-own vitest suites pass) but **not pushed**: it was produced in a session
-authorised for `deepcivic/redline` only, so `johntooth/wayfinder` refused the
-push. Until it lands the gitlink cannot move, and it deliberately still points at
-the *pre-remediation* fork commit `5d236db1` on branch
-`claude/create-corpus-post-run-25j23d`.
-
-| # | What |
-|---|---|
-| 1 | Push the fork branch (`claude/remove-evaluation-references-yegtgz`) to `johntooth/wayfinder`, merge it to `main`. |
-| 2 | Re-point `services/wayfinder` at the merge commit. Until then `validate.sh` #12 fails by design — the checkout is not on the fork's `main`. |
-| 3 | Rewire `ReportAssembler` (`packages/adapters/src/mcp/report-assembler.ts`). It is built and tested but currently unwired: its `ChunkStoreReportVerifier` went with the Evaluation deletion, and `container-redline.ts` no longer supplies a `reportChunkVerifier`. Rewiring it belongs with the report work — it is the surviving product surface, not dead code. |
-
-**What the fork change contains**, so a reviewer is not re-deriving it: the
-`evaluation` tRPC router becomes `corpus.ts` (`staged` / `stagedDocuments` /
-`create` / `runStatus` / `resumeRun`); `container-redline.ts` trims to the three
-surviving ports; `evaluation:review` is deleted and `evaluation:create` becomes
-`corpus:create` (verified 1:1 — the surviving surface is exactly what
-`evaluation:create` already gated); the sidebar loses its Evaluations entry; and
-Create Corpus loses its "Compose the evaluation" CTA, stating the corpus is
-readable instead.
-
-### 2.2 Superseded by the second cut
-
-The `evaluationId` → `corpusId` rename and the run-id selector were sequenced here
-before the control plane and store were deleted. Both are now moot: the columns
-they would have renamed are gone with the schema, and `RealWomblexExtractor`'s
-whole-prefix listing is the one place the run-id ambiguity still bites — it is
-recorded in `architecture.md` §5 invariant 7 and stays there rather than being
-tracked as outstanding work on a surface that may not survive.
+The one piece of history worth keeping in front of a reader: **`RealWomblexExtractor`
+lists the whole `proc/{corpusId}/` prefix and concatenates by suffix**, so a corpus
+run twice serves every element twice and `elementOrder` no longer identifies one
+element. That still bites on the surviving extraction path.
+`architecture.md` §5 invariant 7 records it.
 
 ---
 
-## 3. Housekeeping — off the vertical, wanted before users
+## 3. Open questions
 
-| Item | Package(s) | Notes |
-|---|---|---|
-| Raw-bucket browse | domain + adapters | Listing raw objects a run has not processed, so a picker can select from what is already staged rather than only upload. Deferred with the document-selection work. |
-| Vector similarity search | adapters | The `pgvector`/ANN index behind `IChunkStore.findSimilar`, which refuses with `NOT_IMPLEMENTED` today. The embeddings are already loaded and addressable; what waits is the index over them. |
-| Synthesis document picker | fork | Let Wayfinder's own "Synthesise Information" flow select documents from an existing corpus rather than only upload. The leaner change is "from a corpus" — it reuses the `IStagedCorpusReader` this repo already leans on, over documents that already carry stable `source_hash` identities. Ordinary fork work; the one caution is that a change touching `@rbrasier/domain` brings the contract test and gitlink bump in step. |
-| Workspace extraction & release prep | workspace | Standalone workspace; sever the vendoring seam. Last by nature. |
-
----
-
-## 4. Open questions
-
-1. **A range inside a pricing *table* is still uncountable, and that is
-   upstream's.** `money_stage.py`'s `_cell_row` attaches no
-   `range_group`/`range_role` to cell spans at all, so "$1M–$2M" written in a
-   pricing schedule arrives as two ungrouped rows. Narrative ranges carry the
-   grouping. Re-checked against womblex 0.4.0 (`d6850de`, the narrative-money
-   release): `_cell_row` still neither accepts nor sets those fields, so the bump
-   does not close this. Fixing it properly is a womblex change; raise it upstream
-   rather than inferring a grouping here from adjacency.
-
-2. **Source comments cite ADR numbers, none of which resolve.** `ADR-00xx`
-   remains across `packages/`, `apps/`, `infra/` and `scripts/`. Harmless where
-   the comment states its own substance, which is the common case; fix
-   opportunistically when touching the file rather than as a pass of its own.
+1. **Source comments cite ADR numbers, none of which resolve.** `ADR-00xx` remains
+   across `packages/`, `apps/` and `infra/`. Harmless where the comment states its
+   own substance, which is the common case; fix opportunistically when touching the
+   file rather than as a pass of its own.
    `grep -rn 'ADR-00' packages apps services infra scripts` is the live answer.
-   Read a surviving number as a pointer into git history, except where it is
-   plainly upstream's — Wayfinder's and womblex's own registers do still exist.
+   Read a surviving number as a pointer into git history, except where it is plainly
+   upstream's — Wayfinder's and womblex's own registers do still exist.
 
-   **Settled: ADRs stay abandoned.** Decisions are recorded in the commit that
-   acts on them; a decision durable enough to govern many commits goes to
+   **Settled: ADRs stay abandoned.** Decisions are recorded in the commit that acts
+   on them; a decision durable enough to govern many commits goes to
    `design-principles.md`. Do not open `docs/adr/` again.
 
-3. **Raw-corpus intake has two paths; both the direct and the UI-write path
-   exist.** Direct-to-bucket works: an S3 client (`mc cp`, or any uploader) writes
-   the raw documents under `proc/{corpusId}/` in redline's bucket — the seam is
-   plain S3, redline builds nothing for it, and the path is documented in
-   `docs/guides/two-stack-local-run.md`. The **via-UI write** path is built
-   (`IStagedCorpusWriter`, driven by the Create Corpus tab); the **browse/select**
-   half is deferred (§3).
+2. **Whether `architecture.md` and `design-principles.md` survive at all.** Both
+   describe a corpus-ingest-and-report substrate that no longer exists, and the
+   direction moved twice in two days. A third rewrite is only worth it if the
+   current shape is settled; otherwise retire them and let this file plus the
+   READMEs carry what is true. Recorded as a question because it is a call for
+   whoever picks this up, not a task to execute blind.
 
 ---
 
-## 5. Sequencing
+## 4. Sequencing
 
-**The order is: land the fork half (§2.1) → the `corpusId` rename (§2.2) → the
-run-id selector (§2.3) → housekeeping in dependency order → workspace extraction
-and release.**
+**The order is: the §0.3 remediation, in the order it is listed → decide the
+documents' fate (§3.2) → nothing else is planned.**
 
-The ingest surface, the run trigger/status seam, the shard load on completion,
-the first-run OCR config, semantically bounded chunks (on by default, and
-nameable per-run from Create Corpus), chunk element addressing and the report
-tool surface are all built.
+The remediation is one pass, not a programme: it is barrels, a tool surface, a
+FastAPI module, four manifests and four `validate.sh` checks. The fork half (§0.3
+item 9) is the only part needing a second repository, and it must be folded with
+the unlanded change described in §0.4 rather than merged after it.
 
 ---
 
@@ -247,23 +221,20 @@ tool surface are all built.
   change to `@rbrasier/domain`'s shape brings the contract test along with the
   gitlink bump.
 
-### What this substrate deliberately does not do
+### What redline deliberately does not do
 
-- **No classification.** No trained classifier, no samples, no adapter, no
-  cold-start pass. redline serves rows; deciding what they mean is a consumer's.
-- **No Numbatch stack.** The submodule and redline's `numbatch-extension` overlay
-  were removed, not deferred.
-- **No comprehension lens.** Collisions, boundary decisions, lens authoring and
-  portability are gone with it — see `design-principles.md` §2 for why re-entry
-  would be a new design rather than a restoration.
-- **No vector *similarity search*.** The `pgvector`/ANN *index*, `findSimilar` and
-  the store-side query-embed path are deferred (§3). The embeddings *are* loaded
-  and available; what waits is the nearest-neighbour index over them. Per the
-  runtime rule above, this defers an index — it does not shrink the tool surface
-  built over retrieval.
-- **No workspace extraction.** Ship-shape is a later concern than see-shape.
+- **No classification, no comprehension lens.** Removed 2026-08-15. See
+  `design-principles.md` §2 for why re-entry would be a new design.
+- **No store of its own.** redline owns no Postgres. Every read goes through the
+  sidecar to the engine's shards in object storage.
+- **No control plane.** A corpus is made by driving womblex's own CLI, not from a
+  browser.
+- **No report rendering.** redline serves extraction facts; assembling and
+  rendering a report is a consumer's job, above these tools.
+- **No embeddings, no similarity search, no money spans.** All three were surfaces
+  over the deleted store.
 
 `linking` stays off deliberately and is not the same thing as enrichment: `link`
 writes `*.entity_links.parquet`, which nothing in redline reads, and its preflight
 hard-fails without a `linking.reference` register a tender corpus has no candidate
-for. Enrichment itself is **on**.
+for.
