@@ -32,20 +32,56 @@
 
 ---
 
-## 0. What redline is now (READ FIRST)
+## 0. Second deletion — outstanding remediation (READ FIRST)
 
-**redline is a corpus-ingest-and-report substrate.** A specialist stages a corpus
-from the browser, womblex extracts/chunks/embeds/enriches/prices it, and the
-chunks, graph, money-spans and extraction JSON that run lands serve two
-independent consumers — the fork's Create Corpus UI and `apps/redline-mcp`'s
-report tools. There is no Evaluation aggregate, no classification/adjudication/
-lens stack, no review grid, no pricing pivots and no Numbatch dependency.
+**The corpus control plane, the materialised store and the report sheet renderer
+were deleted on 2026-08-16**, a second scope cut after the Evaluation surface went
+the day before. Only *whole* files were removed; every change needing a surgical
+edit was deliberately left, and is listed here.
 
-The Evaluation surface was deleted on 2026-08-15 and the references it left
-behind were removed on 2026-08-16. **Both repos build, lint and test green
-again**; `architecture.md` and `design-principles.md` describe the substrate, not
-the adapter that preceded it. The deleted code is in git history — reaching for it
-means designing afresh above the store, not restoring an aggregate.
+> **The repo does not build in this state.** Barrels, the MCP container and four
+> manifests reference deleted modules. This is a known, recorded mid-cut state,
+> not a regression to bisect.
+
+### 0.1 What redline is after this
+
+**A JSON proxy over womblex extraction, exposed as three MCP tools.** The
+`womblex-ingest` sidecar reads the engine's Parquet shards and serves elements,
+chunks and table cells as JSON; `WomblexExtractionReader` consumes that seam; and
+`apps/redline-mcp` serves `read_extraction_elements`, `read_extraction_chunks` and
+`read_extraction_table_cells` over streamable HTTP. Nothing else survives.
+
+### 0.2 What was deleted, and what went with it
+
+| Deleted | Also gone, as a consequence |
+|---|---|
+| The corpus control plane — `apps/redline-web` in full, `MinioStagedCorpusWriter`, `HttpWomblexRunTrigger`, the sidecar's `run_trigger.py`, and the `IStagedCorpusWriter` / `IWomblexRunTrigger` / `RunConfigOverride` ports | Starting or watching a run from a browser. A corpus is made from a terminal again, driving the engine's own CLI. |
+| The materialised store — the whole `persistence/` layer (four store adapters, the schema, all eight migrations), the `IChunkStore` / `IMoneySpanStore` / `IGraphStore` / `IStagedCorpusReader` ports, and the sidecar's chunk and money-span load paths | **Seven of the ten MCP report tools.** `fetch_chunks`, `fetch_chunks_by_structure`, both money-span fetches and all three graph traversals are store-backed. `fetch_chunks` was the byte-identity re-fetch the provenance claim rested on. redline no longer owns a Postgres. |
+| The report sheet renderer — `report-export.ts` and the `AssembledReport` shape it declared | The workbook a specialist received. Nothing in redline now renders a report. |
+
+### 0.3 Outstanding remediation, in dependency order
+
+| # | Where | What is left |
+|---|---|---|
+| 1 | `packages/redline-domain/src/index.ts` | Dangling `export *` lines for the seven deleted ports. |
+| 2 | `packages/redline-adapters/src/index.ts` | Dangling exports at the run-trigger, money-span, chunk-store, chunk-element, graph-store, staged-corpus-reader, storage and `db`/`applyMigrations` blocks. |
+| 3 | `apps/redline-mcp/src/lib/report-tools.ts` (+ test) | Mixed file — trim to the three extraction tools; the four store dependencies and seven tools go. |
+| 4 | `apps/redline-mcp/src/lib/mcp-server.ts`, `container.ts` (+ tests) | Same: drop the store wiring, keep the extraction reader. |
+| 5 | `services/womblex-ingest/src/womblex_ingest/main.py` | Mixed — remove the `/runs` routes, the chunk-store load on `POST /ingest`, and the Postgres wiring. Keep the extraction and embedding routes. |
+| 6 | `services/womblex-ingest/src/womblex_ingest/money_stage.py` (+ test) | Mixed — the `money` op invocation still publishes Parquet, but its span-load half is dead with the store. |
+| 7 | Manifests | `@redline/redline-web` is gone from the workspace; `drizzle-orm`, `postgres`, `minio`, `drizzle-kit`, `@electric-sql/pglite` and the `db:*` scripts leave `redline-adapters`. `tsconfig.json` and the fork's `apps/web/package.json` reference the deleted app. |
+| 8 | `validate.sh` | Check 6 (Drizzle table naming) has no schema to check; check 13 (the run-sidecar's `isaacus` extra) is about a run path that no longer exists. |
+| 9 | Fork | `corpus.ts`, `container-redline.ts`, the `/create-corpus` route and its e2e spec, the sidebar entry and `corpus:create` all mount a control plane that is gone. **This compounds with the still-unlanded fork change** below. |
+| 10 | Infra | The `redline-postgres` service and the `ingest` / `money` / `redline` / `report` compose profiles no longer describe the stack. |
+| 11 | Docs | `architecture.md` and `design-principles.md` describe the substrate this cut removed. Both need rewriting again, or retiring. |
+
+### 0.4 Still unlanded from the previous cut
+
+The fork-side Evaluation removal is written and green but was never pushed —
+`johntooth/wayfinder` was outside the authoring session's repository scope. The
+gitlink still points at `5d236db1`, and `validate.sh` #12 fails by design. Item 9
+above lands on top of it, so the two fork changes should be sequenced together
+rather than merged separately.
 
 ---
 
@@ -93,38 +129,14 @@ surviving ports; `evaluation:review` is deleted and `evaluation:create` becomes
 Create Corpus loses its "Compose the evaluation" CTA, stating the corpus is
 readable instead.
 
-### 2.2 Rename `evaluationId` → `corpusId`
+### 2.2 Superseded by the second cut
 
-**The identifier still says `evaluation`, and it names a corpus.** It always did —
-`architecture.md` §3 records the identity — but the word now points at nothing.
-The rename is deliberately its own step because it is a coordinated change across
-three languages and a live wire contract, not a find-and-replace:
-
-- **SQL** — `evaluation_id` on `redline_chunks`, `redline_money_spans`,
-  `redline_graph_entities` and `redline_graph_edges`, each in a composite primary
-  key or an index. A forward-only `ALTER … RENAME COLUMN` migration, guarded so it
-  is idempotent like every other migration here.
-- **Python** — the sidecar's `REDLINE_CHUNK_STORE_DDL` and the three load paths
-  (`chunk_store_postgres.py`, `money_span_store_postgres.py`, the graph load) must
-  move in the same commit as the migration, or a load writes to a column that no
-  longer exists.
-- **The wire** — `POST /runs {evaluationId}`, `GET /runs/{runId}`'s
-  `evaluationId`, and `/extractions/{evaluation_id}/{document_id}`. Renaming the
-  JSON key is a breaking change to the sidecar contract, so the sidecar and the
-  `HttpWomblexRunTrigger` / `WomblexExtractionReader` adapters move together.
-- **TypeScript** — the port signatures, the Drizzle schema fields, the fork's
-  `RunStatusViewModel.evaluationId` and the DOM that binds it.
-
-The object-store prefix stays `proc/{id}/` — it is womblex's layout, and the
-segment is already just an id.
-
-### 2.3 Select a run when reading shards
-
-`architecture.md` §5 invariant 7 records this and it is **still violated**:
-`RealWomblexExtractor.extract` lists the whole `proc/{corpusId}/` prefix and
-concatenates by suffix, so a corpus that has been run twice serves every element
-twice and `elementOrder` no longer identifies one element. The run id is the
-selector; `run-stage` already takes `--run-id` and every read seam needs the same.
+The `evaluationId` → `corpusId` rename and the run-id selector were sequenced here
+before the control plane and store were deleted. Both are now moot: the columns
+they would have renamed are gone with the schema, and `RealWomblexExtractor`'s
+whole-prefix listing is the one place the run-id ambiguity still bites — it is
+recorded in `architecture.md` §5 invariant 7 and stays there rather than being
+tracked as outstanding work on a surface that may not survive.
 
 ---
 
