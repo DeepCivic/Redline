@@ -9,12 +9,12 @@ TypeScript 5.6 strict, Vitest 4). Two ways to run it.
 git submodule update --init
 ```
 
-`services/womblex` and `services/numbatch` are the upstream engines, consumed as
-submodules.
-`validate.sh` **SKIPs** rather than fails when they are absent, so a shallow clone
-still goes green — but the compose `womblex` / `numbatch` profiles build from
-them, and the pin-drift guard (check 13) only bites when they are present. CI
-checks them out (`submodules: true`).
+`services/womblex` is the upstream engine and `services/wayfinder` is the fork
+that serves redline's UI, both consumed as submodules. `validate.sh` **SKIPs**
+rather than fails when they are absent, so a shallow clone still goes green — but
+the compose `womblex` profile builds from the engine, and the fork-branch guard
+(check 12) only bites when the submodule is present. CI checks them out
+(`submodules: true`).
 
 ## A. You have local Node ≥ 20 + pnpm
 
@@ -138,26 +138,24 @@ checkout is never written to. Point `WAYFINDER_DIR` at your Wayfinder checkout
 | 2 | `pnpm lint` | yes |
 | 3 | `pnpm test` (incl. the Wayfinder consumption spike) | yes |
 | 4 | `redline-domain` purity — relative imports only | no |
-| 5 | `redline-application` purity — only redline-domain/redline-shared | no |
-| 6 | no committed Wayfinder source under `vendor/` (checks git, not disk) | no |
-| 7 | Drizzle tables use the `redline_` prefix | no |
-| 8 | no committed `.only` tests | no |
-| 9 | source file size (warn ≥ 700, fail ≥ 800) | no |
-| 10 | `services/womblex-ingest` pytest (isolated venv) | needs Python 3 |
-| 11 | `services/numbatch-extension/financial_extension` pytest (isolated venv) | needs Python 3 |
-| 12 | `pnpm-lock.yaml` carries the vendored Wayfinder importer | no |
-| 13 | `ruff check` over redline's own Python (config: `ruff.toml`) | needs Python 3 |
-| 14 | `services/wayfinder` sits on the branch `.gitmodules` names | needs the submodule |
-| 15 | the run-sidecar image builds the engine with the `isaacus` extra | no |
+| 5 | no committed Wayfinder source under `vendor/` (checks git, not disk) | no |
+| 6 | Drizzle tables use the `redline_` prefix | no |
+| 7 | no committed `.only` tests | no |
+| 8 | source file size (warn ≥ 700, fail ≥ 800) | no |
+| 9 | `services/womblex-ingest` pytest (isolated venv) | needs Python 3 |
+| 10 | `pnpm-lock.yaml` carries the vendored Wayfinder importer | no |
+| 11 | `ruff check` over redline's own Python (config: `ruff.toml`) | needs Python 3 |
+| 12 | `services/wayfinder` sits on the branch `.gitmodules` names | needs the submodule |
+| 13 | the run-sidecar image builds the engine with the `isaacus` extra | no |
 
-Check 13 is the Python counterpart of check 2. Rules live in `ruff.toml` at the
+Check 11 is the Python counterpart of check 2. Rules live in `ruff.toml` at the
 root and are deliberately a floor — pyflakes plus pycodestyle's error classes, no
 style regime — because the repo has no Python formatter and a lint pass that
-arrives with hundreds of cosmetic findings gets switched off. The two upstream
-submodules are excluded there; redline's own overlays beside them are not. To run
-it alone: `pipx run ruff check services/womblex-ingest services/numbatch-extension`.
+arrives with hundreds of cosmetic findings gets switched off. The submodules are
+excluded there; redline's own Python beside them is not. To run it alone:
+`pipx run ruff check services/womblex-ingest`.
 
-Static checks (4–9, 12, 14–15) always run on the host. If neither local Node nor Podman
+Static checks (4–8, 10, 12–13) always run on the host. If neither local Node nor Podman
 is available, the Node-dependent checks (1–3) `SKIP` — and the run **exits 2**,
 not 0, so a change is never mistaken as shippable until those checks have run
 green somewhere (locally or in CI).

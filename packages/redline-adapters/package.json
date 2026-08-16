@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Adapters: womblex extraction reader, Numbatch client, redline_ repositories.",
+  "description": "Adapters: the womblex sidecar seams, redline's object store and its redline_ Postgres stores.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
@@ -21,7 +21,6 @@
     "db:migrate": "tsx src/persistence/migrate.ts"
   },
   "dependencies": {
-    "@redline/redline-application": "workspace:*",
     "@redline/redline-domain": "workspace:*",
     "@redline/redline-shared": "workspace:*",
     "drizzle-orm": "^0.45.2",

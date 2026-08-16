@@ -1,4 +1,4 @@
-# redline runtime stack — womblex + numbatch + postgres + minio, wired with
+# redline runtime stack — womblex + postgres + minio, wired with
 # compose profiles so you bring up only what a given thread needs.
 #
 # Per ADR-0002, redline owns its own MinIO and Postgres; the seam stays plain
@@ -37,12 +37,6 @@
 #               image. It publishes EXTRACTION shards under proc/{evaluationId}/;
 #               chunk and embed are separate passes via the `stage` profile.
 #               Scale with `up --scale womblex=4 womblex`.
-#   numbatch  — the Numbatch stack, all-but-frontend: postgres + redis + minio +
-#               backend API + Arq worker + inference service + one-shot migrate
-#               (ADR-0004/ADR-0005 — the SvelteKit frontend is excluded,
-#               redline owns its own control surface). Builds from the
-#               ../services/numbatch submodule using ITS OWN infra/docker/*.Dockerfile
-#               — run `git submodule update --init` first (see services/README.md).
 #   report    — the report tool surface: redline's seven read ports served as an
 #               MCP server over streamable HTTP (apps/redline-mcp), for a
 #               report-assembler LLM inside Wayfinder. Shares REDLINE_DATABASE_URL
@@ -55,10 +49,6 @@
 #   podman compose -f infra/docker-compose.yml --profile ingest up -d
 #   ../scripts/thread-03-smoke.sh
 #   podman compose -f infra/docker-compose.yml --profile ingest down -v
-#
-# Usage (Numbatch stack):
-#   podman compose -f infra/docker-compose.yml --profile numbatch up -d
-#   # backend API on :8080, inference on :8100 (frontend is NOT started)
 
 name: redline
 
@@ -83,7 +73,7 @@ services:
     image: docker.io/minio/minio:latest
     # Every profile whose services depend_on minio must list it, or compose
     # rejects the project outright ("depends on undefined service").
-    profiles: ["ingest", "money", "numbatch", "womblex", "womblex-cli", "stage"]
+    profiles: ["ingest", "money", "womblex", "womblex-cli", "stage"]
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
@@ -348,114 +338,8 @@ services:
     command: ["worker", "--config", "/app/redline-config/redline.yaml",
               "--poll-interval", "5", "--stale-timeout", "900"]
 
-  # ── Numbatch stack (all-but-frontend) ─────────────────────────────────────
-  # The DeepCivic/Numbatch fork, consumed as a submodule at ../services/numbatch
-  # and built with the ENGINE'S OWN infra/docker/*.Dockerfile — redline supplies
-  # no Dockerfile of its own here (D14). We run its backend + Arq worker +
-  # inference service; the SvelteKit frontend is never started — redline owns its
-  # own UI (ADR-0005). Numbatch reads the same MinIO: its ingestion feed accepts
-  # womblex *.chunks.parquet directly (POST /ingestion/womblex-configs/{id}/upload,
-  # s3_womblex_bucket), pointed at redline's `proc/{evaluationId}/` chunks.
-  #
-  # redline's OWN additive overlay is NOT here — it lives in
-  # ../services/numbatch-extension and grafts onto this tree (ADR-0005).
-
-  numbatch-postgres:
-    image: docker.io/library/postgres:16
-    profiles: ["numbatch"]
-    environment:
-      POSTGRES_USER: ${NUMBATCH_DB_USER:-numbatch}
-      POSTGRES_PASSWORD: ${NUMBATCH_DB_PASSWORD:-numbatch-dev}
-      POSTGRES_DB: ${NUMBATCH_DB_NAME:-numbatch}
-    volumes:
-      - numbatch-postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${NUMBATCH_DB_USER:-numbatch} -d ${NUMBATCH_DB_NAME:-numbatch}"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-
-  numbatch-redis:
-    image: docker.io/library/redis:7
-    profiles: ["numbatch"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-
-  # One-shot Alembic migration; the backend/worker wait on it completing.
-  numbatch-migrate:
-    build:
-      context: ../services/numbatch
-      dockerfile: infra/docker/backend.Dockerfile
-    profiles: ["numbatch"]
-    command: ["alembic", "upgrade", "head"]
-    depends_on:
-      numbatch-postgres:
-        condition: service_healthy
-    environment: &numbatch-backend-env
-      DATABASE_URL: postgresql+asyncpg://${NUMBATCH_DB_USER:-numbatch}:${NUMBATCH_DB_PASSWORD:-numbatch-dev}@numbatch-postgres:5432/${NUMBATCH_DB_NAME:-numbatch}
-      REDIS_URL: redis://numbatch-redis:6379
-      S3_ENDPOINT_URL: http://minio:9000
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
-      S3_REGION: ${S3_REGION:-us-east-1}
-      S3_ADAPTERS_BUCKET: ${NUMBATCH_ADAPTERS_BUCKET:-numbatch-adapters}
-      S3_WOMBLEX_BUCKET: ${REDLINE_BUCKET:-redline}
-      INFERENCE_URL: http://numbatch-inference:8100
-
-  numbatch-backend:
-    build:
-      context: ../services/numbatch
-      dockerfile: infra/docker/backend.Dockerfile
-    profiles: ["numbatch"]
-    depends_on:
-      numbatch-migrate:
-        condition: service_completed_successfully
-      numbatch-redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    environment: *numbatch-backend-env
-    ports:
-      - "8080:8000"
-
-  # The Arq worker shares the backend image/package; runs training + ingestion +
-  # batch-inference tasks. GPU split is a deployment change, not a code change.
-  numbatch-worker:
-    build:
-      context: ../services/numbatch
-      dockerfile: infra/docker/backend.Dockerfile
-    profiles: ["numbatch"]
-    command: ["arq", "app.workers.settings.WorkerSettings"]
-    depends_on:
-      numbatch-migrate:
-        condition: service_completed_successfully
-      numbatch-redis:
-        condition: service_healthy
-    environment: *numbatch-backend-env
-
-  # DB-free inference service (ADR-0017); own image (torch/PEFT footprint).
-  numbatch-inference:
-    build:
-      context: ../services/numbatch
-      dockerfile: infra/docker/inference.Dockerfile
-    profiles: ["numbatch"]
-    environment:
-      S3_ENDPOINT_URL: http://minio:9000
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
-      S3_REGION: ${S3_REGION:-us-east-1}
-      S3_ADAPTERS_BUCKET: ${NUMBATCH_ADAPTERS_BUCKET:-numbatch-adapters}
-      BASE_MODEL_NAME: ${NUMBATCH_BASE_MODEL:-answerdotai/ModernBERT-base}
-      DEVICE: ${NUMBATCH_DEVICE:-auto}
-    ports:
-      - "8100:8100"
-
   # ── redline's own Postgres (the redline_ schema) ──────────────────────────
-  # ADR-0002: redline owns its Postgres, separate from Numbatch's. Tables use the
-  # redline_ prefix. Migrations run via the adapters db:migrate script against
+  # redline owns its Postgres, and its tables use the redline_ prefix. Migrations run via the adapters db:migrate script against
   # DATABASE_URL; the seam stays plain Postgres so a deployment can repoint it.
   redline-postgres:
     image: docker.io/library/postgres:16
@@ -478,5 +362,4 @@ services:
 
 volumes:
   minio-data:
-  numbatch-postgres-data:
   redline-postgres-data:

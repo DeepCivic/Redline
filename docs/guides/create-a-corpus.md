@@ -9,13 +9,11 @@ parameters and the stages the engine puts them through, name it if you want,
 click go.
 
 There is no field selection here and nothing to decide about the tender itself.
-Deciding what to *read out of* the corpus happens afterwards, on
-[Creating an evaluation](./create-an-evaluation.md). Two jobs, usually two
-people, which is why they are two screens — and if someone else has already run
-the documents, you do not need this screen at all.
+This screen builds the dataset; reading anything *out of* it is a separate job
+done by redline's report tools, over the rows the run lands. If someone else has
+already run the documents, you do not need this screen at all.
 
-> **Status.** The screen does what this guide describes. One thing about a
-> *finished* corpus is still catching up — see
+> **Status.** The screen does what this guide describes. See
 > [What is not there yet](#what-is-not-there-yet) at the end.
 
 The screen is served by the forked Wayfinder, not by a standalone redline app.
@@ -25,7 +23,7 @@ See [Running both stacks locally](./two-stack-local-run.md) for how to get it up
 
 ## Before you start
 
-- **You need the `evaluation:create` permission** (admins hold it through the
+- **You need the `corpus:create` permission** (admins hold it through the
   admin wildcard). Without it the sidebar entry is hidden and the route is not
   served.
 - **The ingest sidecar must have its run trigger configured.** It needs a
@@ -49,9 +47,9 @@ A corpus is one womblex run, and you name it. "One run" means one extraction and
 the paths cut from it under a single identity — not one pass building everything
 top-to-bottom (see [Choose the stages to run](#3-choose-the-stages-to-run)). The
 name you type is that identity all the way down: it is the bucket prefix the
-documents are read from, the prefix the results are written to, and later the id
-of the evaluation built over them. They are one thing, not three that have to be
-kept in step.
+documents are read from, the prefix the results are written to, and the key
+everything the run lands is stored under. They are one thing, not three that have
+to be kept in step.
 
 Type something you will recognise in a fortnight — `water-treatment-2026`, not
 `test3`. Reuse a name and you are adding to that corpus rather than starting a
@@ -64,9 +62,8 @@ They come from the raw documents in your bucket (e.g. S3), under the run's input
 prefix, and sit there until you start the run; nothing reads them before that.
 
 You do not identify or label them here. The engine assigns each document its
-identity when it extracts it, and saying *whose* response a document is happens
-on the evaluation screen afterwards, once those identities exist. That ordering
-is the whole reason these are two screens.
+identity — a hash of its content — when it extracts it, so there is nothing to say
+about a document until the run has read it.
 
 ## 3. Choose the stages to run
 
@@ -182,18 +179,17 @@ forever.
 ## What happens next
 
 A finished run leaves a dataset: the documents extracted, chunked and processed
-through whichever stages you chose. Nothing has been evaluated — no brands, no
-fields, no report. The tracker offers the way on to
-[Creating an evaluation](./create-an-evaluation.md), where the corpus you just
-built appears in the picker and you say what you want answered about it.
+through whichever stages you chose. The tracker says so, naming the corpus.
+Nothing has been judged — no brands, no fields, no report. What the run landed —
+the chunks, the enrichment graph, the money spans and the extraction JSON — is now
+readable through redline's report tools, which is where a report is assembled
+from.
 
 ---
 
 ## What is not there yet
 
 - **A corpus extracted outside this screen is a different path.** This screen
-  starts a corpus from the raw documents in your bucket. If someone has already
-  run one, you do not need this screen — go straight to
-  [Creating an evaluation](./create-an-evaluation.md). `POST /ingest` still
+  starts a corpus from the raw documents in your bucket. `POST /ingest` still
   loads a corpus extracted outside a browser-fired run; a run fired *here* loads
   its own shards when it finishes, so no separate ingest step is needed.

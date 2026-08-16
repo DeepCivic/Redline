@@ -120,23 +120,12 @@ if [ -z "$DOMAIN_LEAKS" ]; then pass "redline-domain purity"; else
   fail "redline-domain purity — non-relative imports found:"; echo "$DOMAIN_LEAKS"
 fi
 
-# ── 5. redline-application purity ───────────────────────────────────────────────
-# May import only @redline/redline-domain and @redline/redline-shared.
-section "5. packages/redline-application imports only redline-domain and redline-shared"
-APP_LEAKS=$(grep -rnE "from ['\"][^.]" packages/redline-application/src \
-    --include="*.ts" --exclude="*.test.ts" 2>/dev/null \
-  | grep -vE "from ['\"]@redline/(redline-domain|redline-shared)['\"/]" \
-  | grep -vE "^[^:]+:[0-9]+:\s*//")
-if [ -z "$APP_LEAKS" ]; then pass "redline-application purity"; else
-  fail "redline-application purity — imports outside redline-domain/redline-shared:"; echo "$APP_LEAKS"
-fi
-
-# ── 6. Wayfinder tree untouched ──────────────────────────────────────────────
+# ── 5. Wayfinder tree untouched ──────────────────────────────────────────────
 # We must never *commit* a copy of Wayfinder into this repo. The tree may exist
 # on disk at build time (CI materialises it via scripts/vendor-wayfinder.sh; the
 # Podman harness uses its own scratch copy), but it must stay untracked — .gitignore
 # excludes vendor/. This checks what git tracks, not what's on disk.
-section "6. vendor/wayfinder not committed into this repo"
+section "5. vendor/wayfinder not committed into this repo"
 if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   TRACKED_WAYFINDER=$(git ls-files -- 'vendor/wayfinder/**' 2>/dev/null)
   if [ -z "$TRACKED_WAYFINDER" ]; then pass "no committed Wayfinder source"; else
@@ -150,8 +139,8 @@ else
   pass "no committed Wayfinder source"
 fi
 
-# ── 7. DB table naming (redline_ prefix) ────────────────────────────────────────
-section "7. all Drizzle tables match ^redline_[a-z_]+\$"
+# ── 6. DB table naming (redline_ prefix) ────────────────────────────────────────
+section "6. all Drizzle tables match ^redline_[a-z_]+\$"
 SCHEMA_GLOB="packages/redline-adapters/src"
 if [ -d "$SCHEMA_GLOB" ]; then
   BAD_TABLES=$(grep -rhE "pgTable\(\"[^\"]+\"" "$SCHEMA_GLOB" 2>/dev/null \
@@ -164,40 +153,38 @@ else
   skip "table names — no adapters schema yet"
 fi
 
-# ── 8. no focused tests ──────────────────────────────────────────────────────
-section "8. no describe.only / it.only / test.only committed"
+# ── 7. no focused tests ──────────────────────────────────────────────────────
+section "7. no describe.only / it.only / test.only committed"
 FOCUSED=$(grep -rnE "\b(describe|it|test)\.only\(" packages/*/src \
     --include="*.test.ts" 2>/dev/null)
 if [ -z "$FOCUSED" ]; then pass "no focused tests"; else
   fail "focused tests found — remove .only:"; echo "$FOCUSED"
 fi
 
-# ── 9. source file size guard (warn ≥ 700, fail ≥ 800) ───────────────────────
-section "9. source file size (warn ≥ 700, fail ≥ 800 lines)"
+# ── 8. source file size guard (warn ≥ 700, fail ≥ 800) ───────────────────────
+section "8. source file size (warn ≥ 700, fail ≥ 800 lines)"
 SIZE_FAILURES=""; SIZE_WARNINGS=""
 while IFS= read -r f; do
   lc=$(wc -l < "$f")
   [ "$lc" -lt 700 ] && continue
   if [ "$lc" -ge 800 ]; then SIZE_FAILURES+="  $lc  $f\n"; else SIZE_WARNINGS+="  $lc  $f\n"; fi
-# services/womblex, services/numbatch and services/wayfinder are the vendored
-# upstream submodules — source we never modify (the Wayfinder fork carries
-# redline's mount on its `main` branch, but that tree is the fork's
-# to shape, not redline source to lint), excluded from our own static guards
-# exactly as vendor/wayfinder is. redline's own overlay lives in
-# services/numbatch-extension and IS checked.
+# services/womblex and services/wayfinder are the submodules — source we never
+# modify (the Wayfinder fork carries redline's mount on its `main` branch, but
+# that tree is the fork's to shape, not redline source to lint), excluded from
+# our own static guards exactly as vendor/wayfinder is.
 done < <(find packages/*/src apps/*/src services/*/src -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.py" \) \
-  ! -path "services/womblex/*" ! -path "services/numbatch/*" ! -path "services/wayfinder/*" \
+  ! -path "services/womblex/*" ! -path "services/wayfinder/*" \
   ! -name "*.test.ts" ! -name "*.test.tsx" 2>/dev/null)
 [ -n "$SIZE_WARNINGS" ] && { warn "files ≥ 700 lines — split when next touched:"; printf '%b' "$SIZE_WARNINGS"; }
 if [ -z "$SIZE_FAILURES" ]; then pass "no source file ≥ 800 lines"; else
   fail "source files ≥ 800 lines — decompose:"; printf '%b' "$SIZE_FAILURES"
 fi
 
-# ── 10. Python sidecar tests (services/womblex-ingest) ───────────────────────
+# ── 9. Python sidecar tests (services/womblex-ingest) ───────────────────────
 # Runs the sidecar's pytest suite when Python is available; SKIPs cleanly on
 # hosts without Python so the workspace checks still gate. Uses an isolated venv
 # so the host site-packages is untouched.
-section "10. services/womblex-ingest pytest"
+section "9. services/womblex-ingest pytest"
 if [ ! -d services/womblex-ingest ]; then
   skip "womblex-ingest — service not present"
 elif ! command -v python3 >/dev/null 2>&1; then
@@ -215,34 +202,9 @@ else
   find services/womblex-ingest -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
-# ── 11. Numbatch financial extension tests (services/numbatch-extension) ─────
-# The Thread 6 overlay: financial_profiles/financial_extractions models, the
-# Alembic migration, and the config API. redline's OWN code, which is why it
-# lives beside the upstream submodule rather than inside it (services/numbatch is
-# the unmodified fork). Provable standalone (SQLite; no fork, no GPU). SKIPs
-# cleanly when python3 is absent so the workspace checks still gate.
-section "11. services/numbatch-extension/financial_extension pytest"
-FIN_EXT=services/numbatch-extension/financial_extension
-if [ ! -d "$FIN_EXT" ]; then
-  skip "numbatch financial extension — not present"
-elif ! command -v python3 >/dev/null 2>&1; then
-  skip "numbatch financial extension pytest — no python3 on host"
-else
-  PY_VENV="$(mktemp -d)/venv"
-  if python3 -m venv "$PY_VENV" >/dev/null 2>&1 \
-    && "$PY_VENV/bin/pip" install -q -e "$FIN_EXT[dev]" >/dev/null 2>&1 \
-    && ( cd "$FIN_EXT" && "$PY_VENV/bin/python" -m pytest -q >/dev/null 2>&1 ); then
-    pass "numbatch financial extension pytest"
-  else
-    fail "numbatch financial extension pytest"
-  fi
-  rm -rf "$PY_VENV" "$FIN_EXT"/src/*.egg-info "$FIN_EXT/.pytest_cache" 2>/dev/null || true
-  find "$FIN_EXT" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
-fi
-
-# ── 12. pnpm-lock.yaml was resolved against the vendored Wayfinder tree ──────
+# ── 10. pnpm-lock.yaml was resolved against the vendored Wayfinder tree ──────
 # pnpm-workspace.yaml globs vendor/wayfinder/packages/* into the workspace, but
-# vendor/ is never committed (check #6) — so the lockfile is a function of state
+# vendor/ is never committed (check #5) — so the lockfile is a function of state
 # that is deliberately absent from the repo. `pnpm install` WITHOUT vendoring
 # first silently drops the vendor/wayfinder/packages/domain importer and flips its
 # transitive deps to `optional`; committing that fails CI's --frozen-lockfile
@@ -258,7 +220,7 @@ fi
 # importer at all. ADR-0012's "green without Wayfinder" therefore still holds for
 # a clean clone — right up until an unvendored install rewrites the lockfile,
 # which is precisely the state that must not be committed.
-section "12. pnpm-lock.yaml was not rewritten by an unvendored install"
+section "10. pnpm-lock.yaml was not rewritten by an unvendored install"
 LOCKFILE_IMPORTER='^  vendor/wayfinder/packages/[a-z-]+:'
 if [ ! -f pnpm-lock.yaml ]; then
   skip "lockfile — no pnpm-lock.yaml"
@@ -272,17 +234,16 @@ else
   fail "pnpm-lock.yaml was rewritten without the vendored Wayfinder tree (the vendor/wayfinder importer is gone). Do not commit it: run 'git checkout -- pnpm-lock.yaml', or vendor first ('scripts/vendor-wayfinder.sh && pnpm install') if you meant to change dependencies"
 fi
 
-# ── 13. Python lint (ruff) over redline's own Python ─────────────────────────
-# The Python half of check #3's lint pass. Rules and exclusions live in ruff.toml
+# ── 11. Python lint (ruff) over redline's own Python ─────────────────────────
+# The Python half of check #2's lint pass. Rules and exclusions live in ruff.toml
 # at the root — including the two upstream submodules, which we never modify
 # (ADR-0015). Unlike the pytest checks above, ruff's output is NOT silenced: a
 # lint failure is only actionable with its diagnostics. SKIPs cleanly when python3
 # is absent or ruff cannot be installed, so an offline host still gates on the
-# rest, matching checks #10 and #11.
-section "13. ruff lint (redline's own Python)"
+# rest, matching check #9.
+section "11. ruff lint (redline's own Python)"
 RUFF_TARGETS=()
 [ -d services/womblex-ingest ] && RUFF_TARGETS+=(services/womblex-ingest)
-[ -d services/numbatch-extension ] && RUFF_TARGETS+=(services/numbatch-extension)
 if [ ${#RUFF_TARGETS[@]} -eq 0 ]; then
   skip "ruff lint — no Python services present"
 elif ! command -v python3 >/dev/null 2>&1; then
@@ -301,7 +262,7 @@ else
   find services -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
-# ── 14. Wayfinder fork hygiene (services/wayfinder submodule) ────────────────
+# ── 12. Wayfinder fork hygiene (services/wayfinder submodule) ────────────────
 # The Wayfinder fork is a submodule we RUN and EDIT (ADR-0019), unlike the
 # byte-identical Python submodules. One invariant replaces "never modified": the
 # checkout is on the fork's `main` branch commit the superproject
@@ -320,7 +281,7 @@ fi
 #
 # SKIPs (never fails) on a clone without the submodule initialised, matching the
 # clean-clone posture of the checks above.
-section "14. Wayfinder fork checkout is on the branch .gitmodules names"
+section "12. Wayfinder fork checkout is on the branch .gitmodules names"
 if [ ! -d services/wayfinder/.git ] && [ ! -f services/wayfinder/.git ]; then
   skip "wayfinder fork — services/wayfinder not initialised (git submodule update --init)"
 elif ! command -v git >/dev/null 2>&1; then
@@ -359,7 +320,7 @@ else
   fi
 fi
 
-# ── 15. the run-capable sidecar builds with the isaacus extra ────────────────
+# ── 13. the run-capable sidecar builds with the isaacus extra ────────────────
 # The money image installs the engine WITHOUT `isaacus` on purpose — the money op
 # is offline. infra/docker-compose.run-sidecar.yml reuses that image to serve the
 # run trigger, which drives chunk/embed/enrich, and `isaacus_available()` tests
@@ -367,7 +328,7 @@ fi
 # run at the chunk stage while holding a valid ISAACUS_API_KEY and reporting
 # itself healthy. Static because the alternative is a 7 GB image build: this
 # reads the two lines that have to agree.
-section "15. run-sidecar builds the engine with the isaacus extra"
+section "13. run-sidecar builds the engine with the isaacus extra"
 RUN_SIDECAR_COMPOSE=infra/docker-compose.run-sidecar.yml
 if [ ! -f "$RUN_SIDECAR_COMPOSE" ]; then
   skip "run-sidecar extras — $RUN_SIDECAR_COMPOSE not present"

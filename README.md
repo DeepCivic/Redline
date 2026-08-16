@@ -1,13 +1,11 @@
 # Redline
 
-> **Procurement Evaluation Adapter** — a Wayfinder plugin/adapter (its own repo)
-> for procurement response evaluation, built as a composable **comprehension
-> lens**: it sorts a document corpus against user-defined criteria, surfaces only
-> genuine collisions for a specialist to resolve, and remembers those resolutions
-> as reusable boundary logic — so the evaluation is useful before any classifier
-> is trained. Integrates **womblex** (document extraction + embeddings) and
-> **Numbatch** (no-code classification, extended with configurable financial table
-> extraction), and reuses Wayfinder's typed tabular/XLSX helpers read-only.
+> **Corpus-ingest-and-report substrate** — a Wayfinder plugin (its own repo). A
+> specialist stages a corpus of documents from the browser, the **womblex** engine
+> extracts, chunks, embeds, enriches and prices it, and the chunks, enrichment
+> graph, money spans and extraction JSON that run lands serve two consumers: the
+> Create Corpus UI and redline's MCP report tools. Reuses Wayfinder's typed
+> tabular/XLSX helpers read-only.
 
 Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
@@ -21,23 +19,20 @@ Under construction. Two documents govern:
 Durable design rationale lives in [`docs/design-principles.md`](./docs/design-principles.md);
 it does not track work.
 
-The foundations are built and green under `./validate.sh`: the scaffold,
-`redline-domain` (user-defined requirements + the lens domain), the
-`womblex-ingest` sidecar + store-side chunk surface, the extraction reader
-adapters, the Numbatch classifier + service scaffold, the financial extension,
-the `redline_` persistence layer, the orchestration use-cases, the
-workflow-manager control surface, the review grid/pivots/Excel export, and the
-cold-start classification path (hard-rule + adjudication over exact fetch).
+The substrate is built and green under `./validate.sh`: the `womblex-ingest`
+sidecar (the read seam, the run trigger/status seam and the chunk / money-span /
+graph loads), the `redline_` persistence layer and its four store adapters, the
+object-store staging seam, the Create Corpus control surface and run tracker
+mounted in the forked Wayfinder, and the MCP report tool surface.
 
-**Current focus — the lean vertical**: get a real procurement corpus ingested and
-rendered on screen, delineated by topic and brand. The comprehension-lens work is
-deferred until that exists. The outstanding items are the money-sidecar financial
-extractor, mounting the review UI into the forked Wayfinder, and the real-corpus
-run — see [`delivery-plan.md`](./docs/delivery-plan.md) §2.
+**The Evaluation surface was removed on 2026-08-15.** redline no longer models a
+judgement over a corpus: it serves the rows a run landed, and interpreting them
+belongs to a consumer above the store. See
+[`design-principles.md`](./docs/design-principles.md) §2.
 
 ## Architecture
 
-A true **adapter**, not a Wayfinder fork. Wayfinder is consumed at runtime seams
+A **plugin**, not a Wayfinder fork of its own. Wayfinder is consumed at runtime seams
 (HTTP/MCP + object storage + a separate `redline_`-prefixed DB schema) and its typed
 domain helpers are reused read-only.
 
@@ -46,22 +41,20 @@ Publishing target: the **DeepCivic** org.
 ```
 redline/
 ├── docs/
-│   ├── adr/                     # architecture decision records (Wayfinder ADR model)
 │   ├── architecture.md          # what redline IS (design truth)
 │   ├── delivery-plan.md         # what is LEFT TO BUILD (tracking truth)
 │   └── design-principles.md     # durable adopted-principles + non-goals (not tracking)
 ├── packages/
-│   ├── redline-domain/             # entities + ports (zero deps, Result pattern)
-│   ├── redline-application/        # use-cases
-│   ├── redline-adapters/           # Parquet/JSON reader, Numbatch client, repositories
+│   ├── redline-domain/             # ports (zero deps, Result pattern)
+│   ├── redline-adapters/           # sidecar client, object store, redline_ stores
 │   └── redline-shared/             # zod schemas shared with the UI
 ├── apps/
-│   └── redline-web/                # specialist control surface + review grid
+│   ├── redline-web/                # the Create Corpus brain + run tracker
+│   └── redline-mcp/                # the report tool surface (MCP over HTTP)
 ├── services/
-│   ├── womblex/                 # SUBMODULE: the womblex engine @ d6850de
-│   ├── womblex-ingest/          # redline's Parquet→JSON read sidecar
-│   ├── numbatch/                # SUBMODULE: the Numbatch fork @ 72bcead
-│   └── numbatch-extension/      # redline's additive overlay on the fork
+│   ├── womblex/                 # SUBMODULE: the womblex engine @ latest main
+│   ├── womblex-ingest/          # redline's read + run sidecar
+│   └── wayfinder/               # SUBMODULE: the Wayfinder fork that serves the UI
 └── vendor/
     └── wayfinder/               # materialised at build time (never committed) — typed reuse only
 ```
@@ -77,8 +70,8 @@ The tree is **materialised, never committed**: `scripts/vendor-wayfinder.sh` cop
 only the package we consume out of the `services/wayfinder` submodule, so the tree
 redline typechecks against is the tree it runs in. It is an **optional**
 dependency — `pnpm install` and `./validate.sh` are green with no Wayfinder
-present, and the one suite that needs it skips (ADR-0012). To bump Wayfinder, move
-the submodule.
+present, and the one suite that needs it skips. To bump Wayfinder, move the
+submodule.
 
 ## Toolchain
 
@@ -86,7 +79,7 @@ Mirrors Wayfinder: pnpm 9, Node ≥ 20, Turborepo, TypeScript 5.6 (strict), Vite
 Prettier, ESLint 9.
 
 ```bash
-git submodule update --init   # services/womblex + services/numbatch (ADR-0015)
+git submodule update --init   # services/womblex + services/wayfinder
 pnpm install
 pnpm build      # turbo run build across @redline/* packages
 pnpm test       # vitest across @redline/*
@@ -113,18 +106,12 @@ WAYFINDER_PACKAGES="domain shared" scripts/podman-run.sh
 
 ## User guides
 
-How to drive the surfaces the fork serves, written for the people who use them
-rather than the people who build them. Two screens, two jobs, usually two people:
+How to drive the surface the fork serves, written for the people who use it
+rather than the people who build it:
 
 - [Creating a corpus](./docs/guides/create-a-corpus.md) — the **Create Corpus**
   screen: build the dataset. Upload the documents, pick the extraction parameters
   and the stages, run it.
-- [Creating an evaluation](./docs/guides/create-an-evaluation.md) — the **New
-  evaluation** screen: over a corpus that has been run, say whose response is
-  whose and what you want answered, which is what the report is built from.
-
-Both describe the flow the delivery plan is building towards, and each ends with
-a short note on what the deployed build still does differently.
 
 Operator runbooks live beside them:
 [running both stacks locally](./docs/guides/two-stack-local-run.md) and

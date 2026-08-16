@@ -2,9 +2,14 @@
   "extends": "./tsconfig.base.json",
   "files": [],
   "references": [
-    { "path": "./packages/redline-domain" },
-    { "path": "./packages/redline-shared" },
-    { "path": "./packages/redline-application" },
-    { "path": "./packages/redline-adapters" }
+    {
+      "path": "./packages/redline-domain"
+    },
+    {
+      "path": "./packages/redline-shared"
+    },
+    {
+      "path": "./packages/redline-adapters"
+    }
   ]
 }
