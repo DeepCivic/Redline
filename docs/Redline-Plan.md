@@ -70,8 +70,8 @@ that same guesswork forward under a green build that looks more finished than it
 (`IProcurementExtractionReader`) actually backs — `fetch_chunks`,
 `fetch_chunks_by_structure`, both money-span fetches and all three graph tools are
 **gone**, not stubbed. §3.1 and §9 step 4 are rewritten to match. Redesigning the
-chunk-store/money-span-store/graph-store contracts is **step 1**, and step 1 cannot
-start until the user has supplied a real Womblex corpus sample — see the new step 0c.
+chunk-store/money-span-store/graph-store contracts is **step 1**, unblocked now that
+build step 0c has landed a real Womblex corpus sample.
 
 **What survived is more useful than it looks.** `apps/redline-mcp/src/lib/report-tools.ts`
 still holds the three extraction-reader tools — see §3.
@@ -197,8 +197,9 @@ Deleted, to be rebuilt in step 4 against the fresh contracts step 1 designs:
 Their old shapes (descriptions, the stable-ordering contract, the `graphAvailable: false`
 disambiguation between an empty traversal over a real graph and no graph loaded) are a
 useful reference for what the product statement needs each tool to do, but not a
-contract to restore verbatim — the 0c corpus sample is what step 1 checks the redesigned
-shapes against.
+contract to restore verbatim — the 0c corpus sample
+(`services/womblex-ingest/tests/fixtures/run-throsby-demo/`) is what step 1 checks the
+redesigned shapes against.
 
 ### 3.2 One tool surface, two mounts
 
@@ -306,8 +307,8 @@ Neither deleted writer emitted CSV — both went straight to `.xlsx` via
    wrong values.
 2. ~~The tree does not build~~ **Resolved 2026-08-17** (§0, build step 0a) — `./validate.sh`
    is green. Resolved by deletion, not restoration: the seven corpus-read ports and seven
-   of the ten report tools are gone, pending the redesign step 1 does once step 0c lands
-   a real corpus sample.
+   of the ten report tools are gone, pending the redesign step 1 now does against the
+   real corpus sample build step 0c landed.
 3. **The fork half is unlanded.** The gitlink is stale at `5d236db1`. `validate.sh` #12
    *skips* while the submodule is unpopulated and only bites once it is initialised —
    so a green-looking run on a fresh clone proves nothing about the pin. Two prior fork
@@ -430,16 +431,31 @@ whose exit test joins two independently-testable behaviours is two steps.
     own repo is gone or was already gone, and grep is clean for every removed
     export/route/profile/doc path in that scope. The Fork subsection is carried
     forward to step 10, where `services/wayfinder` is actually populated._
-0c. **Sample corpus handoff.** The user supplies a real Womblex corpus — documents staged
-    through the engine and drained at least through `chunk` (further through `enrich` and
-    `money` if graph/financial contracts are to be designed against real spans too), so
-    its actual Parquet shards (`manifest.parquet`, `CHUNKS_SCHEMA`, `GRAPH_EDGE_SCHEMA` +
-    `ENTITY_SCHEMA`, `MONEY_SPANS_SCHEMA`) are on disk or in object storage where a
-    session can read them. This is not optional groundwork: it is what step 1 designs
-    the seven port contracts *against*, replacing the deleted, never-verified shapes 0a
-    declined to restore. No contract work starts without it.
-    _Exit: a named corpus location (path or bucket prefix) with at least the `chunk`
-    stage's shards present, that a session can point a schema-design pass at._
+0c. ~~**Sample corpus handoff.**~~ **Landed 2026-08-17.** The corpus is the womblex UI
+    demo's own sample corpus — `output/console-demo/run-throsby-demo/` in the `womblex`
+    repo (`services/womblex` @ `d50ac76`) — copied verbatim into this repo at
+    `services/womblex-ingest/tests/fixtures/run-throsby-demo/`. Self-contained test
+    fixtures, not a submodule or object-store read, so step 1's schema-design pass and
+    step 4's adapter tests reach real rows with no engine install. One document,
+    `throsby-oosc.pdf`, sha256-verified identical to the ACT FOI 213A notice womblex
+    already vendors redistributably. No PII stage ran, so chunk text is unmasked —
+    it names the signing public servant, as the published source does.
+
+    All four schema families step 3 names are present with real rows and were checked
+    against the shards, not assumed: `manifest.parquet` and `CHUNKS_SCHEMA` match the
+    columns step 3 lists exactly. Two things the fixture's `README.md` records that
+    change later steps:
+
+    - **Coverage gaps.** `table_cells` and `money_columns` are **empty**, and
+      `money_spans` has two rows, both `narrative` locus. So `read_extraction_table_cells`
+      and the whole table-cell/sheet-cell money locus have no real row here; step 4
+      cannot prove them against this corpus alone. It is one document and one run, so
+      it also cannot regress blocker 1 — step 3's two-run exit test must stage its own.
+    - **Two identity spellings.** The enrichment/graph shards key on `document_id`;
+      every other shard keys on `source_hash`. Same value here, so it is a spelling
+      difference, but every port or route joining graph to chunks must handle both.
+    _Exit: a named corpus location that a session can point a schema-design pass at —
+    met: `services/womblex-ingest/tests/fixtures/run-throsby-demo/`._
 1. **Report domain.** The §2 types, `IExtractionModel`'s signature, and the report ports.
    The seven corpus-read ports removed in 0a (chunk-store, money-span-store, graph-store,
    staged-corpus-reader/writer, womblex-run-trigger, run-config-override) are **designed
