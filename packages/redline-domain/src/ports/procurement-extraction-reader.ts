@@ -29,17 +29,17 @@ export interface ExtractionTableCell {
 
 export interface IProcurementExtractionReader {
   readElements(
-    evaluationId: string,
+    corpusId: string,
     documentId: string,
   ): Promise<Result<readonly ExtractionElement[]>>;
 
   readChunks(
-    evaluationId: string,
+    corpusId: string,
     documentId: string,
   ): Promise<Result<readonly ExtractionChunk[]>>;
 
   readTableCells(
-    evaluationId: string,
+    corpusId: string,
     documentId: string,
   ): Promise<Result<readonly ExtractionTableCell[]>>;
 }
