@@ -8,8 +8,7 @@ We need to deliver the below and it should be fairly lean to do. A surface in Wa
 User defines report columns. Each column has:
 - `name`
 - `semantic description`
-- optional `constraints` — e.g. financial, date, regex, enum
-- optional `summary_generation` flag
+- optional `constraints` — financial or date (regex and enum are deferred to a later version)
 
 ## Run
 
@@ -17,30 +16,29 @@ User defines report columns. Each column has:
 
 2. For each document:
    - Create exactly one report row.
-   - Run exactly one base LLM extraction call for that document.
+   - Run one base LLM extraction call for that document.
 
 3. The base LLM call:
-   - Has access to tools, corpus search, embeddings, and a graph overlay of the corpus.
-   - Copies field values from relevant chunks/entities where possible.
-   - Returns one value per column, with source evidence if available.
+   - Has access to chunk/structure-fetch tools, money-span tools, and one-hop graph
+     lookup (`graph_find_entities`, `graph_edges_from`, `graph_edges_to`) for entity
+     resolution — graph results are navigation pointers, not evidence.
+   - Copies field values from relevant chunks where possible.
+   - Returns one value per column, with a chunk citation as evidence if available.
 
 4. Apply constraints:
-   - If a field is marked as financial/date/etc., normalise it.
-   - If normalisation or validation fails, mark that value for review.
+   - If a field is marked financial or date, normalise it.
+   - If normalisation or validation fails, mark that value `needs_review`.
 
-5. If a column has `summary_generation = true`:
-   - Run an additional LLM call per document to generate the summary.
-   - Do not use the base extraction call for generated summaries.
+5. Status handling:
+   - Each value is one of: `verified`, `missing`, or `needs_review`.
+   - Only `verified` values go into the final report.
+   - `missing` and `needs_review` values are held back and flagged in the export for
+     manual handling outside the product — there is no in-app approval workflow.
 
-6. Status handling:
-   - Each value is one of: `verified`, `generated`, `missing`, or `needs_review`.
-   - Only `verified` or user-approved values go into the final report.
-   - Unresolved values are held back and flagged in the spreadsheet.
-
-7. Export:
+6. Export:
    - One row per document.
    - One column per field.
-   - Unresolved/flagged values are visible for review.
+   - Flagged values are visible for review.
 
 ---
 
@@ -51,10 +49,10 @@ User defines report columns. Each column has:
 
 ## 0. Status — read before anything else
 
-**This file is the only live plan.** It supersedes `docs/delivery-plan.md`,
-`docs/architecture.md` (including §5.1 "What a report is", whose narrative-sections
-definition is replaced by the column/row grid above) and `docs/design-principles.md`.
-§11 itemises their removal.
+**This file is the only live plan.** It superseded `docs/delivery-plan.md`,
+`docs/design-principles.md` (both now deleted) and `docs/architecture.md` — including
+§5.1 "What a report is", whose narrative-sections definition is replaced by the
+column/row grid above. §10 itemises what is left to remove.
 
 **The repo does not build.** Three scope cuts in two days (`a018a2a`, `2b7531d`,
 `59d4156`) removed the Evaluation surface, the corpus control plane, the materialised
@@ -74,7 +72,16 @@ still holds all ten tools — see §3.
 | Where the base LLM extraction call runs | **redline** — not the fork, not the sidecar |
 | Where definitions, runs, rows and values persist | **redline** — it re-owns a Postgres, for the report domain only |
 | "corpus search, embeddings" in the base call | **Point-only for v1** — see §1.1 |
-| How aggressive the removal itinerary is | **Extreme** — §11 |
+| How aggressive the removal itinerary is | **Extreme** — §10 |
+
+### Decisions taken 2026-08-17
+
+| Question | Decision |
+|---|---|
+| Summary generation | **Cut entirely.** No second LLM call, no chunk-read cache, no `generated` status, no `summaryGeneration` column flag |
+| Interactive review grid | **Cut.** Replaced by a read-only sample table in the fork; no in-app approval workflow. The export is the review surface |
+| Graph overlay | **Kept, narrowed to an extraction aid.** `graph_find_entities`/`graph_edges_from`/`graph_edges_to` for entity resolution and one-hop lookup only; graph output is a navigation pointer, never evidence — every value still cites a chunk |
+| Constraints | **`financial` and `date` only for v1.** `regex` and `enum` deferred to a later version |
 
 ## 1.1 v1 scope: retrieval is point-only
 
@@ -100,20 +107,17 @@ Destined for `packages/redline-domain`. Result pattern at every boundary; no thr
 across packages.
 
 ```ts
-type FieldStatus = "verified" | "generated" | "missing" | "needs_review";
+type FieldStatus = "verified" | "missing" | "needs_review";
 
 type ColumnConstraint =
   | { kind: "financial"; currency?: string }
-  | { kind: "date" }
-  | { kind: "regex"; pattern: string }
-  | { kind: "enum"; allowed: readonly string[] };
+  | { kind: "date" };
 
 interface ReportColumn {
   columnId: string;
   name: string;
   semanticDescription: string;
   constraint?: ColumnConstraint;
-  summaryGeneration: boolean;
 }
 
 interface Evidence {
@@ -138,6 +142,9 @@ interface ReportRun {
 }
 ```
 
+`regex` and `enum` constraints are deferred to a later version (decided 2026-08-17) —
+`financial` and `date` are the only two `ColumnConstraint` kinds for v1.
+
 **`evaluationId` → `corpusId` happens here.** The ports and schema are being written
 fresh, so this is the one moment the rename costs nothing. It was deferred before
 because it spanned TypeScript, Python and SQL simultaneously; it no longer does. The
@@ -155,7 +162,7 @@ surviving `IProcurementExtractionReader`
 | Implementations | `packages/redline-adapters` | Drizzle stores, the LLM client, sidecar HTTP readers |
 | Tool surface | `apps/redline-mcp` | the ten tools, re-pointed at the sidecar |
 | Engine process | `apps/redline-report` (**new**) | the per-document loop; the HTTP API the fork calls |
-| UI | `services/wayfinder` (fork) | column editor, document picker, run + progress, review grid, export |
+| UI | `services/wayfinder` (fork) | column editor, document picker, run + progress, read-only sample table, export |
 
 ### 3.1 The large reuse: the tools already exist
 
@@ -170,8 +177,8 @@ They fail to compile only because the **ports behind them** were deleted — sev
 Drizzle readers over the removed schema. The tool shapes, their descriptions, their
 stable-ordering contract and the `graphAvailable: false` disambiguation (an empty
 traversal over a real graph versus no graph loaded) are all intact and all correct for
-this plan. They are exactly the "tools, corpus search, embeddings and a graph overlay"
-the product statement asks for, minus search.
+this plan. They are exactly the chunk/structure/money-span fetch tools and the
+entity-resolution graph lookups the product statement asks for.
 
 **They need re-pointing at the sidecar, not redesigning.** Budget step 4 accordingly.
 
@@ -207,6 +214,13 @@ whose quote does not survive the substring check becomes `needs_review`. It is *
 dropped silently and never rewritten** — a silently reworded quote no longer resolves to
 its source, which is the whole thing this product sells.
 
+Graph tools (`graph_find_entities`, `graph_edges_from`, `graph_edges_to`) are scoped to
+entity resolution and one-hop relation lookup — the base call may use them to locate a
+chunk, never to source a value directly. A graph edge is a navigation pointer, not
+evidence: every extracted value still carries a chunk citation, and that citation is
+checked against rules 1–3 exactly as any other, regardless of whether the chunk was
+found by direct fetch or graph traversal.
+
 ## 5. Constraints and normalisation
 
 **financial — prefer a money span, do not parse a string.** Where the evidence anchors
@@ -227,45 +241,42 @@ outside `[0-9.]` turned `$1.234,56` into `1.23456`, `$1 234,50` into `123450.0`,
 Two independent parsers is how that happened; do not build a second one.
 
 - **date** — ISO 8601 out. AU day-first default. Ambiguous → `needs_review`.
-- **regex** — must fullmatch, not search.
-- **enum** — case-insensitive compare, canonical case out.
 
 Any normalisation failure yields `needs_review` with `rawValue` preserved beside it.
 
-## 6. Statuses and the review gate
+## 6. Statuses and the export surface
 
 | Status | Means |
 |---|---|
 | `verified` | at least one evidence citation passed rule 3 and, if constrained, normalised cleanly |
-| `generated` | a `summary_generation` column's output — authored prose, not a transferred fact |
 | `missing` | the model returned nothing and said why |
 | `needs_review` | evidence failed, normalisation failed, or a value came back with no evidence at all |
 
-`generated` is **never** `verified`, however good it looks: it is the model's own prose,
-so it needs the same approval a flagged value does. Only `verified` or user-approved
-values reach the final report. Everything else is held back and stays visible in the
-sheet — a blank cell and a withheld cell must never look the same.
+Only `verified` values reach the final report. `missing` and `needs_review` values are
+held back and stay visible in the export — a blank cell and a withheld cell must never
+look the same. There is no in-app approval workflow and no approval status: the export
+is the review surface, and resolving a flagged value happens outside the product.
 
-## 7. Summary generation
+## 7. Export
 
-A second call per `(document, summary column)`, never the base call.
+Two formats: **CSV and XLSX**. One row per document, one column per field, flagged
+values visible for review.
 
-Cache the **chunk read** per `(runId, documentId)` so N summary columns do not re-read
-the same passages N times. Finding F9 measured that exact duplicate spend on the deleted
-surface: one summarise call per classification row over identical passages, pure cost,
-no behaviour difference. Cache the read, not the summary — each summary column asks a
-different question.
+**XLSX reuses a shape; CSV does not exist yet.** `report-export.ts`
+(`git show 2b7531d^:apps/redline-web/src/lib/report-export.ts`, 178 lines) is the writer
+to carry forward — framework-free, unit-tested, already corpus-shaped (`corpusId`, not
+`evaluationId`), and it already absorbed the browser writer. Its cell types were verified
+against `write-excel-file@4.1.1`'s bundled `types/SheetData.d.ts`, so that verification
+does not need redoing.
 
-## 8. Export
+Do **not** reuse `excel-export.ts` (`git show 64bd20a^:…`, 220 lines): it is built on
+`./review-grid` and `./pricing-pivot`, and the review grid is descoped (§0, 2026-08-17).
+Its multi-sheet pivot output is a shape for a surface that no longer exists.
 
-One row per document, one column per field, flagged values visible for review.
+Neither deleted writer emitted CSV — both went straight to `.xlsx` via
+`write-excel-file/browser`. CSV is additive work in step 9, not a recovery.
 
-Reuse the deleted writers' shapes rather than designing afresh:
-`git show 64bd20a^:apps/redline-web/src/lib/excel-export.ts` (220 lines) and
-`git show 2b7531d^:apps/redline-web/src/lib/report-export.ts` (178 lines). Both are
-framework-free and were unit-tested; the second already absorbed the browser writer.
-
-## 9. Known blockers
+## 8. Known blockers
 
 1. **A corpus run twice serves every document twice.** `RealWomblexExtractor.extract`
    (`services/womblex-ingest/src/womblex_ingest/real_extractor.py`) lists the whole
@@ -285,16 +296,54 @@ framework-free and were unit-tested; the second already absorbed the browser wri
    unverified until `git submodule update --init` runs. The fork step begins by
    reading it, not by assuming its shape.
 
-## 10. Build steps
+## 9. Build steps
 
 One commit each, tests-first, **≤500 changed lines**, with an explicit exit test. A step
 whose exit test joins two independently-testable behaviours is two steps.
 
-0. **Remediate to green.** Barrels, `report-tools.ts`, the MCP container, the sidecar's
-   `main.py`, four manifests, `validate.sh`, the compose profiles. Absorbs
-   `delivery-plan.md` §0.3 items 1–8 and 10.
-   _Exit: `./validate.sh` green._
-1. **Report domain.** The §2 types and ports; `evaluationId` → `corpusId` throughout.
+0a. **Remediate to green.** `delivery-plan.md` is deleted, so its §0.3 list is inlined
+    here rather than cited (`git show 333e6d1:docs/delivery-plan.md` for the original):
+
+    - **Domain barrel** — dangling `export *` for seven deleted ports.
+    - **Adapters barrel** — dangling exports at the run-trigger, money-span, chunk-store,
+      chunk-element, graph-store, staged-corpus-reader, storage and
+      `db`/`applyMigrations` blocks.
+    - **Restore the seven corpus-read port interfaces** in `redline-domain`, verbatim from
+      git — interfaces only, zero implementations — so `report-tools.ts` keeps all ten
+      tools and type-checks. Step 1 renames `evaluationId` → `corpusId` across them; step 4
+      lands their sidecar-backed implementations. This is why 0a is not purely
+      subtractive: the tools cannot compile against nothing.
+    - **`apps/redline-mcp`** `container.ts` + `mcp-server.ts` — drop the deleted Drizzle
+      bindings. A tool whose dependency is unbound stays defined but unregistered (the
+      `graphAvailable: false` degradation already models this); step 4 binds them.
+    - **Sidecar `main.py`** (+ `test_ingest_api.py`) — remove the `/runs` and
+      `/embeddings` routes, the chunk-store load on `POST /ingest`, and the Postgres
+      wiring. Keep `/health`, `/ingest`, `/status`, `/extractions`.
+    - **Sidecar `records.py`** — embedding DTOs go, extraction DTOs stay.
+    - **Manifests** — `minio` and the `@rbrasier/domain` optional dependency leave
+      `redline-adapters`; `@redline/redline-shared` and `@redline/redline-web` leave the
+      workspace, `tsconfig.json` and the fork's `apps/web/package.json`.
+    - **`validate.sh`** — retire #5, #10 and #13; `pnpm-workspace.yaml`'s
+      `vendor/wayfinder` glob goes with them.
+    - **Infra** — the `ingest` / `money` / `stage` / `redline` compose profiles; `report`
+      is the profile that describes the stack.
+
+    **Three items in the original §0.3 are overridden and must not be carried across.**
+    Its item 3 trimmed `report-tools.ts` to three tools and deleted seven — §3.1 keeps all
+    ten and re-points them, so the trim is reversed. Its item 7 dropped `drizzle-orm`,
+    `postgres`, `drizzle-kit`, `@electric-sql/pglite` and the `db:*` scripts — step 2
+    needs them, so they **stay**. Its item 8 retired `validate.sh` #6 (Drizzle table
+    naming) — step 2 makes it live again, so **#6 and #12 stay**.
+    _Exit: `./validate.sh` green._
+0b. **Legacy removal.** The full §10 itinerary (docs, code, config) — its own commit
+    (or several, one per §10 subsection, if the diff runs past the ≤500-line cap on a
+    single one), separate from 0a because a green build and a clean tree are two
+    independently-testable outcomes.
+    _Exit: every path listed in §10 is gone and no reference to a removed symbol
+    remains (`grep` clean for each removed export/route/profile)._
+1. **Report domain.** The §2 types, `IExtractionModel`'s signature, and the report ports
+   — no `summaryGeneration` column flag, no `generated` status. Renames
+   `evaluationId` → `corpusId` across the seven corpus-read ports 0a restored.
    _Exit: a conformance fake satisfies every port; Result shape holds at each boundary._
 2. **Persistence.** redline Postgres schema + forward-only migration `0000` +
    Drizzle stores for definitions, runs, rows and values. `redline_` prefix, snake_case.
@@ -305,41 +354,51 @@ whose exit test joins two independently-testable behaviours is two steps.
    `has_redaction`, `page_start`, `page_end`, `elem_order`), graph (`ENTITY_SCHEMA` +
    `GRAPH_EDGE_SCHEMA`), money spans (`MONEY_SPANS_SCHEMA`). Fixes blocker 1.
    _Exit: a corpus with two runs serves each document once, from the named run._
-4. **Sidecar-backed adapters** replacing the deleted Drizzle readers; re-point the seven
-   tools. _Exit: all ten tools answer against a sidecar fixture, ordering stable._
+4. **Sidecar-backed adapters + in-process tools** replacing the deleted Drizzle readers;
+   re-point the seven affected tools, graph included.
+   _Exit: all ten tools answer against a sidecar fixture, ordering stable; graph tools
+   resolve entities and one-hop edges only._
 5. **The `IExtractionModel` seam** and its three rejection rules.
    _Exit: an unoffered column, a fabricated chunk id and a non-substring quote are each
    rejected; the wire shape is asserted against a fake, not a live endpoint._
 6. **The per-document loop.** One base call, evidence verification, status assignment.
-   _Exit: one document yields one row with a status on every column._
-7. **Constraint normalisers**, money-span-first (§5).
+   _Exit: one document yields one row with a status — `verified`, `missing`, or
+   `needs_review` — on every column._
+7. **Constraint normalisers**, money-span-first (§5), financial and date only.
    _Exit: the F2 table (`$1.234,56`, `$1 234,50`, `-$500.00`, `($1,234.56)`) parses
    correctly or refuses; no case guesses._
-8. **Summary generation** as a second call, with the chunk-read cache.
-   _Exit: N summary columns over one document read its chunks once._
-9. **`apps/redline-report`** process + wiring in `lib/container.ts`.
+8. **`apps/redline-report`** process + wiring in `lib/container.ts`.
    _Exit: define columns, start a run, poll, fetch rows over HTTP._
-10. **Export** with flagged values visible.
-    _Exit: a run with one `needs_review` value exports it visibly, not blank._
-11. **The fork surface** — two commits: the fork PR merged to `main`, then the gitlink
-    bump. Folds in the unlanded fork work (blocker 3).
-    _Exit: the served route drives a run end to end._
+9. **Export** — CSV and XLSX, flagged values visible (§7).
+   _Exit: a run with one `needs_review` value exports it visibly, not blank, in both
+   formats._
+10. **The fork surface** — two commits: the fork PR merged to `main`, then the gitlink
+    bump. Folds in the unlanded fork work (blocker 3). Column editor, document picker,
+    run + progress, read-only sample table, export.
+    _Exit: the served route drives a run end to end; the sample table renders rows
+    read-only, with no approval action present._
 
-## 11. Removal itinerary — #noLegacyShit
+## 10. Removal itinerary — #noLegacyShit
 
-Before deleting the docs below, four things in them are worth keeping and are already
-carried into this file: the money-parse lesson (§5), the duplicate-summarisation cost
-(§7), the `proc/` prefix bug (§9.1) and the verbatim/provenance rule (§4, rule 3).
-Nothing else in them survives the cuts.
+Before deleting the docs below, three things in them are worth keeping and are already
+carried into this file: the money-parse lesson (§5), the `proc/` prefix bug (§8.1) and
+the verbatim/provenance rule (§4, rule 3). The duplicate-summarisation cost the deleted
+2026-07-28 review measured no longer applies — summary generation is descoped entirely,
+not merely relocated. Nothing else in them survives the cuts.
 
 ### Documents — delete outright
+
+Three are **already deleted** (2026-08-17, deliberately, ahead of 0b): `delivery-plan.md`
+(240 lines), `design-principles.md` (141) and `NEXT-STEPS-create-corpus-e2e.md` (252).
+`delivery-plan.md` §0.3 is already folded into step 0a above, so nothing is owed to it.
+Their references from `.claude/CLAUDE.md` are live danglers — that file's edit is listed
+below and now blocks nothing else.
+
+Outstanding:
 
 | Path | Lines | Why it is legacy |
 |---|---|---|
 | `docs/architecture.md` | 952 | describes a store, control plane and sheet renderer that are deleted; §5.1's report definition is superseded by the grid above |
-| `docs/design-principles.md` | 141 | D5 cites a Postgres schema that is gone; §2's engine-config allow-list governs a deleted Create Corpus surface |
-| `docs/delivery-plan.md` | 240 | superseded by this file; fold §0.3 into build step 0 first |
-| `docs/NEXT-STEPS-create-corpus-e2e.md` | 252 | a podman handover for a deleted surface, with host-specific pod names |
 | `docs/guides/create-a-corpus.md` | 195 | documents the deleted Create Corpus UI |
 | `docs/guides/two-stack-local-run.md` | 190 | drives deleted services and profiles |
 | `docs/reviews/2026-07-28-technical-review.md` | 310 | reviews Numbatch, the Evaluation repository and the lens — all deleted |
@@ -385,12 +444,12 @@ Keep `docs/guides/local-dev-and-validation.md`, minus its vendoring section.
 - **Fork** — `corpus.ts`, `container-redline.ts`, the `/create-corpus` route and its e2e
   spec, the sidebar entry and the `corpus:create` permission.
 
-## 12. Open questions
+## 11. Open questions
 
 1. **Does `apps/redline-mcp` survive as a process, or only as the in-process tool
    library?** It costs a Dockerfile, a compose profile and a container, and the engine
    does not need it — §3.2 binds the tools directly. It is worth keeping only if an
-   outside consumer wants them. Decide at step 9, not now.
+   outside consumer wants them. Decide at step 8, not now.
 2. **Which model backs `IExtractionModel`.** The UAT stack ships Wayfinder's own
    provider set (`AI_DEFAULT_PROVIDER: anthropic`, plus OpenAI/Mistral/Groq/Bedrock keys
    and Langfuse) and redline's own `REDLINE_ADJUDICATOR_*` pair defaulted to Groq.
