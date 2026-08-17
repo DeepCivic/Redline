@@ -16,9 +16,6 @@ def make_settings(**overrides: object) -> Settings:
         "bucket": "redline",
         "womblex_mode": "real",
         "isaacus_api_key": "iuak_v1_test",
-        "redline_database_url": None,
-        "womblex_db_dsn": None,
-        "womblex_store_uri": None,
     }
     base.update(overrides)
     return Settings(**base)  # type: ignore[arg-type]

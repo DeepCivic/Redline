@@ -1,15 +1,11 @@
 """FastAPI surface for the womblex-ingest sidecar.
 
-Routes: `POST /ingest` (run extraction, write shards + JSON, project chunks +
-embeddings into redline's own store when one is wired — item 1a, ADR-0017/0018 —
-and return a run id), `GET /status/{run_id}`, `GET /extractions/{evaluation_id}/{document_id}` — the
-Parquet→JSON read seam the Thread 4 adapter consumes — and
-`GET /embeddings/{evaluation_id}/{document_id}`, its retrieval sibling (ADR-0014).
-The two read seams are deliberately separate resources: the embed stage is an
-optional overlay, so a document may serve an extraction while its embeddings are
-`NOT_FOUND`. Errors cross the HTTP boundary as a Result-shaped body
-`{"error": {"code", "message"}}`, mirroring redline's domain Result pattern so the
-adapter maps them into `DomainError` cleanly.
+Routes: `POST /ingest` (run extraction, write shards + JSON, and return a run
+id), `GET /status/{run_id}`, `GET /extractions/{evaluation_id}/{document_id}` —
+the Parquet→JSON read seam the Thread 4 adapter consumes — and `GET /health`.
+Errors cross the HTTP boundary as a Result-shaped body
+`{"error": {"code", "message"}}`, mirroring redline's domain Result pattern so
+the adapter maps them into `DomainError` cleanly.
 """
 
 from __future__ import annotations
@@ -21,18 +17,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from womblex_ingest.chunk_store import ChunkStore, load_extraction
-from womblex_ingest.embedding import TextEmbedder
 from womblex_ingest.extraction import Extractor
-from womblex_ingest.run_trigger import (
-    ChunkModeOverride,
-    ConfigOverride,
-    ExtractionOverride,
-    MoneyVocabularyOverride,
-    RunPlan,
-    RunTrigger,
-    UnknownStage,
-)
 from womblex_ingest.runs import Run, RunRegistry
 from womblex_ingest.storage import ObjectNotFound, ObjectStorage
 
@@ -42,11 +27,6 @@ def extraction_key(evaluation_id: str, document_id: str) -> str:
     return f"proc/{evaluation_id}/{document_id}.extraction.json"
 
 
-def embeddings_key(evaluation_id: str, document_id: str) -> str:
-    """Object key for a document's vectors — a sibling of its extraction."""
-    return f"proc/{evaluation_id}/{document_id}.embeddings.json"
-
-
 class IngestRequest(BaseModel):
     evaluationId: str
     documentNames: List[str]
@@ -54,84 +34,6 @@ class IngestRequest(BaseModel):
     # evaluation's prefix, so every existing caller keeps working; an explicit id
     # pins a specific run (the real extractor selects it — the stub ignores it).
     runId: Optional[str] = None
-
-
-class QueryEmbeddingRequest(BaseModel):
-    text: str
-
-
-# The allow-listed config a run may author, camelCase on the wire to match the
-# TypeScript seam that composes it. An absent group — or an absent field within a
-# group — inherits the redline.yaml default; nothing here can reach a structural
-# key, which is the allow-list's safety.
-class ChunkModeOverrideRequest(BaseModel):
-    chunkingModel: Optional[str] = None
-    chunkSize: Optional[int] = None
-    chunkTables: Optional[bool] = None
-
-
-class MoneyVocabularyOverrideRequest(BaseModel):
-    extraHeaderTerms: Optional[List[str]] = None
-    extraVetoTerms: Optional[List[str]] = None
-    defaultCurrency: Optional[str] = None
-
-
-# The extraction group is the OCR settings a first run needs — `redline.yaml`
-# marks `extraction.ocr.engine: paddleocr` LOAD-BEARING, and a scanned tender is
-# exactly the corpus that may need a different one. Only the two keys the engine
-# consumes; `native.include_tables` is absent because the pinned engine never
-# reads it.
-class ExtractionOverrideRequest(BaseModel):
-    ocrEngine: Optional[str] = None
-    ocrDpi: Optional[int] = None
-
-
-class ConfigOverrideRequest(BaseModel):
-    chunkMode: Optional[ChunkModeOverrideRequest] = None
-    moneyVocabulary: Optional[MoneyVocabularyOverrideRequest] = None
-    extraction: Optional[ExtractionOverrideRequest] = None
-
-    def to_override(self) -> ConfigOverride:
-        return ConfigOverride(
-            chunk_mode=(
-                None
-                if self.chunkMode is None
-                else ChunkModeOverride(
-                    chunk_size=self.chunkMode.chunkSize,
-                    chunk_tables=self.chunkMode.chunkTables,
-                    chunking_model=self.chunkMode.chunkingModel,
-                )
-            ),
-            money_vocabulary=(
-                None
-                if self.moneyVocabulary is None
-                else MoneyVocabularyOverride(
-                    extra_header_terms=self.moneyVocabulary.extraHeaderTerms,
-                    extra_veto_terms=self.moneyVocabulary.extraVetoTerms,
-                    default_currency=self.moneyVocabulary.defaultCurrency,
-                )
-            ),
-            extraction=(
-                None
-                if self.extraction is None
-                else ExtractionOverride(
-                    ocr_engine=self.extraction.ocrEngine,
-                    ocr_dpi=self.extraction.ocrDpi,
-                )
-            ),
-        )
-
-
-class TriggerRunRequest(BaseModel):
-    evaluationId: str
-    # The allow-listed downstream stage sequence (architecture §2.1). The trigger
-    # validates it against the allow-list and normalises its ordering; a blank
-    # inherits the default at the surface above, so a request always names one.
-    stageSequence: List[str]
-    # Absent means "run on the redline.yaml default". Until this field existed
-    # pydantic discarded the key the surface was already sending, so every run
-    # used the file config and the specialist was never told.
-    configOverride: Optional[ConfigOverrideRequest] = None
 
 
 def _error(status_code: int, code: str, message: str, run_id: Optional[str] = None) -> JSONResponse:
@@ -157,20 +59,11 @@ def build_app(
     storage: ObjectStorage,
     extractor: Extractor,
     bucket: str,
-    embedder: Optional[TextEmbedder] = None,
     womblex_mode: str = "stub",
     isaacus_enabled: bool = False,
-    chunk_store: Optional[ChunkStore] = None,
-    run_trigger: Optional[RunTrigger] = None,
 ) -> FastAPI:
     app = FastAPI(title="womblex-ingest", version="0.1.0")
     registry = RunRegistry()
-    # Default to the stub embedder so the app starts (and the exit test passes)
-    # without the heavy womblex dependency, mirroring the stub extractor default.
-    if embedder is None:
-        from womblex_ingest.embedding import StubTextEmbedder
-
-        embedder = StubTextEmbedder()
 
     @app.get("/health")
     def health() -> dict:
@@ -219,37 +112,6 @@ def build_app(
                 "application/json",
             )
 
-        # The embeddings sibling (ADR-0014). Written separately from the
-        # extraction so the two resources are absent independently: a run with no
-        # embed stage leaves the extraction serving and the vectors NOT_FOUND.
-        for document_embeddings in result.embeddings:
-            storage.put_object(
-                embeddings_key(evaluation_id, document_embeddings.documentId),
-                json.dumps(document_embeddings.to_json()).encode("utf-8"),
-                "application/json",
-            )
-
-        # Project chunks + embeddings into redline's own store (ADR-0017/0018)
-        # alongside the durable MinIO shards, so the cold-start
-        # classifier can fetch them by provenance. The store is present
-        # only when a deployment wired a DSN; the stub / air-gapped lane skips it
-        # and serves purely from the shards + JSON seam. A store write failure
-        # fails the run loudly rather than leaving the store silently behind the
-        # shards — the projection is the point of this stage.
-        if chunk_store is not None:
-            embeddings_by_document = {e.documentId: e for e in result.embeddings}
-            try:
-                for document in result.documents:
-                    load_extraction(
-                        chunk_store,
-                        evaluation_id,
-                        document,
-                        embeddings_by_document.get(document.documentId),
-                    )
-            except Exception as load_error:  # a store failure is a failed run
-                registry.mark_failed(run.run_id, str(load_error))
-                return _error(502, "INFRA_FAILURE", str(load_error), run_id=run.run_id)
-
         registry.mark_succeeded(run.run_id, result.document_count, shard_keys)
         return JSONResponse(
             status_code=202,
@@ -268,68 +130,6 @@ def build_app(
             return _error(404, "RUN_NOT_FOUND", f"no run with id {run_id}")
         return JSONResponse(status_code=200, content=_run_view(run))
 
-    # --- The run-trigger seam (Create Corpus, architecture §2.1) -------------
-    #
-    # The second engine seam: a trigger into the queue and a read of run state.
-    # Present only when a trigger is wired (a DSN + store URI configured); the
-    # stub / read-only lane omits it and the routes 503, so a misconfigured
-    # deployment is legible rather than silently accepting a run it cannot fire.
-
-    def _require_trigger() -> Optional[JSONResponse]:
-        if run_trigger is None:
-            return _error(
-                503, "INFRA_FAILURE",
-                "run trigger is not configured (needs WOMBLEX_DB_DSN + WOMBLEX_STORE_URI)",
-            )
-        return None
-
-    @app.post("/runs")
-    def trigger_run(request: TriggerRunRequest) -> JSONResponse:
-        unavailable = _require_trigger()
-        if unavailable is not None:
-            return unavailable
-        evaluation_id = request.evaluationId.strip()
-        if not evaluation_id:
-            return _error(422, "INVALID_REQUEST", "evaluationId must not be empty")
-        assert run_trigger is not None
-        try:
-            started = run_trigger.start(
-                RunPlan(
-                    evaluation_id=evaluation_id,
-                    stage_sequence=list(request.stageSequence),
-                    config_override=(
-                        None
-                        if request.configOverride is None
-                        else request.configOverride.to_override()
-                    ),
-                )
-            )
-        except UnknownStage as bad_stage:
-            return _error(422, "INVALID_REQUEST", str(bad_stage))
-        return JSONResponse(status_code=202, content=started)
-
-    @app.get("/runs/{run_id}")
-    def read_run(run_id: str) -> JSONResponse:
-        unavailable = _require_trigger()
-        if unavailable is not None:
-            return unavailable
-        assert run_trigger is not None
-        try:
-            return JSONResponse(status_code=200, content=run_trigger.status(run_id))
-        except KeyError:
-            return _error(404, "RUN_NOT_FOUND", f"no run with id {run_id}")
-
-    @app.post("/runs/{run_id}/resume")
-    def resume_run(run_id: str) -> JSONResponse:
-        unavailable = _require_trigger()
-        if unavailable is not None:
-            return unavailable
-        assert run_trigger is not None
-        try:
-            return JSONResponse(status_code=202, content=run_trigger.resume(run_id))
-        except KeyError:
-            return _error(404, "RUN_NOT_FOUND", f"no run with id {run_id}")
-
     @app.get("/extractions/{evaluation_id}/{document_id}")
     def read_extraction(evaluation_id: str, document_id: str) -> JSONResponse:
         """Serve one document's JSON read model — the Parquet→JSON seam.
@@ -347,45 +147,11 @@ def build_app(
             )
         return JSONResponse(status_code=200, content=json.loads(body))
 
-    @app.post("/embeddings/query")
-    def embed_query(request: QueryEmbeddingRequest) -> JSONResponse:
-        """Embed arbitrary text for retrieval — the query seam (ADR-0014).
-
-        Returns a vector in the *same* space as the chunk vectors: same declared
-        `model`, same `dimensions`, L2-normalised, so Thread 22 can match a topic
-        definition against them with a dot product. Independent of any
-        evaluation's shards — a definition is embedded before a corpus is mapped.
-        """
-        if not request.text.strip():
-            return _error(422, "INVALID_REQUEST", "text must not be empty")
-        embedding = embedder.embed(request.text)
-        return JSONResponse(status_code=200, content=embedding.to_json())
-
-    @app.get("/embeddings/{evaluation_id}/{document_id}")
-    def read_embeddings(evaluation_id: str, document_id: str) -> JSONResponse:
-        """Serve one document's vectors — the retrieval seam (ADR-0014).
-
-        Vectors cross as plain JSON float arrays, L2-normalised, declaring the
-        producing model, joinable to the extraction's chunks on `chunkId`. An
-        absent shard is `NOT_FOUND` rather than an empty payload: the embed stage
-        is an optional overlay and the consumer must be able to tell.
-        """
-        try:
-            body = storage.get_object(embeddings_key(evaluation_id, document_id))
-        except ObjectNotFound:
-            return _error(
-                404,
-                "NOT_FOUND",
-                f"no embeddings for document {document_id} in evaluation {evaluation_id}",
-            )
-        return JSONResponse(status_code=200, content=json.loads(body))
-
     return app
 
 
 def build_app_from_env() -> FastAPI:
     from womblex_ingest.config import Settings
-    from womblex_ingest.embedding import build_text_embedder
     from womblex_ingest.extraction import build_extractor
     from womblex_ingest.storage import S3ObjectStorage
 
@@ -397,35 +163,11 @@ def build_app_from_env() -> FastAPI:
         bucket=settings.bucket,
     )
     extractor = build_extractor(settings.womblex_mode, storage=storage, bucket=settings.bucket)
-    embedder = build_text_embedder(settings.womblex_mode)
-
-    # Wire redline's own store only when a DSN is configured (ADR-0002). The
-    # PostgresChunkStore migrates its `redline_` tables on startup so the first
-    # ingest can project into them; without a DSN the store step is skipped and
-    # the sidecar serves from the shards + JSON seam alone.
-    chunk_store: Optional[ChunkStore] = None
-    if settings.redline_database_url:
-        from womblex_ingest.chunk_store_postgres import PostgresChunkStore
-
-        store = PostgresChunkStore(settings.redline_database_url)
-        store.migrate()
-        chunk_store = store
-
-    # Wire the run trigger only when the engine's queue DSN + store URI are
-    # configured (the second engine seam, architecture §2.1). Absent, the sidecar
-    # is a read-only seam and the /runs routes 503 — a legible misconfiguration,
-    # never a run silently accepted that cannot fire.
-    from womblex_ingest.run_trigger import run_trigger_from_env
-
-    run_trigger = run_trigger_from_env()
 
     return build_app(
         storage=storage,
         extractor=extractor,
         bucket=settings.bucket,
-        embedder=embedder,
         womblex_mode=settings.womblex_mode,
         isaacus_enabled=settings.isaacus_enabled,
-        chunk_store=chunk_store,
-        run_trigger=run_trigger,
     )

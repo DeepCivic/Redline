@@ -11,24 +11,15 @@
 # ship the dev defaults.
 #
 # Profiles:
-#   ingest    — womblex-ingest + minio + redline-postgres (the ingestion path;
-#               an ingest lands the MinIO shards AND projects chunks + embeddings
-#               into the redline_ chunk store — item 1a, ADR-0017/0018)
-#   money     — the money annotation step (run on demand after a womblex run):
-#               stages an evaluation's shards down, runs `womblex money`,
-#               publishes the *.money_spans/*.money_columns siblings back and
-#               loads the spans into redline_money_spans
-#               (`compose --profile money run --rm money --evaluation-id <id>`).
-#               Needs the engine installed, so it builds its own image from the
-#               submodule source (infra/docker/womblex-money.Dockerfile).
+#   ingest    — womblex-ingest + minio (the ingestion path: lands the MinIO
+#               shards and serves the Parquet→JSON extraction read seam)
 #   stage     — one downstream shard stage (chunk / embed / enrich / …), run on
 #               demand after a womblex run has drained: lists the run's shard
 #               prefix, stages a unit down, runs the engine's own `*_shards()`
 #               and publishes the declared siblings back
 #               (`compose --profile stage run --rm stage --stage chunk
 #                 --run-id <runId>`). Ordering between stages is the caller's.
-#               Publishes to object storage only — the money store load is the
-#               `money` profile's job.
+#               Publishes to object storage only.
 #   womblex   — the real womblex engine, built from the ../services/womblex
 #               submodule using ITS OWN Dockerfile and run through ITS OWN cloud
 #               runner (Postgres job queue + scalable `worker`), sharing MinIO.
@@ -37,13 +28,13 @@
 #               image. It publishes EXTRACTION shards under proc/{evaluationId}/;
 #               chunk and embed are separate passes via the `stage` profile.
 #               Scale with `up --scale womblex=4 womblex`.
-#   report    — the report tool surface: redline's seven read ports served as an
+#   report    — the report tool surface: the extraction-reader port served as an
 #               MCP server over streamable HTTP (apps/redline-mcp), for a
-#               report-assembler LLM inside Wayfinder. Shares REDLINE_DATABASE_URL
-#               with the ingest sidecar and reads it read-only. Bring `ingest` up
-#               too if the extraction tools are wanted — the four store-backed
-#               tools need no sidecar.
-#   redline   — redline's own Postgres for the redline_ schema (ADR-0002).
+#               report-assembler LLM inside Wayfinder. Reads one document's
+#               extraction through the sidecar's JSON seam — bring `ingest` up
+#               too so there is a sidecar to read from.
+#   redline   — redline's own Postgres, standalone (not yet wired to anything —
+#               see docs/Redline-Plan.md for when the report domain reclaims it).
 #
 # Usage (Thread 3 exit test):
 #   podman compose -f infra/docker-compose.yml --profile ingest up -d
@@ -73,7 +64,7 @@ services:
     image: docker.io/minio/minio:latest
     # Every profile whose services depend_on minio must list it, or compose
     # rejects the project outright ("depends on undefined service").
-    profiles: ["ingest", "money", "womblex", "womblex-cli", "stage"]
+    profiles: ["ingest", "womblex", "womblex-cli", "stage"]
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
@@ -102,8 +93,6 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-      redline-postgres:
-        condition: service_healthy
     environment:
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
@@ -113,66 +102,8 @@ services:
       # contract). redline's real deployment runs the womblex pod + WOMBLEX_MODE=real.
       WOMBLEX_MODE: ${WOMBLEX_MODE:-stub}
       ISAACUS_API_KEY: ${ISAACUS_API_KEY:-}
-      # redline's own Postgres (ADR-0002). When set, an ingest projects its
-      # chunks + embeddings into the `redline_` chunk store (item 1a) alongside
-      # the MinIO shards, so the cold-start classifier (item 1b) can fetch them
-      # by provenance. Points at the redline-postgres service, which the `ingest`
-      # profile brings up beside the sidecar. Unset it to run shards-only.
-      REDLINE_DATABASE_URL: ${REDLINE_DATABASE_URL:-postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}}
     ports:
       - "8000:8000"
-
-  # ── money annotation step ─────────────────────────────────────────────────
-  # Not part of `womblex run`/`worker`: the money op is offline, API-free and has
-  # no ordering dependency on the pipeline, so it runs ON DEMAND once the fleet
-  # has drained — the same lifecycle as `womblex finalize`. It stages an
-  # evaluation's `*.elements`/`*.table_cells` shards down from object storage,
-  # runs womblex's own `money_shards()`, publishes the two sidecars back beside
-  # them, and lands the spans in `redline_money_spans`. Unlike the read-seam
-  # sidecar above, this needs the engine installed, so it builds its own image.
-  #
-  # The `stage` service below cannot replace this one: `run-stage` publishes
-  # sidecars to object storage and stops, so the load into `redline_money_spans`
-  # has no upstream equivalent. Compute is shared; the store write is redline's.
-  #
-  # Built from the REPO ROOT with infra/docker/womblex-money.Dockerfile because
-  # the image needs both source trees — the engine submodule and the sidecar
-  # package — and installs the engine from the submodule source, the only
-  # installable form womblex has. See that Dockerfile's header.
-  #
-  #   podman compose -f infra/docker-compose.yml --profile money \
-  #     run --rm money --evaluation-id <evaluationId>
-  money:
-    build:
-      context: ..
-      dockerfile: infra/docker/womblex-money.Dockerfile
-    profiles: ["money"]
-    depends_on:
-      minio:
-        condition: service_healthy
-      redline-postgres:
-        condition: service_healthy
-    environment:
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
-      REDLINE_BUCKET: ${REDLINE_BUCKET:-redline}
-      # The `money:` section (vocabulary, vetoes, currency default) is read from
-      # the same config the womblex worker runs with, so redline never restates
-      # the engine's tuning.
-      WOMBLEX_CONFIG: /app/redline-config/redline.yaml
-      # Where the annotated spans land. `redline_money_spans` is created by
-      # redline-adapters' migrations, so this expects a migrated database. Unset
-      # it to publish the sidecars and skip the load — but note the load only
-      # happens as part of this stage, so picking those sidecars up afterwards
-      # means running the stage again (offline and API-free, so cheap).
-      REDLINE_DATABASE_URL: ${REDLINE_DATABASE_URL:-postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}}
-    volumes:
-      # `:z` relabels for SELinux. Lowercase deliberately — three services mount
-      # this same directory, and `:Z` stamps private MCS categories that lock the
-      # other two out.
-      - ./womblex:/app/redline-config:z
-    entrypoint: ["python", "-m", "womblex_ingest.money_stage"]
 
   # ── downstream shard stages (chunk / embed / enrich / …) ──────────────────
   # `womblex run`/`worker` persists EXTRACTION shards only — it computes chunking
@@ -197,8 +128,6 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-      redline-postgres:
-        condition: service_healthy
     environment:
       <<: *womblex-env
     volumes:
@@ -209,21 +138,21 @@ services:
     entrypoint: ["womblex", "run-stage"]
 
   # ── the report tool surface (MCP) ─────────────────────────────────────────
-  # redline's seven read ports served as an MCP server over streamable HTTP, for a
-  # report-assembler LLM running inside Wayfinder. Wayfinder's MCP client speaks
-  # SSE and streamable-HTTP only (no stdio) and addresses servers by URL, so this
-  # is a long-running service with a URL, not a process the fork spawns.
+  # The extraction-reader port served as an MCP server over streamable HTTP, for
+  # a report-assembler LLM running inside Wayfinder. Wayfinder's MCP client
+  # speaks SSE and streamable-HTTP only (no stdio) and addresses servers by URL,
+  # so this is a long-running service with a URL, not a process the fork spawns.
   #
-  # It shares `REDLINE_DATABASE_URL` with the sidecar above — same store, read
-  # only — and reads one document's extraction through the sidecar's JSON seam
-  # rather than linking a Parquet reader of its own.
+  # It reads one document's extraction through the sidecar's JSON seam rather
+  # than linking a Parquet reader of its own — bring the `ingest` profile up
+  # too so there is a sidecar at WOMBLEX_INGEST_URL to read from.
   #
   # Register it in Wayfinder with transport `streamable-http`, url
-  # http://redline-mcp:8930/mcp, and communicatesExternally FALSE: it talks to
-  # redline's own Postgres inside this deployment and sends nothing out, so it is
-  # the self-contained internal utility that flag's `false` branch describes. An
-  # external server is registered but NOT selectable in flows, which would make
-  # the assembler unbuildable.
+  # http://redline-mcp:8930/mcp, and communicatesExternally FALSE: it sends
+  # nothing outside this deployment, so it is the self-contained internal
+  # utility that flag's `false` branch describes. An external server is
+  # registered but NOT selectable in flows, which would make the assembler
+  # unbuildable.
   #
   #   podman compose -f infra/docker-compose.yml --profile report up -d
   redline-mcp:
@@ -231,14 +160,7 @@ services:
       context: ..
       dockerfile: apps/redline-mcp/Dockerfile
     profiles: ["report"]
-    depends_on:
-      redline-postgres:
-        condition: service_healthy
     environment:
-      REDLINE_DATABASE_URL: ${REDLINE_DATABASE_URL:-postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}}
-      # The read seam for elements / chunks / table cells. The sidecar belongs to
-      # the `ingest` profile, so bring both up when the extraction tools are
-      # wanted; the four store-backed tools work without it.
       WOMBLEX_INGEST_URL: ${WOMBLEX_INGEST_URL:-http://womblex-ingest:8000}
       REDLINE_MCP_PORT: "8930"
     ports:
@@ -339,11 +261,12 @@ services:
               "--poll-interval", "5", "--stale-timeout", "900"]
 
   # ── redline's own Postgres (the redline_ schema) ──────────────────────────
-  # redline owns its Postgres, and its tables use the redline_ prefix. Migrations run via the adapters db:migrate script against
-  # DATABASE_URL; the seam stays plain Postgres so a deployment can repoint it.
+  # Standalone for now — nothing in this compose file connects to it. redline's
+  # report domain (definitions/runs/rows/values) re-owns a Postgres in a later
+  # build step; see docs/Redline-Plan.md.
   redline-postgres:
     image: docker.io/library/postgres:16
-    profiles: ["ingest", "money", "redline", "report"]
+    profiles: ["redline"]
     environment:
       POSTGRES_USER: ${REDLINE_DB_USER:-redline}
       POSTGRES_PASSWORD: ${REDLINE_DB_PASSWORD:-redline-dev}

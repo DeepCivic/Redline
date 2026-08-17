@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from womblex_ingest.chunk_store import InMemoryChunkStore, StructureFilter
 from womblex_ingest.main import build_app
 from tests.conftest import FakeObjectStorage, StubExtractor
 
@@ -194,62 +193,13 @@ def test_ingest_marks_run_failed_when_extraction_raises(
     assert storage.keys_under("proc/eval-1/") == []
 
 
-# ── item 1a: an ingest projects chunks + embeddings into redline's store ────
-
-
-def test_ingest_lands_chunk_rows_and_embeddings_in_the_store(
-    storage: FakeObjectStorage, extractor: StubExtractor
-) -> None:
-    # The item-1a exit, wired end-to-end: an ingest lands addressable chunk rows
-    # (with their embeddings, as available data) in redline's own store alongside
-    # the MinIO shards — exact fetch by the stable key returns byte-identical text.
-    store = InMemoryChunkStore()
-    client = TestClient(
-        build_app(storage=storage, extractor=extractor, bucket="redline", chunk_store=store)
-    )
-
-    client.post("/ingest", json={"evaluationId": "eval-1", "documentNames": ["tender.pdf"]})
-
-    (row,) = store.fetch_chunks("eval-1", ["tender.pdf:0"])
-    assert row.text == "chunk"
-    assert row.document_id == "tender.pdf"
-    assert row.embedding is not None  # loaded as available data (ADR-0018 addendum)
-
-    by_structure = store.fetch_by_structure("eval-1", StructureFilter(document_id="tender.pdf"))
-    assert [r.chunk_id for r in by_structure] == ["tender.pdf:0"]
-
-
-def test_ingest_without_a_store_still_writes_shards(
+def test_ingest_writes_shards_without_a_store(
     client: TestClient, storage: FakeObjectStorage
 ) -> None:
-    # The stub / air-gapped lane: no store wired, so the ingest serves purely from
-    # the shards + JSON seam and does not fail for lack of a database.
+    # The stub / air-gapped lane: the ingest serves purely from the shards + JSON
+    # seam.
     response = client.post(
         "/ingest", json={"evaluationId": "eval-2", "documentNames": ["a.pdf"]}
     )
     assert response.status_code == 202
     assert "proc/eval-2/a.pdf.extraction.json" in storage.objects
-
-
-def test_ingest_fails_the_run_when_the_store_load_raises(
-    storage: FakeObjectStorage, extractor: StubExtractor
-) -> None:
-    # A store write failure is a failed run, not a silent skip: the store must not
-    # drift behind the shards, because projecting into it is the point of the stage.
-    class BrokenStore(InMemoryChunkStore):
-        def upsert_chunks(self, evaluation_id, rows):  # type: ignore[override]
-            raise RuntimeError("redline_ store unreachable")
-
-    client = TestClient(
-        build_app(storage=storage, extractor=extractor, bucket="redline", chunk_store=BrokenStore())
-    )
-
-    response = client.post(
-        "/ingest", json={"evaluationId": "eval-3", "documentNames": ["a.pdf"]}
-    )
-
-    assert response.status_code == 502
-    body = response.json()
-    assert body["error"]["code"] == "INFRA_FAILURE"
-    status = client.get(f"/status/{body['runId']}").json()
-    assert status["status"] == "failed"

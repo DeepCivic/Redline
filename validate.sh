@@ -102,14 +102,6 @@ run_ws_check "lint" "pnpm lint"
 section "3. pnpm test (@redline/*)"
 run_ws_check "tests" "pnpm test"
 
-# Wayfinder is an optional dependency (ADR-0012): the suite runs without it, but
-# the drift check that re-derives the frozen @rbrasier/domain contract can only
-# run when the tree is vendored. Say so rather than let a green run imply the
-# contract was verified. CI sets REQUIRE_WAYFINDER=1, which makes absence fail.
-if [ ! -d "$ROOT/vendor/wayfinder/packages/domain" ]; then
-  warn "no vendor/wayfinder — the Wayfinder contract drift check SKIPPED (run scripts/vendor-wayfinder.sh)"
-fi
-
 # ── 4. redline-domain purity (zero external imports, relative only) ─────────────
 section "4. packages/redline-domain has no non-relative imports"
 DOMAIN_LEAKS=$(grep -rnE "from ['\"][^.]" packages/redline-domain/src \
@@ -120,24 +112,9 @@ if [ -z "$DOMAIN_LEAKS" ]; then pass "redline-domain purity"; else
   fail "redline-domain purity — non-relative imports found:"; echo "$DOMAIN_LEAKS"
 fi
 
-# ── 5. Wayfinder tree untouched ──────────────────────────────────────────────
-# We must never *commit* a copy of Wayfinder into this repo. The tree may exist
-# on disk at build time (CI materialises it via scripts/vendor-wayfinder.sh; the
-# Podman harness uses its own scratch copy), but it must stay untracked — .gitignore
-# excludes vendor/. This checks what git tracks, not what's on disk.
-section "5. vendor/wayfinder not committed into this repo"
-if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  TRACKED_WAYFINDER=$(git ls-files -- 'vendor/wayfinder/**' 2>/dev/null)
-  if [ -z "$TRACKED_WAYFINDER" ]; then pass "no committed Wayfinder source"; else
-    fail "vendor/wayfinder is tracked in git — it must be materialised at build time, never committed:"
-    echo "$TRACKED_WAYFINDER" | head
-  fi
-elif [ -d vendor/wayfinder ] && [ -n "$(find vendor/wayfinder -type f 2>/dev/null | head -1)" ]; then
-  # No git available: fall back to the filesystem heuristic.
-  fail "vendor/wayfinder contains files and git is unavailable to verify it is untracked"
-else
-  pass "no committed Wayfinder source"
-fi
+# Checks 5 and 10 (Wayfinder vendoring / lockfile-resolved-against-vendor) are
+# retired: they policed scripts/vendor-wayfinder.sh materialising vendor/wayfinder,
+# and that script no longer exists — there is nothing left to vendor.
 
 # ── 6. DB table naming (redline_ prefix) ────────────────────────────────────────
 section "6. all Drizzle tables match ^redline_[a-z_]+\$"
@@ -202,38 +179,6 @@ else
   find services/womblex-ingest -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
-# ── 10. pnpm-lock.yaml was resolved against the vendored Wayfinder tree ──────
-# pnpm-workspace.yaml globs vendor/wayfinder/packages/* into the workspace, but
-# vendor/ is never committed (check #5) — so the lockfile is a function of state
-# that is deliberately absent from the repo. `pnpm install` WITHOUT vendoring
-# first silently drops the vendor/wayfinder/packages/domain importer and flips its
-# transitive deps to `optional`; committing that fails CI's --frozen-lockfile
-# install for a reason that has nothing to do with the change under review.
-#
-# The invariant is the lockfile's *content*, not its git status: a legitimate
-# dependency bump may rewrite it freely, so long as it was resolved with the tree
-# vendored. Fix by materialising Wayfinder and re-installing:
-#   scripts/vendor-wayfinder.sh && pnpm install
-# then `git checkout -- pnpm-lock.yaml` if you only meant to install.
-# Scoped to a lockfile that BOTH lacks the importer AND differs from HEAD, so it
-# fires on the rewrite and not on a repo that legitimately carries no Wayfinder
-# importer at all. ADR-0012's "green without Wayfinder" therefore still holds for
-# a clean clone — right up until an unvendored install rewrites the lockfile,
-# which is precisely the state that must not be committed.
-section "10. pnpm-lock.yaml was not rewritten by an unvendored install"
-LOCKFILE_IMPORTER='^  vendor/wayfinder/packages/[a-z-]+:'
-if [ ! -f pnpm-lock.yaml ]; then
-  skip "lockfile — no pnpm-lock.yaml"
-elif grep -qE "$LOCKFILE_IMPORTER" pnpm-lock.yaml; then
-  pass "lockfile resolved against the vendored tree"
-elif ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  skip "lockfile — git unavailable to compare against HEAD"
-elif git diff --quiet -- pnpm-lock.yaml 2>/dev/null; then
-  pass "lockfile has no Wayfinder importer, but matches HEAD — not a local rewrite"
-else
-  fail "pnpm-lock.yaml was rewritten without the vendored Wayfinder tree (the vendor/wayfinder importer is gone). Do not commit it: run 'git checkout -- pnpm-lock.yaml', or vendor first ('scripts/vendor-wayfinder.sh && pnpm install') if you meant to change dependencies"
-fi
-
 # ── 11. Python lint (ruff) over redline's own Python ─────────────────────────
 # The Python half of check #2's lint pass. Rules and exclusions live in ruff.toml
 # at the root — including the two upstream submodules, which we never modify
@@ -268,9 +213,8 @@ fi
 # checkout is on the fork's `main` branch commit the superproject
 # records — redline's mount lives on johntooth/wayfinder's `main`.
 #
-# This is the only Wayfinder pin redline has. The gitlink alone fixes both the
-# runtime mount and the vendored build-time tree (scripts/vendor-wayfinder.sh
-# copies out of this checkout), so there is no second ref that can drift from it.
+# This is the only Wayfinder pin redline has. The gitlink alone fixes the
+# runtime mount, so there is no second ref that can drift from it.
 #
 # The check once also asserted the fork's `main` had not diverged from
 # rbrasier's — protecting a clean upstreaming diff. redline builds and runs
@@ -320,25 +264,9 @@ else
   fi
 fi
 
-# ── 13. the run-capable sidecar builds with the isaacus extra ────────────────
-# The money image installs the engine WITHOUT `isaacus` on purpose — the money op
-# is offline. infra/docker-compose.run-sidecar.yml reuses that image to serve the
-# run trigger, which drives chunk/embed/enrich, and `isaacus_available()` tests
-# the SDK before the key. Built on the default extras, that sidecar fails every
-# run at the chunk stage while holding a valid ISAACUS_API_KEY and reporting
-# itself healthy. Static because the alternative is a 7 GB image build: this
-# reads the two lines that have to agree.
-section "13. run-sidecar builds the engine with the isaacus extra"
-RUN_SIDECAR_COMPOSE=infra/docker-compose.run-sidecar.yml
-if [ ! -f "$RUN_SIDECAR_COMPOSE" ]; then
-  skip "run-sidecar extras — $RUN_SIDECAR_COMPOSE not present"
-elif ! grep -qE '^\s*ARG EXTRAS=' infra/docker/womblex-money.Dockerfile 2>/dev/null; then
-  fail "infra/docker/womblex-money.Dockerfile hardcodes its engine extras — declare 'ARG EXTRAS=cloud' and install \"./womblex-engine[\${EXTRAS}]\" so the run sidecar can opt into isaacus"
-elif ! grep -qE 'EXTRAS:.*isaacus' "$RUN_SIDECAR_COMPOSE"; then
-  fail "$RUN_SIDECAR_COMPOSE does not pass the isaacus extra — add 'args: {EXTRAS: cloud,isaacus}' to womblex-run-sidecar's build, or its runs fail at the chunk stage with a valid key set"
-else
-  pass "run-sidecar builds the engine with the isaacus extra"
-fi
+# Check 13 (run-sidecar isaacus extras) is retired: it policed
+# infra/docker-compose.run-sidecar.yml and infra/docker/womblex-money.Dockerfile,
+# both removed — the run trigger and the money image they served are gone.
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo; echo "──────────────────────────────────────────"

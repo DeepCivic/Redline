@@ -30,7 +30,6 @@ const main = async (): Promise<number> => {
   });
 
   await server.close();
-  await container.database.$client.end();
   return 0;
 };
 

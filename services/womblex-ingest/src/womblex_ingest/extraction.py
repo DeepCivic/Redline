@@ -23,19 +23,10 @@ from typing import List, Optional, Protocol
 
 from womblex_ingest.records import (
     ChunkRecord,
-    DocumentEmbeddings,
     DocumentExtraction,
     ElementRecord,
-    EmbeddingRecord,
     TableCellRecord,
-    make_document_embeddings,
 )
-
-# The stub's embedding space. Small enough that a fixture stays readable, and
-# named so a consumer can tell stub vectors from a real model's at the seam —
-# vectors from different models are incomparable (ADR-0014).
-STUB_EMBEDDING_MODEL = "stub-deterministic-v1"
-STUB_EMBEDDING_DIMENSIONS = 8
 
 
 @dataclass(frozen=True)
@@ -59,10 +50,6 @@ class ExtractionResult:
     # boundary serves to the TS adapter (Thread 4 decision #2); the Parquet
     # `shards` remain the durable MinIO record.
     documents: List[DocumentExtraction] = field(default_factory=list)
-    # The embeddings sibling (ADR-0014). Empty when the embed stage did not run,
-    # which is a legitimate outcome, not a failure: the extraction still serves
-    # and only the embeddings resource reports NOT_FOUND.
-    embeddings: List[DocumentEmbeddings] = field(default_factory=list)
 
 
 class Extractor(Protocol):
@@ -98,7 +85,6 @@ class StubWomblexExtractor:
             )
         ]
         documents: List[DocumentExtraction] = []
-        embeddings: List[DocumentEmbeddings] = []
         for name in document_names:
             shards.append(
                 Shard(
@@ -106,50 +92,12 @@ class StubWomblexExtractor:
                     body=self._deterministic_body("elements", evaluation_id, [name]),
                 )
             )
-            document = self._document(evaluation_id, name)
-            documents.append(document)
-            shards.append(
-                Shard(
-                    filename=f"{name}.embeddings.parquet",
-                    body=self._deterministic_body("embeddings", evaluation_id, [name]),
-                )
-            )
-            embeddings.append(self._embeddings(document))
+            documents.append(self._document(evaluation_id, name))
         return ExtractionResult(
             document_count=len(document_names),
             shards=shards,
             documents=documents,
-            embeddings=embeddings,
         )
-
-    def _embeddings(self, document: DocumentExtraction) -> DocumentEmbeddings:
-        """One deterministic vector per chunk, joined on the chunk's own id.
-
-        Derived from `chunkId` so the same chunk always embeds to the same
-        vector — the content-addressed property the lens relies on — and so a
-        fixture captured from this stub is stable across runs.
-        """
-        return make_document_embeddings(
-            document_id=document.documentId,
-            model=STUB_EMBEDDING_MODEL,
-            vectors=[
-                EmbeddingRecord(
-                    chunkId=chunk.chunkId,
-                    chunkIndex=index,
-                    values=self._deterministic_vector(chunk.chunkId),
-                )
-                for index, chunk in enumerate(document.chunks)
-            ],
-        )
-
-    @staticmethod
-    def _deterministic_vector(chunk_id: str) -> List[float]:
-        # Chunk and query vectors share one hashing scheme so they share a space
-        # (embedding.py). The chunk keys on its id, a query on its text; both go
-        # through `embedding|{key}`, so this reproduces the pre-20a bytes exactly.
-        from womblex_ingest.embedding import _deterministic_vector
-
-        return _deterministic_vector(chunk_id, STUB_EMBEDDING_DIMENSIONS)
 
     def _document(self, evaluation_id: str, name: str) -> DocumentExtraction:
         """A deterministic read model whose documentId is a stable `source_hash`.

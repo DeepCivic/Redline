@@ -54,16 +54,27 @@ User defines report columns. Each column has:
 §5.1 "What a report is", whose narrative-sections definition is replaced by the
 column/row grid above. §10 itemises what is left to remove.
 
-**The repo does not build.** Three scope cuts in two days (`a018a2a`, `2b7531d`,
-`59d4156`) removed the Evaluation surface, the corpus control plane, the materialised
-store and the sheet renderer — *whole files only*, by design. Dangling barrels, an MCP
-container wiring deleted adapters, a sidecar `main.py` importing deleted modules, four
-stale manifests and four `validate.sh` checks with no subject are what is left. This is
-a recorded mid-cut state, not a regression to bisect. Repairing it is **build step 0**,
-not separate work.
+**The repo builds again (2026-08-17).** Three scope cuts in two days (`a018a2a`,
+`2b7531d`, `59d4156`) removed the Evaluation surface, the corpus control plane, the
+materialised store and the sheet renderer — *whole files only*, by design — and left
+dangling barrels, an MCP container wiring deleted adapters, a sidecar `main.py`
+importing deleted modules, stale manifests and dead `validate.sh` checks behind. Build
+step 0a repaired all of it, but **not** the way originally scoped below (§9 0a's text
+is left as the historical record of that scoping; see the decision row and the rewritten
+0a outcome). `./validate.sh` is green.
+
+**The seven deleted port contracts were not restored.** They were written before any
+redline session had read a real womblex corpus, and restoring them verbatim would carry
+that same guesswork forward under a green build that looks more finished than it is.
+`report-tools.ts` was trimmed to the three tools its one surviving port
+(`IProcurementExtractionReader`) actually backs — `fetch_chunks`,
+`fetch_chunks_by_structure`, both money-span fetches and all three graph tools are
+**gone**, not stubbed. §3.1 and §9 step 4 are rewritten to match. Redesigning the
+chunk-store/money-span-store/graph-store contracts is **step 1**, and step 1 cannot
+start until the user has supplied a real Womblex corpus sample — see the new step 0c.
 
 **What survived is more useful than it looks.** `apps/redline-mcp/src/lib/report-tools.ts`
-still holds all ten tools — see §3.
+still holds the three extraction-reader tools — see §3.
 
 ### Decisions taken 2026-08-16
 
@@ -82,6 +93,8 @@ still holds all ten tools — see §3.
 | Interactive review grid | **Cut.** Replaced by a read-only sample table in the fork; no in-app approval workflow. The export is the review surface |
 | Graph overlay | **Kept, narrowed to an extraction aid.** `graph_find_entities`/`graph_edges_from`/`graph_edges_to` for entity resolution and one-hop lookup only; graph output is a navigation pointer, never evidence — every value still cites a chunk |
 | Constraints | **`financial` and `date` only for v1.** `regex` and `enum` deferred to a later version |
+| Build step 0a scope | **Trash removal only — the seven deleted port contracts are not restored.** They were designed without a real womblex corpus to check them against; restoring them verbatim would launder that guesswork through a green build. `report-tools.ts` is trimmed to the three tools its surviving port backs, not stubbed back to ten |
+| How step 1 gets unblocked | **The user supplies a real Womblex corpus sample.** New step 0c. The chunk/money-span/graph contracts, and the sidecar routes that back them, are designed against what a real `womblex run` actually writes — not re-derived from the deleted TypeScript a second time |
 
 ## 1.1 v1 scope: retrieval is point-only
 
@@ -160,27 +173,32 @@ surviving `IProcurementExtractionReader`
 | Read seam | `services/womblex-ingest` | Parquet → JSON. **Grows** run-scoped routes for documents, chunks, graph and money spans |
 | Ports + types | `packages/redline-domain` | the §2 types, `IExtractionModel`, the corpus read ports |
 | Implementations | `packages/redline-adapters` | Drizzle stores, the LLM client, sidecar HTTP readers |
-| Tool surface | `apps/redline-mcp` | the ten tools, re-pointed at the sidecar |
+| Tool surface | `apps/redline-mcp` | three extraction tools today; seven more rebuilt in step 4 against step 1's fresh contracts |
 | Engine process | `apps/redline-report` (**new**) | the per-document loop; the HTTP API the fork calls |
 | UI | `services/wayfinder` (fork) | column editor, document picker, run + progress, read-only sample table, export |
 
-### 3.1 The large reuse: the tools already exist
+### 3.1 What's left, and what step 4 rebuilds
 
-`apps/redline-mcp/src/lib/report-tools.ts` (416 lines) still defines all ten tools:
+`apps/redline-mcp/src/lib/report-tools.ts` held all ten tools through 2026-08-16, but
+0a (2026-08-17) deleted seven of them along with the ports they read — not just their
+implementations, the tool definitions themselves — because those ports were Drizzle
+readers over a schema this plan does not restore verbatim (see the 0a rewrite in §9).
+What remains today:
+
+- `read_extraction_elements`, `read_extraction_chunks`, `read_extraction_table_cells`
+  — backed by `IProcurementExtractionReader`, the one port that survived 0a intact.
+
+Deleted, to be rebuilt in step 4 against the fresh contracts step 1 designs:
 
 - `fetch_chunks`, `fetch_chunks_by_structure`
 - `fetch_money_spans_by_document`, `fetch_money_spans_by_structure`
-- `read_extraction_elements`, `read_extraction_chunks`, `read_extraction_table_cells`
 - `graph_find_entities`, `graph_edges_from`, `graph_edges_to`
 
-They fail to compile only because the **ports behind them** were deleted — seven were
-Drizzle readers over the removed schema. The tool shapes, their descriptions, their
-stable-ordering contract and the `graphAvailable: false` disambiguation (an empty
-traversal over a real graph versus no graph loaded) are all intact and all correct for
-this plan. They are exactly the chunk/structure/money-span fetch tools and the
-entity-resolution graph lookups the product statement asks for.
-
-**They need re-pointing at the sidecar, not redesigning.** Budget step 4 accordingly.
+Their old shapes (descriptions, the stable-ordering contract, the `graphAvailable: false`
+disambiguation between an empty traversal over a real graph and no graph loaded) are a
+useful reference for what the product statement needs each tool to do, but not a
+contract to restore verbatim — the 0c corpus sample is what step 1 checks the redesigned
+shapes against.
 
 ### 3.2 One tool surface, two mounts
 
@@ -286,7 +304,10 @@ Neither deleted writer emitted CSV — both went straight to `.xlsx` via
    run-scoped**, and the existing one must be fixed. No report row is trustworthy until
    it is — a document silently doubled produces doubled evidence and plausible,
    wrong values.
-2. **The tree does not build** (§0). Build step 0.
+2. ~~The tree does not build~~ **Resolved 2026-08-17** (§0, build step 0a) — `./validate.sh`
+   is green. Resolved by deletion, not restoration: the seven corpus-read ports and seven
+   of the ten report tools are gone, pending the redesign step 1 does once step 0c lands
+   a real corpus sample.
 3. **The fork half is unlanded.** The gitlink is stale at `5d236db1`. `validate.sh` #12
    *skips* while the submodule is unpopulated and only bites once it is initialised —
    so a green-looking run on a fresh clone proves nothing about the pin. Two prior fork
@@ -301,8 +322,15 @@ Neither deleted writer emitted CSV — both went straight to `.xlsx` via
 One commit each, tests-first, **≤500 changed lines**, with an explicit exit test. A step
 whose exit test joins two independently-testable behaviours is two steps.
 
-0a. **Remediate to green.** `delivery-plan.md` is deleted, so its §0.3 list is inlined
-    here rather than cited (`git show 333e6d1:docs/delivery-plan.md` for the original):
+0a. ~~**Remediate to green (verbatim restoration).**~~ **Superseded 2026-08-17, landed as
+    trash removal instead.** The text below is kept as the historical record of how this
+    step was originally scoped, not as what shipped — see the decision row above.
+
+    <details>
+    <summary>Original scoping (not what landed)</summary>
+
+    `delivery-plan.md` is deleted, so its §0.3 list is inlined here rather than cited
+    (`git show 333e6d1:docs/delivery-plan.md` for the original):
 
     - **Domain barrel** — dangling `export *` for seven deleted ports.
     - **Adapters barrel** — dangling exports at the run-trigger, money-span, chunk-store,
@@ -328,23 +356,67 @@ whose exit test joins two independently-testable behaviours is two steps.
     - **Infra** — the `ingest` / `money` / `stage` / `redline` compose profiles; `report`
       is the profile that describes the stack.
 
-    **Three items in the original §0.3 are overridden and must not be carried across.**
-    Its item 3 trimmed `report-tools.ts` to three tools and deleted seven — §3.1 keeps all
-    ten and re-points them, so the trim is reversed. Its item 7 dropped `drizzle-orm`,
-    `postgres`, `drizzle-kit`, `@electric-sql/pglite` and the `db:*` scripts — step 2
-    needs them, so they **stay**. Its item 8 retired `validate.sh` #6 (Drizzle table
-    naming) — step 2 makes it live again, so **#6 and #12 stay**.
-    _Exit: `./validate.sh` green._
+    Three items in the original §0.3 were to be overridden and not carried across: its
+    item 3 trimmed `report-tools.ts` to three tools and deleted seven — this doc's §3.1
+    said keep all ten and re-point them. Its item 7 dropped `drizzle-orm`, `postgres`,
+    `drizzle-kit`, `@electric-sql/pglite` and the `db:*` scripts for step 2 to reinstate.
+    Its item 8 retired `validate.sh` #6 (Drizzle table naming) for step 2 to make live
+    again.
+    </details>
+
+    **What actually landed:** pure deletion, nothing restored. The domain and adapters
+    barrels were trimmed to export only what still exists — `redline-domain` now carries
+    just `IProcurementExtractionReader`; `redline-adapters` just `WomblexExtractionReader`.
+    `report-tools.ts` was trimmed to the three tools that port backs
+    (`read_extraction_elements/chunks/table_cells`) — `fetch_chunks`,
+    `fetch_chunks_by_structure`, both money-span fetches and all three graph tools are
+    **deleted**, not stubbed, along with their tests. `container.ts` dropped its
+    `REDLINE_DATABASE_URL` requirement and all Drizzle wiring — nothing in `redline-mcp`
+    touches Postgres any more. Sidecar `main.py`/`records.py`/`extraction.py`/
+    `shard_reader.py`/`real_extractor.py`/`config.py` had every reference to the deleted
+    `chunk_store`/`embedding`/`run_trigger`/`money_span_store` modules removed (the
+    embeddings/query-embedding capability chained through five files via a module that no
+    longer existed) — kept to `/health`, `/ingest` (shards + JSON extraction, no store
+    projection), `/status`, `/extractions`. Manifests, `drizzle.config.ts`, the
+    `pnpm-workspace.yaml` vendor glob, `validate.sh` #5/#10/#13, the orphaned
+    `infra/docker-compose.run-sidecar.yml`, and the broken `infra/docker/
+    womblex-money.Dockerfile` reference in `infra/docker-compose.yml`'s `money`/`stage`
+    services were all removed rather than repaired, since nothing implemented what they
+    configured. `.github/workflows/ci.yml` had the same rot (a `scripts/vendor-wayfinder.sh`
+    step that would fail every run) and was fixed alongside.
+
+    Why not restore verbatim: the seven contracts were authored before any redline
+    session had read a real womblex corpus. A green build over restored-but-unverified
+    shapes would look more finished than the store actually is. Redesigning them against
+    real data is step 1, gated on step 0c.
+    _Exit: `./validate.sh` green — met 2026-08-17, without restoring the seven ports._
 0b. **Legacy removal.** The full §10 itinerary (docs, code, config) — its own commit
     (or several, one per §10 subsection, if the diff runs past the ≤500-line cap on a
     single one), separate from 0a because a green build and a clean tree are two
-    independently-testable outcomes.
+    independently-testable outcomes. Still outstanding — 0a landed as trash removal, not
+    the full §10 sweep; `docs/architecture.md` and the other §10 documents are still
+    present.
     _Exit: every path listed in §10 is gone and no reference to a removed symbol
     remains (`grep` clean for each removed export/route/profile)._
-1. **Report domain.** The §2 types, `IExtractionModel`'s signature, and the report ports
-   — no `summaryGeneration` column flag, no `generated` status. Renames
-   `evaluationId` → `corpusId` across the seven corpus-read ports 0a restored.
-   _Exit: a conformance fake satisfies every port; Result shape holds at each boundary._
+0c. **Sample corpus handoff.** The user supplies a real Womblex corpus — documents staged
+    through the engine and drained at least through `chunk` (further through `enrich` and
+    `money` if graph/financial contracts are to be designed against real spans too), so
+    its actual Parquet shards (`manifest.parquet`, `CHUNKS_SCHEMA`, `GRAPH_EDGE_SCHEMA` +
+    `ENTITY_SCHEMA`, `MONEY_SPANS_SCHEMA`) are on disk or in object storage where a
+    session can read them. This is not optional groundwork: it is what step 1 designs
+    the seven port contracts *against*, replacing the deleted, never-verified shapes 0a
+    declined to restore. No contract work starts without it.
+    _Exit: a named corpus location (path or bucket prefix) with at least the `chunk`
+    stage's shards present, that a session can point a schema-design pass at._
+1. **Report domain.** The §2 types, `IExtractionModel`'s signature, and the report ports.
+   The seven corpus-read ports removed in 0a (chunk-store, money-span-store, graph-store,
+   staged-corpus-reader/writer, womblex-run-trigger, run-config-override) are **designed
+   fresh against the 0c corpus sample**, not restored from git — their prior shapes are
+   history, not a starting draft. No `summaryGeneration` column flag, no `generated`
+   status. `evaluationId` → `corpusId` is the naming convention for every new port, not a
+   rename of anything that still exists.
+   _Exit: a conformance fake satisfies every port, each checked against the 0c sample's
+   actual schema; Result shape holds at each boundary._
 2. **Persistence.** redline Postgres schema + forward-only migration `0000` +
    Drizzle stores for definitions, runs, rows and values. `redline_` prefix, snake_case.
    _Exit: a definition and a run round-trip; a re-applied migration is a no-op._
@@ -354,8 +426,11 @@ whose exit test joins two independently-testable behaviours is two steps.
    `has_redaction`, `page_start`, `page_end`, `elem_order`), graph (`ENTITY_SCHEMA` +
    `GRAPH_EDGE_SCHEMA`), money spans (`MONEY_SPANS_SCHEMA`). Fixes blocker 1.
    _Exit: a corpus with two runs serves each document once, from the named run._
-4. **Sidecar-backed adapters + in-process tools** replacing the deleted Drizzle readers;
-   re-point the seven affected tools, graph included.
+4. **Sidecar-backed adapters + in-process tools** implementing the ports step 1 designed.
+   The seven `report-tools.ts` tools 0a deleted (`fetch_chunks`,
+   `fetch_chunks_by_structure`, both money-span fetches, all three graph tools) are
+   **rebuilt against the step 1 contracts**, not "re-pointed" — there is nothing left
+   pointing anywhere.
    _Exit: all ten tools answer against a sidecar fixture, ordering stable; graph tools
    resolve entities and one-hop edges only._
 5. **The `IExtractionModel` seam** and its three rejection rules.

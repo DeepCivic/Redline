@@ -9,17 +9,13 @@ Parquet-decode + storage-read side of the binding is covered by
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
-from womblex_ingest.records import DocumentEmbeddings
 from womblex_ingest.shard_reader import (
     ShardRows,
     ShardSchemaError,
     group_rows_by_document,
     map_chunk,
-    map_document_embeddings,
     map_document_extraction,
     map_element,
     map_table_cell,
@@ -363,61 +359,6 @@ def test_extraction_maps_every_element_including_non_text_kinds() -> None:
     assert extraction.tableCells[0].isCurrency is True
 
 
-def test_embeddings_join_chunks_and_declare_the_model() -> None:
-    rows = ShardRows(
-        source_hash=SOURCE_HASH,
-        elements=[{"elem_order": 0, "text": "e"}],
-        chunks=[{"chunk_index": 0, "text": "c0"}, {"chunk_index": 1, "text": "c1"}],
-        embeddings=[
-            {"chunk_index": 1, "embedding": [0.4, 0.3]},
-            {"chunk_index": 0, "embedding": [0.1, 0.2]},
-        ],
-        model="kanon-2-embedder",
-    )
-
-    embeddings = map_document_embeddings(rows)
-
-    assert isinstance(embeddings, DocumentEmbeddings)
-    assert embeddings.model == "kanon-2-embedder"
-    assert embeddings.dimensions == 2
-    # Ordered by chunk_index, joinable on (source_hash, chunk_index).
-    assert [(v.chunkId, v.chunkIndex) for v in embeddings.vectors] == [
-        (f"{SOURCE_HASH}:0", 0),
-        (f"{SOURCE_HASH}:1", 1),
-    ]
-    for vector in embeddings.vectors:
-        assert math.isclose(math.sqrt(sum(x * x for x in vector.values)), 1.0, rel_tol=1e-9)
-
-
-def test_absent_embed_stage_maps_to_none_not_an_empty_payload() -> None:
-    # A document with no *.embeddings.parquet is the NOT_FOUND path (ADR-0014),
-    # never an empty DocumentEmbeddings.
-    rows = ShardRows(
-        source_hash=SOURCE_HASH,
-        elements=[{"elem_order": 0, "text": "e"}],
-        chunks=[{"chunk_index": 0, "text": "c"}],
-        embeddings=[],
-        model=None,
-    )
-
-    assert map_document_embeddings(rows) is None
-
-
-def test_embeddings_without_a_declared_model_are_refused() -> None:
-    # Vectors a consumer cannot confirm are in the query's space are worse than
-    # absent ones: refuse at the seam rather than rank noise downstream.
-    rows = ShardRows(
-        source_hash=SOURCE_HASH,
-        elements=[{"elem_order": 0, "text": "e"}],
-        chunks=[{"chunk_index": 0, "text": "c"}],
-        embeddings=[{"chunk_index": 0, "embedding": [0.1, 0.2]}],
-        model=None,
-    )
-
-    with pytest.raises(ShardSchemaError):
-        map_document_embeddings(rows)
-
-
 def test_group_rows_fans_batched_shards_out_per_source_hash() -> None:
     other = "aaaa000011112222"
     documents = group_rows_by_document(
@@ -430,26 +371,17 @@ def test_group_rows_fans_batched_shards_out_per_source_hash() -> None:
             {"source_hash": other, "chunk_index": 0, "text": "cb"},
         ],
         table_cells=[],
-        embeddings=[{"source_hash": SOURCE_HASH, "chunk_index": 0, "embedding": [1.0]}],
-        models_by_source_hash={SOURCE_HASH: "kanon-2-embedder"},
     )
 
     by_hash = {rows.source_hash: rows for rows in documents}
     assert set(by_hash) == {SOURCE_HASH, other}
-    # Only the document that appeared in the embeddings shard carries a model.
-    assert by_hash[SOURCE_HASH].model == "kanon-2-embedder"
-    assert by_hash[other].model is None
-    assert len(by_hash[other].embeddings) == 0
 
 
-def test_group_rows_ignores_orphan_vectors_with_no_structural_content() -> None:
-    # An embedding with no element/chunk to attach to is not a document we serve.
+def test_group_rows_ignores_documents_with_no_structural_content() -> None:
     documents = group_rows_by_document(
         elements=[],
         chunks=[],
-        table_cells=[],
-        embeddings=[{"source_hash": SOURCE_HASH, "chunk_index": 0, "embedding": [1.0]}],
-        models_by_source_hash={SOURCE_HASH: "kanon-2-embedder"},
+        table_cells=[{"source_hash": SOURCE_HASH, "parent_elem_order": 0, "row": 0, "col": 0, "value": "x"}],
     )
 
     assert documents == []

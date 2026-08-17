@@ -6,9 +6,6 @@
       "path": "./packages/redline-domain"
     },
     {
-      "path": "./packages/redline-shared"
-    },
-    {
       "path": "./packages/redline-adapters"
     }
   ]
