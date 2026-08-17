@@ -22,7 +22,7 @@
 # credential, so `uat-local` gets you as far as the embed stage and no further.
 #
 # Requires: the submodule checked out (`git submodule update --init`) and podman
-# (or docker) with compose. Uses the redline-owned stack only (ADR-0002).
+# (or docker) with compose. Uses the redline-owned stack only.
 #
 # Usage:
 #   scripts/womblex-engine-smoke.sh

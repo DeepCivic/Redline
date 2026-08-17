@@ -31,7 +31,7 @@ run `./validate.sh` and fix all failures before declaring done.
 | Anything else                                                    | Answer directly |
 
 Planning new work is not its own skill: add or refine the item directly in
-`docs/delivery-plan.md` (§2/§3) against the build-step contract in §1 — one build
+`docs/Redline-Plan.md` §9 against the build-step contract there — one build
 step including its test, one commit, one package where possible, an explicit
 `_Exit: …_` test — then route to `/doc-review`. Split the item if its exit test
 joins two independently-testable behaviours, spans two languages, or introduces a
@@ -49,23 +49,25 @@ rather than shipped. Wording is not what it catches; claims are.
 
 This repo implements **redline**, a **corpus-ingest-and-report substrate** for
 **Wayfinder**. A specialist stages a corpus, the womblex engine processes it, and
-the chunks, graph, money-spans and extraction JSON that run lands serve two
-consumers: the fork's Create Corpus UI and `apps/redline-mcp`'s report tools.
+a per-document report extraction engine reads the chunks, graph and money spans
+that run lands to fill in user-defined report columns — see
+[`docs/Redline-Plan.md`](../docs/Redline-Plan.md) for the product statement.
 
 **Nothing here models a judgement over a corpus.** The Evaluation aggregate and
 the comprehension lens were removed on 2026-08-15; interpreting what a run landed
-belongs to a consumer, above the store. See `docs/design-principles.md` §2 — a
-re-entry is a new design, not a restoration.
+belongs to a consumer, above the store — the report engine reads rows, it does
+not decide what they mean beyond the constraint rules the plan states.
 
 Our own packages live under `@redline/*` in `packages/`. Wayfinder is consumed
 read-only under `@rbrasier/*` — the package scope the fork inherits, not a
-pointer at rbrasier's repo. Two documents govern:
-[`docs/architecture.md`](../docs/architecture.md) is what redline **is**, and
-[`docs/delivery-plan.md`](../docs/delivery-plan.md) is what is **left to build**.
-[`docs/design-principles.md`](../docs/design-principles.md) holds the durable
-adopted principles and non-goals. The delivery plan tracks outstanding work only; it does not restate
-design, and its item numbers are local to that file and renumbered whenever the
-outstanding set changes.
+pointer at rbrasier's repo. One document governs:
+[`docs/Redline-Plan.md`](../docs/Redline-Plan.md) is both the product statement
+(what redline delivers) and the delivery detail (data model, architecture, build
+steps §9 and their exit tests) — it superseded the former `architecture.md` /
+`delivery-plan.md` / `design-principles.md` split on 2026-08-17. Outstanding
+build steps are tracked in §9 only; a completed step is removed from it, its
+reasoning left in git history, and its item numbers are local to that section
+and renumbered whenever the outstanding set changes.
 
 Both upstreams are **git submodules** consumed for their existing capabilities,
 not reimplemented: `services/womblex` and the Wayfinder fork `services/wayfinder`
@@ -75,10 +77,7 @@ redline's own code sits beside it (`services/womblex-ingest`). Run
 
 **The gitlink is the only pin.** Each submodule tracks its upstream's latest
 `main`, and no SHA or version is restated anywhere else — bumping one is one
-edit. Wayfinder's `@rbrasier/domain` is copied out of `services/wayfinder` into
-`vendor/wayfinder` at build time (`scripts/vendor-wayfinder.sh`) because the pnpm
-workspace glob would otherwise absorb the fork's whole package set; that copy is
-a filter on what is vendored, not a second pin.
+edit.
 
 Publishing target: the **DeepCivic** org (not johntooth).
 
@@ -102,19 +101,15 @@ Enforced by `validate.sh` and ESLint — skills that write code must respect the
   `lib/container.ts`.
 - All port interfaces use the **Result pattern**: `{ data: T } | { error: DomainError }`.
   Never throw across boundaries.
-- DB tables use the **`redline_` prefix** in a separate Postgres schema/DB. Columns
-  are snake_case. The four surviving tables mirror what the womblex sidecar's load
-  path writes, so they follow **its** DDL rather than the id/created_at/updated_at
-  convention — the schema is the sidecar's wire contract, not redline's choice.
+- DB tables use the **`redline_` prefix** in a separate Postgres schema/DB, columns
+  snake_case. There is no schema today — redline's Postgres was removed with the
+  Evaluation surface; the report domain (definitions/runs/rows/values) re-owns it
+  at build step 2 (`docs/Redline-Plan.md` §9).
 - Migrations are **forward-only**, and every file is `IF NOT EXISTS`-guarded and
   re-applied *in full on every boot*. So correcting a migration's **effect** means
-  adding another file, never rewriting history. The one edit a landed file may
-  take is **widening an error guard** it re-executes anyway — a later migration
-  cannot repair a failure that happens before it runs (0001's money-span FK is the
-  worked example: 0007 drops the table it references, so its ADD must tolerate
-  `foreign_key_violation` or the next boot dies at 0001).
-- We **never modify Wayfinder's tree**. `vendor/wayfinder` is read-only reuse only,
-  and is excluded from lint/format/build/test scope (`--filter=@redline/*`).
+  adding another file, never rewriting history.
+- We **never modify Wayfinder's tree** (`services/wayfinder`) — it is read-only
+  reuse and excluded from lint/format/build/test scope (`--filter=@redline/*`).
 
 ---
 
@@ -139,36 +134,20 @@ reality demands it. These are decisions, not omissions:
 
 | Area | Wayfinder | redline | Why |
 |---|---|---|---|
-| Planning artefact | PRD + ADR + phase doc per feature | `architecture.md` (design) + `delivery-plan.md` (outstanding **items**, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the plan; documents never gate a build |
-| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed item is **removed** from `delivery-plan.md`; its reasoning lives in git history and any durable change lands in `architecture.md`. **No per-item docs** — `docs/threads/` was deleted deliberately | Keeps the plan to outstanding work only |
+| Planning artefact | PRD + ADR + phase doc per feature | `docs/Redline-Plan.md` (product statement + delivery detail, outstanding build steps in §9, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the plan; documents never gate a build |
+| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed step is **removed** from `Redline-Plan.md` §9; its reasoning lives in git history and any durable change lands in the plan's design sections. **No per-item docs** — `docs/threads/` was deleted deliberately | Keeps the plan to outstanding work only |
 | Validation | `validate.sh` assuming local Node + services | `validate.sh` detects its runner — local Node when present, **Podman** otherwise; services added per build step | Written for a host with no local Node; both lanes are supported, so check the `runner:` line it prints rather than assuming |
-| E2E | Playwright suite exists day one (`/e2e`) | The UI cores + view models are framework-free and unit-tested under `apps/redline-web/`; the Playwright acceptance spec lives in the forked Wayfinder (`services/wayfinder/apps/web/e2e/redline-create-corpus.spec.ts`) and runs against the served `/create-corpus` route | UI logic lives in a pure, testable core; the spec targets the served mount inside the fork — the `/e2e` deviation is closed |
+| E2E | Playwright suite exists day one (`/e2e`) | The UI cores + view models are framework-free and unit-tested in-repo; the Playwright acceptance spec lives in the forked Wayfinder (`services/wayfinder/apps/web/e2e/`) beside Wayfinder's own suite, running against the served route the fork surface mounts | UI logic lives in a pure, testable core; the spec targets the served mount inside the fork |
 | Release model | alpha branches, `VERSION` sync | Pre-1.0; no alpha branches yet. Version bumps stated per build step | Not yet releasing |
 | Scope | `@rbrasier/*` | `@redline/*`, consuming `@rbrasier/*` read-only | This is a plugin, not the framework |
 
 When a deviation stops making sense, add the corresponding Wayfinder
-convention and update this table. The Playwright spec now lives in the forked
-Wayfinder (`services/wayfinder/apps/web/e2e/redline-create-corpus.spec.ts`, branch
-`main` — the branch `.gitmodules` names) beside Wayfinder's own suite, running
-against the served `/create-corpus` route.
+convention and update this table.
 
-The spec splits on what a test needs rather than switching halves off. The tab,
-its permission gate, the readiness rule, the upload list and the override editors
-are client-side and always run. Firing a real run gates on
-`E2E_REDLINE_RUN_STACK` — a reachable womblex-ingest sidecar and object storage —
-because the surface stages its own documents rather than reusing a pre-staged
-corpus. That live half splits again on `E2E_REDLINE_ISAACUS`, which is a question
-about **cost**, not infrastructure: a run over the offline stages (extraction plus
-`money`) drives the whole browser → object store → engine → tracker path for
-nothing and needs no key, while `chunk` / `embed` / `enrich` are Isaacus spend.
-Unset, the run must fail naming `chunk` and offer its resume; set, the run must
-drain with `chunk` completed and report the corpus readable.
-
-The mount is Next.js/React inside Wayfinder's own `apps/web`, not a standalone
-shell. The vitest suite under `apps/redline-web/` stays the framework-free proof
-of the brains + view models the served DOM binds to, and the fork's own vitest
-suite proves the binding itself, so a broken core→DOM bind fails without a browser
-or a corpus.
+The fork surface (column editor, document picker, run + progress, read-only
+sample table, export) is unlanded — see `docs/Redline-Plan.md` §8 blocker 3 and
+§9 step 10. Its Playwright spec is written and reviewed alongside that step,
+not assumed here in advance.
 
 ---
 

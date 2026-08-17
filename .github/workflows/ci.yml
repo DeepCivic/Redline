@@ -41,7 +41,7 @@ jobs:
       # branch .gitmodules names and compares commits to allow a detached-but-
       # correct checkout — which needs that ref to exist. Without this step the
       # check cannot resolve it and skips, so CI would stop exercising the
-      # guard ADR-0019 relies on. Shallow: we need the branch tip's SHA, not its
+      # guard check #12 relies on. Shallow: we need the branch tip's SHA, not its
       # history. Non-fatal — if the fetch fails, #12 skips rather than lying.
       - name: Fetch the fork's branch ref (for validate.sh #12)
         continue-on-error: true

@@ -7,9 +7,9 @@
 # file defines the FORK's services only and joins redline's network to reach
 # redline-postgres, minio and womblex-ingest by service name.
 #
-# WHY the web app is containerised when docs/guides/two-stack-local-run.md runs
-# it on the host: this host has no local Node. That guide's step 3 is the shipped
-# design; this is local UAT scaffolding for a host that cannot follow it.
+# WHY the web app is containerised when the shipped design runs it on the host
+# with `pnpm dev`: this host has no local Node. This is local UAT scaffolding
+# for a host that cannot follow that design.
 #
 # Bring redline up first — the external network below is created by that project:
 #   podman compose -f infra/docker-compose.yml --profile ingest up -d
@@ -106,8 +106,8 @@ services:
       # Reached over this project's network, so the service name — not the host
       # port. z.string().url(), so it must never resolve to an empty value.
       LANGFUSE_HOST: ${LANGFUSE_HOST:-http://langfuse:3000}
-      # Reached over the `redline` network. Never Wayfinder's DATABASE_URL
-      # (ADR-0002) — redline owns its schema in its own instance.
+      # Reached over the `redline` network. Never Wayfinder's DATABASE_URL —
+      # redline owns its schema in its own instance.
       REDLINE_DATABASE_URL: postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}
       # The read-seam sidecar: serves the extraction read routes. It has no
       # run-trigger seam any more (that control plane is removed — see

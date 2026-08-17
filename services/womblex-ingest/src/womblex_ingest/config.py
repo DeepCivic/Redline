@@ -1,6 +1,6 @@
 """Process configuration, read from the environment at startup.
 
-Per ADR-0002 the S3 target is fully config-driven — the sidecar never assumes a
+The S3 target is fully config-driven — the sidecar never assumes a
 Wayfinder-hosted endpoint. `WOMBLEX_MODE` selects the extractor; it defaults to
 `stub` so the service starts (and the exit test passes) without the heavy womblex
 dependency or an Isaacus key.
@@ -10,7 +10,6 @@ the retrieval leg is womblex's `*.embeddings.parquet`, and the embed stage is
 Isaacus-only. A deployment without a key cannot retrieve, which is the whole
 first pass — so `isaacus_enabled` is a **diagnostic**, surfaced on `/health` so a
 misconfigured deployment is legible, not a mode the product supports running in.
-See ADR-0008 (amended) and `docs/architecture.md` §2.
 """
 
 from __future__ import annotations

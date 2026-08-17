@@ -28,7 +28,7 @@ detection:
 extraction:
   native:
     # Tender responses carry pricing in tables; the table cells are what the
-    # financial path reads (architecture.md §4, the join keys).
+    # financial path reads.
     include_tables: true
   ocr:
     # LOAD-BEARING, not a default. Reconstructing table cells inside a
@@ -53,13 +53,12 @@ chunking:
   # spans instead of a 480-token budget split, so a chunk is a coherent unit —
   # required because the chunk is what says which thing a money figure relates
   # to, and a budget-cut chunk can straddle two line items or bisect one. This
-  # is the corpus default, not an opt-in someone has to remember (delivery-plan
-  # "Semantically bounded chunks, on by default").
+  # is the corpus default, not an opt-in someone has to remember.
   #
   # `chunking_model` set here means the stage was never keyless anyway — the
   # engine refuses without ISAACUS_API_KEY regardless (`run_chunking` /
   # `chunk_shards` return early when `isaacus_available()` is false), and `embed`
-  # needs the key too. See architecture.md §7.1.
+  # needs the key too.
   #
   # Ordering matters: `chunking_model` auto-enables `enrichment.persist_document`
   # (WomblexConfig._wire_ai_chunking_reuse), and chunk reuses that Document only
@@ -93,21 +92,21 @@ spellfix:
   enabled: false
 pii:
   enabled: false
-# The Kanon-2 entity/edge graph. ADR-0017 names it the navigation mechanic and
-# delivery-plan items 3-7 read it, so it is on rather than off — but it is REAL
-# Isaacus spend (`kanon-2-enricher`), unlike chunking's vendored tokeniser, and
-# it is not part of `womblex run`/`worker`: it is a separate
-# `run-stage --stage enrich` pass.
+# The Kanon-2 entity/edge graph — the navigation mechanic the report engine's
+# base call uses for entity resolution and one-hop lookup (see
+# docs/Redline-Plan.md). It is REAL Isaacus spend (`kanon-2-enricher`), unlike
+# chunking's vendored tokeniser, and it is not part of `womblex
+# run`/`worker`: it is a separate `run-stage --stage enrich` pass.
 #
 # Enrich now runs BEFORE chunk, because `chunking_model` above makes chunk reuse
 # the Document enrich persists. Chunks are a non-strict input to enrich, so that
 # order still succeeds — but it lands every entity with chunk_index = -1 and no
 # mention->chunk edges, a graph that cannot be joined to chunk text. That is not
-# left standing: the sidecar inserts `graph-refresh` after chunk whenever both
-# stages run (`run_trigger.py`'s `normalise_sequence`), which rebuilds the edges
-# offline from the char offsets both sidecars already carry. Reversing the two
-# without also dropping `chunking_model` would reinstate the double enrichment
-# charge; dropping `graph-refresh` would silently break the navigation mechanic.
+# left standing: a `graph-refresh` pass after chunk (whenever both stages run)
+# rebuilds the edges offline from the char offsets both sidecars already carry.
+# Reversing the two without also dropping `chunking_model` would reinstate the
+# double enrichment charge; dropping `graph-refresh` would silently break the
+# navigation mechanic.
 enrichment:
   enabled: true
 
@@ -119,9 +118,11 @@ linking:
   enabled: false
 
 # The retrieval leg. `retrieval/document` is the task the chunk vectors must
-# carry so the sidecar's query vectors (`retrieval/query`) are comparable
-# (ADR-0014). Requires ISAACUS_API_KEY — without it no *.embeddings.parquet is
-# produced and redline cannot retrieve (architecture.md §2).
+# carry so a query embedded at `retrieval/query` is comparable. Requires
+# ISAACUS_API_KEY — without it no *.embeddings.parquet is produced. v1 points
+# at rows rather than searching them (see docs/Redline-Plan.md §1.1); the
+# vectors this stage produces are the re-entry condition's prerequisite, not
+# something v1 reads yet.
 embedding:
   enabled: true
   model: kanon-2-embedder
@@ -130,9 +131,10 @@ embedding:
 # ── The pricing leg ──────────────────────────────────────────────────────────
 # LIVE as of the v0.3.0 submodule bump: the pinned engine defines `MoneyConfig`
 # (services/womblex/src/womblex/config.py:521, mounted at `WomblexConfig.money`),
-# so these keys are read rather than ignored. The redline side is built too — the
-# money stage runs over object storage (`womblex run-stage --stage money`)
-# and MoneySpanFinancialExtractor sums its spans into grid AUD.
+# so these keys are read rather than ignored. The money stage runs over object
+# storage (`womblex run-stage --stage money`) and writes MONEY_SPANS_SCHEMA
+# rows a report run's financial constraint prefers over parsing a raw string
+# (see docs/Redline-Plan.md §5).
 #
 # Not part of `womblex run`/`worker`: this is a separate per-stage command
 # (`womblex money --shards <dir>`) run after the pipeline, writing
@@ -143,7 +145,8 @@ embedding:
 # money-ness comes from their column header, which womblex measures as ~98.7%
 # of its corpus's amounts. A tender schedule headed `Unit Price ($)` over cells
 # `4500`, `12000` is exactly that shape, and redline's marker-requiring seam
-# derivation (ADR-0016) sees none of it.
+# derivation (see `derive_is_currency` in `services/womblex-ingest`) sees none
+# of it.
 money:
   enabled: true
   # Prose prices ("a fixed fee of $48,000 per annum"). redline has no other
@@ -152,7 +155,7 @@ money:
   narrative: true
   default_currency: AUD
   # Australia does not use comma decimals. Mixed-denomination tenders remain a
-  # known gap (ADR-0016 Consequences) — this setting does not address them.
+  # known gap — this setting does not address them.
   international_numbers: false
   # Bare numbers near financial vocabulary in *prose*. Upstream measures this as
   # low precision, and an invented price is worse than a missing one. Header

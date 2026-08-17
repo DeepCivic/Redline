@@ -225,7 +225,7 @@ def test_table_cell_flags_an_explicitly_marked_currency_value(value: str) -> Non
 @pytest.mark.parametrize(
     "value",
     [
-        # ADR-0016: a bare number is not currency. redline cannot tell a price from
+        # A bare number is not currency. redline cannot tell a price from
         # a quantity or a weighting without a marker, and summing them is worse
         # than showing a gap.
         "80000",

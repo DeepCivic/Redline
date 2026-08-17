@@ -93,7 +93,7 @@ def _optional(row: Row, *keys: str) -> Optional[Any]:
     return None
 
 
-# Currency derivation (ADR-0016). womblex writes cell values verbatim and has no
+# Currency derivation. womblex writes cell values verbatim and has no
 # currency capability at all: `value_type` is always "text" at v0.2.0 and
 # `number_format` is left unset, so `isCurrency` is derived here from the text.
 # Both columns are still read first, so a future openpyxl-based reader upgrades
@@ -111,7 +111,7 @@ def derive_is_currency(
     value_type: Optional[Any] = None,
     number_format: Optional[Any] = None,
 ) -> bool:
-    """Is this cell a currency amount? (ADR-0016)
+    """Is this cell a currency amount?
 
     Requires an explicit marker: a bare number is **not** currency. redline cannot
     distinguish a price from a quantity or a weighting without one, and a tender's
@@ -197,7 +197,7 @@ def map_element(source_hash: str, row: Row) -> ElementRecord:
     contiguous; the visible text falls back to `alt_text` (which `ELEMENT_SCHEMA`
     carries for `image`/`figure`) then to `""`. `ExtractionElement.text` is a
     non-nullable `string` in `redline-domain`, so `""` — not `None` — is the
-    honest empty (a sibling of ADR-0016's verbatim-value contract decision).
+    honest empty (a sibling of the verbatim-value contract decision above).
     """
     text = _optional(row, "text", "alt_text")
     return ElementRecord(
@@ -213,7 +213,7 @@ def map_chunk(source_hash: str, row: Row) -> ChunkRecord:
 
     A womblex chunk carries `chunk_index`; some producers also carry a native
     `chunk_id`. We *always* recompose the id from `(source_hash, chunk_index)` so
-    the extraction and embeddings resources join on the identity ADR-0014 pins,
+    the extraction and embeddings resources join on the same identity,
     rather than trusting two independently-produced strings to agree.
 
     `startChar`/`endChar`/`elementOrder` carry the element range this chunk was
@@ -243,7 +243,7 @@ def map_table_cell(source_hash: str, row: Row) -> TableCellRecord:
     `elem_order`, and no page and no currency column anywhere. A `sheet_cell`
     *element* carries the same payload under `elem_order`/`row`/`col`/`value` and
     does have a page, so both spellings are accepted here and nowhere else.
-    `isCurrency` is derived, never read — see `derive_is_currency` (ADR-0016).
+    `isCurrency` is derived, never read — see `derive_is_currency` above.
     """
     raw_value = str(_require(row, "value", "raw_value", "text"))
     return TableCellRecord(

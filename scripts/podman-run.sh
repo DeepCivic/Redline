@@ -1,28 +1,22 @@
 #!/usr/bin/env bash
 # Run the redline workspace in a Node 20 container via Podman.
 #
-# Why: some hosts have no local Node/pnpm. This gives a reproducible runtime and
-# keeps the Wayfinder dependency clearly delineated — Wayfinder's SOURCE (domain
-# package only, for now) is vendored into a scratch copy under `vendor/wayfinder`
-# so pnpm can resolve `@rbrasier/*` as workspace packages WITHOUT us ever writing
-# into the real Wayfinder tree or committing it here.
+# Why: some hosts have no local Node/pnpm. This gives a reproducible runtime
+# without touching the host's Node install.
 #
 # Usage:
 #   scripts/podman-run.sh                 # install + build + test
 #   scripts/podman-run.sh test            # just test
 #   scripts/podman-run.sh "pnpm typecheck"
 #
-# Requires: podman on the host; the services/wayfinder submodule initialised.
+# Requires: podman on the host.
 #
 # Env overrides:
 #   PODMAN="flatpak-spawn --host podman"   run host podman from inside a flatpak
-#   WAYFINDER_DIR=/path/to/wayfinder        Wayfinder checkout (default services/wayfinder)
-#   WAYFINDER_PACKAGES="domain shared"      which @rbrasier/* packages to vendor
 #   SCRATCH_BASE=/host/visible/tmp          base dir for the scratch copy
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WAYFINDER_DIR="${WAYFINDER_DIR:-$REPO_ROOT/services/wayfinder}"
 IMAGE="${IMAGE:-docker.io/library/node:20-bookworm-slim}"
 PNPM_VERSION="${PNPM_VERSION:-9.12.0}"
 PODMAN="${PODMAN:-podman}"
@@ -34,33 +28,14 @@ CMD="${1:-pnpm install && pnpm build && pnpm test}"
 SCRATCH_BASE="${SCRATCH_BASE:-$REPO_ROOT/../.redline-scratch}"
 mkdir -p "$SCRATCH_BASE"
 
-if [ ! -d "$WAYFINDER_DIR/packages/domain" ]; then
-  echo "ERROR: Wayfinder checkout not found at: $WAYFINDER_DIR" >&2
-  echo "Run 'git submodule update --init', or set WAYFINDER_DIR to a checkout." >&2
-  exit 1
-fi
-
-# Scratch workspace so container writes (node_modules, vendored source) never
-# touch the committed tree or the real Wayfinder.
+# Scratch workspace so container writes (node_modules) never touch the
+# committed tree.
 SCRATCH="$(mktemp -d "$SCRATCH_BASE/redline-podman.XXXXXX")"
 trap 'rm -rf "$SCRATCH"' EXIT
 cp -a "$REPO_ROOT/." "$SCRATCH/"
-rm -rf "$SCRATCH/node_modules" "$SCRATCH"/packages/*/node_modules
-
-# Vendor ONLY the Wayfinder packages we actually consume (Thread 1: domain only).
-DEST="$SCRATCH/vendor/wayfinder"
-rm -rf "$DEST"; mkdir -p "$DEST/packages"
-cp "$WAYFINDER_DIR/pnpm-workspace.yaml" "$DEST/" 2>/dev/null || true
-cp "$WAYFINDER_DIR/package.json"        "$DEST/" 2>/dev/null || true
-cp "$WAYFINDER_DIR/tsconfig.base.json"  "$DEST/" 2>/dev/null || true
-for p in ${WAYFINDER_PACKAGES:-domain}; do
-  mkdir -p "$DEST/packages/$p"
-  cp -a "$WAYFINDER_DIR/packages/$p/." "$DEST/packages/$p/"
-done
-find "$DEST" -name node_modules -type d -prune -exec rm -rf {} + 2>/dev/null || true
+rm -rf "$SCRATCH/node_modules" "$SCRATCH"/packages/*/node_modules "$SCRATCH"/apps/*/node_modules
 
 echo ">> scratch: $SCRATCH"
-echo ">> vendored wayfinder packages: $(ls "$DEST/packages")"
 echo ">> command: $CMD"
 
 $PODMAN run --rm -v "$SCRATCH":/work:Z -w /work "$IMAGE" bash -lc "

@@ -10,7 +10,7 @@ the production one.
 
 Why fake the engine rather than run it: not an interpreter constraint (the
 sidecar image is `python:3.12-slim`, which is inside womblex's own 3.11/3.12
-support — see ADR-0003), but a test-shape one. The engine is a heavy, separately
+support), but a test-shape one. The engine is a heavy, separately
 scaled subsystem that produces shards via its own cloud runner; the *binding's*
 contract is the read + map, and that is provable from real Parquet bytes alone.
 The default `validate.sh` box does not install the engine (and may run a newer
@@ -95,7 +95,7 @@ def _table_cell(row: int, col: int, value: str) -> dict:
         "value": value,
         "rowspan": 1,
         "colspan": 1,
-        # Always "text" at v0.2.0 — currency is derived from the value (ADR-0016).
+        # Always "text" at v0.2.0 — currency is derived from the value.
         "value_type": "text",
     }
 
@@ -215,7 +215,7 @@ def test_reads_the_pod_shards_into_a_json_read_model() -> None:
     assert [c.chunkId for c in document.chunks] == [f"{SOURCE_HASH}:0", f"{SOURCE_HASH}:1"]
     # Thread 56's exit test, on a shard carrying womblex's real column names:
     # `parent_elem_order` maps, `col` maps, and the marked cell flags as currency
-    # while the bare number beside it does not (ADR-0016).
+    # while the bare number beside it does not.
     assert [(c.columnIndex, c.rawValue, c.isCurrency) for c in document.tableCells] == [
         (1, "$80,000.00", True),
         (2, "80000", False),

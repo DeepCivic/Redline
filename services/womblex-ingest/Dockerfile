@@ -1,7 +1,7 @@
 # womblex-ingest — the lightweight FastAPI read seam (Parquet→JSON) for redline.
 #
 # This image stays LIGHT and never installs womblex: it reads the shards the
-# engine wrote (from object storage) and serves them as JSON (ADR-0003). The real
+# engine wrote (from object storage) and serves them as JSON. The real
 # womblex engine is a REQUIRED subsystem of redline; it runs from the engine's OWN
 # image (shipped by the submodule, built by the `womblex` compose service). That
 # split is a DEPLOYMENT choice for resource/lifecycle isolation, not a hard
@@ -13,12 +13,6 @@
 # This image has a single build target:
 #   - `sidecar` (default): the light read seam, no womblex. The `womblex-ingest`
 #     compose service builds this.
-#
-# The money annotation step needs the engine installed, so it does NOT build a
-# target here — its image is built from the repo root by
-# infra/docker/womblex-money.Dockerfile (the `money` compose service), which
-# installs the engine from the submodule source. This Dockerfile stays
-# womblex-free.
 #
 # WOMBLEX_MODE selects the extractor at runtime:
 #   - real (redline's deployment): the real extractor reads the engine's shards
