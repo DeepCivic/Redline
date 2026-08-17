@@ -433,21 +433,27 @@ whose exit test joins two independently-testable behaviours is two steps.
     forward to step 10, where `services/wayfinder` is actually populated._
 0c. ~~**Sample corpus handoff.**~~ **Landed 2026-08-17.** The corpus is the womblex UI
     demo's own sample corpus — `output/console-demo/run-throsby-demo/` in the `womblex`
-    repo (`services/womblex` @ `d50ac76`, "Demo corpus: complete the Throsby run to the
-    DEFAULT-Isaacus shape"), one document (`throsby-oosc.pdf`, the single ACT FOI 213A
-    notice already vendored redistributably in womblex's own fixture set) drained
-    through the full DEFAULT-Isaacus shape: extract → enrich (AI chunking against the
-    persisted Kanon-2 Document) → graph-refresh → chunk quality → money → embed. PII and
-    spellfix are excluded from that shape, so there is no `clean_text`/`pii_spans`
-    sidecar.
+    repo (`services/womblex` @ `d50ac76`) — copied verbatim into this repo at
+    `services/womblex-ingest/tests/fixtures/run-throsby-demo/`. Self-contained test
+    fixtures, not a submodule or object-store read, so step 1's schema-design pass and
+    step 4's adapter tests reach real rows with no engine install. One document,
+    `throsby-oosc.pdf`, sha256-verified identical to the ACT FOI 213A notice womblex
+    already vendors redistributably. No PII stage ran, so chunk text is unmasked —
+    it names the signing public servant, as the published source does.
 
-    Its Parquet shards (`manifest.parquet`, `CHUNKS_SCHEMA`, `GRAPH_EDGE_SCHEMA` +
-    `ENTITY_SCHEMA`, `MONEY_SPANS_SCHEMA`, plus elements/table_cells/form_fields/
-    enrichment_doc/embeddings) are copied verbatim into this repo at
-    `services/womblex-ingest/tests/fixtures/run-throsby-demo/` — self-contained test
-    fixtures, not a submodule read, so step 1's schema-design pass and step 4's adapter
-    tests need no engine install or object store to point at real rows. See that
-    directory's `README.md` for the shard layout and regeneration note.
+    All four schema families step 3 names are present with real rows and were checked
+    against the shards, not assumed: `manifest.parquet` and `CHUNKS_SCHEMA` match the
+    columns step 3 lists exactly. Two things the fixture's `README.md` records that
+    change later steps:
+
+    - **Coverage gaps.** `table_cells` and `money_columns` are **empty**, and
+      `money_spans` has two rows, both `narrative` locus. So `read_extraction_table_cells`
+      and the whole table-cell/sheet-cell money locus have no real row here; step 4
+      cannot prove them against this corpus alone. It is one document and one run, so
+      it also cannot regress blocker 1 — step 3's two-run exit test must stage its own.
+    - **Two identity spellings.** The enrichment/graph shards key on `document_id`;
+      every other shard keys on `source_hash`. Same value here, so it is a spelling
+      difference, but every port or route joining graph to chunks must handle both.
     _Exit: a named corpus location that a session can point a schema-design pass at —
     met: `services/womblex-ingest/tests/fixtures/run-throsby-demo/`._
 1. **Report domain.** The §2 types, `IExtractionModel`'s signature, and the report ports.
