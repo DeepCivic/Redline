@@ -11,9 +11,7 @@ export type DomainErrorCode =
   | "EXTRACTION_FAILED"
   | "INFRA_FAILURE"
   // A port operation that is deliberately declared but not yet built — a
-  // deferral, not a runtime fault. IChunkStore ships with findSimilar declared
-  // but its vector-search index deferred; the operation refuses with this code
-  // until a release builds it.
+  // deferral, not a runtime fault.
   | "NOT_IMPLEMENTED";
 
 export interface DomainError {

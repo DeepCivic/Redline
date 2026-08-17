@@ -1,15 +1,10 @@
 # CI — the same gate as ./validate.sh, run on a real Node runner.
 #
-# redline consumes Wayfinder's `@rbrasier/domain` as a workspace package
-# (ADR-0001, Strategy A). We never commit Wayfinder source (validate.sh check
-# #6), so CI materialises the packages we consume into vendor/wayfinder via
-# scripts/vendor-wayfinder.sh — the non-Podman counterpart of what
-# scripts/podman-run.sh does locally.
-#
-# The source is the services/wayfinder submodule, checked out below. There is no
-# separate Wayfinder pin: the gitlink IS the pin, so the tree redline typechecks
-# against and the tree it runs in cannot disagree. To move Wayfinder, move the
-# submodule.
+# services/wayfinder is checked out (submodules: true) so validate.sh #12 (the
+# fork's checkout is on the branch .gitmodules names) can actually run instead
+# of skipping. There is no separate Wayfinder pin: the gitlink IS the pin, so
+# the tree redline runs against and the tree it typechecks in cannot disagree.
+# To move Wayfinder, move the submodule.
 
 name: CI
 
@@ -42,21 +37,18 @@ jobs:
 
       # `submodules: true` runs `git submodule update --init --depth=1`: each
       # submodule lands detached at its pinned commit with NO remote-tracking
-      # branch refs. validate.sh #14 asserts the wayfinder fork sits on the
+      # branch refs. validate.sh #12 asserts the wayfinder fork sits on the
       # branch .gitmodules names and compares commits to allow a detached-but-
       # correct checkout — which needs that ref to exist. Without this step the
       # check cannot resolve it and skips, so CI would stop exercising the
       # guard ADR-0019 relies on. Shallow: we need the branch tip's SHA, not its
-      # history. Non-fatal — if the fetch fails, #14 skips rather than lying.
-      - name: Fetch the fork's branch ref (for validate.sh #14)
+      # history. Non-fatal — if the fetch fails, #12 skips rather than lying.
+      - name: Fetch the fork's branch ref (for validate.sh #12)
         continue-on-error: true
         run: |
           branch="$(git config -f .gitmodules submodule.services/wayfinder.branch)"
           git -C services/wayfinder fetch --depth=1 origin \
             "+refs/heads/${branch}:refs/remotes/origin/${branch}"
-
-      - name: Vendor Wayfinder domain into vendor/wayfinder
-        run: scripts/vendor-wayfinder.sh
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -75,13 +67,6 @@ jobs:
           cache: pnpm
 
       - name: Install workspace dependencies
-        # --frozen-lockfile is safe because the submodule gitlink fixes the
-        # vendored tree to one commit: the importer for
-        # vendor/wayfinder/packages/domain is deterministic, so a stale lockfile
-        # means *our* manifests moved — exactly what strictness should catch.
-        # This had to be --prefer-frozen-lockfile back when CI tracked a moving
-        # Wayfinder `main`, because an upstream dependency bump staleness-failed
-        # the install for a commit that was not ours.
         run: pnpm install --frozen-lockfile
 
       - name: Set up Python (womblex-ingest sidecar tests)
@@ -90,11 +75,4 @@ jobs:
           python-version: "3.12"
 
       - name: Run validate.sh (typecheck, lint, test, build, static guards, pytest)
-        # REQUIRE_WAYFINDER=1 turns an unresolvable @rbrasier/domain into a hard
-        # failure instead of a skip. Wayfinder is an optional dependency so the
-        # workspace installs without it (ADR-0012), which means the drift check
-        # skips silently on a machine that has no vendored tree. CI is where that
-        # must never happen — it is the only place the contract is re-derived.
-        env:
-          REQUIRE_WAYFINDER: "1"
         run: ./validate.sh

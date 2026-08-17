@@ -1,11 +1,4 @@
-import {
-  createRedlinePostgres,
-  DrizzleChunkStore,
-  DrizzleGraphStore,
-  DrizzleMoneySpanStore,
-  WomblexExtractionReader,
-  type RedlinePostgresDatabase,
-} from "@redline/redline-adapters";
+import { WomblexExtractionReader } from "@redline/redline-adapters";
 import { domainError, err, ok, type Result } from "@redline/redline-domain";
 import type { ReportToolDependencies } from "./report-tools";
 
@@ -19,7 +12,6 @@ import type { ReportToolDependencies } from "./report-tools";
 // would make redline's own store reachable only through Wayfinder.
 
 export interface ServerConfiguration {
-  readonly databaseUrl: string;
   readonly womblexIngestUrl: string;
   readonly port: number;
   readonly host: string;
@@ -56,9 +48,6 @@ const readPort = (environment: ProcessEnvironment): Result<number> => {
 export const readServerConfiguration = (
   environment: ProcessEnvironment,
 ): Result<ServerConfiguration> => {
-  const databaseUrl = required(environment, "REDLINE_DATABASE_URL");
-  if (databaseUrl.error) return err(databaseUrl.error);
-
   const womblexIngestUrl = required(environment, "WOMBLEX_INGEST_URL");
   if (womblexIngestUrl.error) return err(womblexIngestUrl.error);
 
@@ -66,7 +55,6 @@ export const readServerConfiguration = (
   if (port.error) return err(port.error);
 
   return ok({
-    databaseUrl: databaseUrl.data,
     womblexIngestUrl: womblexIngestUrl.data,
     port: port.data,
     host: (environment.REDLINE_MCP_HOST ?? "").trim() || DEFAULT_HOST,
@@ -76,26 +64,17 @@ export const readServerConfiguration = (
 
 export interface ReportToolContainer {
   readonly dependencies: ReportToolDependencies;
-  readonly database: RedlinePostgresDatabase;
 }
 
-// The read side of the redline_ store plus the sidecar's JSON extraction seam.
-// `fetch` is bound here rather than assumed inside the adapter, which keeps the
-// adapter testable without a global.
+// The sidecar's JSON extraction seam. `fetch` is bound here rather than assumed
+// inside the adapter, which keeps the adapter testable without a global.
 export const buildReportToolContainer = (
   configuration: ServerConfiguration,
-): ReportToolContainer => {
-  const database = createRedlinePostgres({ databaseUrl: configuration.databaseUrl });
-  return {
-    database,
-    dependencies: {
-      chunkStore: new DrizzleChunkStore(database),
-      moneySpanStore: new DrizzleMoneySpanStore(database),
-      extractionReader: new WomblexExtractionReader({
-        baseUrl: configuration.womblexIngestUrl,
-        httpClient: (url) => fetch(url),
-      }),
-      graphStore: new DrizzleGraphStore(database),
-    },
-  };
-};
+): ReportToolContainer => ({
+  dependencies: {
+    extractionReader: new WomblexExtractionReader({
+      baseUrl: configuration.womblexIngestUrl,
+      httpClient: (url) => fetch(url),
+    }),
+  },
+});

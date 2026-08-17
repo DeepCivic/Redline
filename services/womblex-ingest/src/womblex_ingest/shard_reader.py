@@ -2,9 +2,8 @@
 
 This module is the **one place** that understands womblex's real Parquet schema —
 `source_hash`, `elem_order` on elements but `parent_elem_order` on table cells,
-`chunk_index`, and the `(source_hash, chunk_index, content_type)` embedding join.
-It maps that schema into the `records.py` dataclasses the Parquet→JSON boundary
-serves; everything downstream sees JSON.
+and `chunk_index` on chunks. It maps that schema into the `records.py`
+dataclasses the Parquet→JSON boundary serves; everything downstream sees JSON.
 
 The schema here is the one `services/womblex` @ `v0.2.0` actually writes
 (`src/womblex/store/output.py`), read from the submodule rather than assumed.
@@ -42,12 +41,9 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from womblex_ingest.records import (
     ChunkRecord,
-    DocumentEmbeddings,
     DocumentExtraction,
     ElementRecord,
-    EmbeddingRecord,
     TableCellRecord,
-    make_document_embeddings,
 )
 
 Row = Mapping[str, Any]
@@ -67,17 +63,13 @@ class ShardRows:
     """One document's already-decoded womblex rows, grouped by shard kind.
 
     `source_hash` is womblex's document identity — the `documentId` the whole
-    read model keys on. `model` is the embed stage's declared model, carried
-    here so the embeddings resource can declare it (ADR-0014); it is ``None``
-    when the embed stage did not run, which is the NOT_FOUND path, not an error.
+    read model keys on.
     """
 
     source_hash: str
     elements: Sequence[Row] = field(default_factory=list)
     chunks: Sequence[Row] = field(default_factory=list)
     table_cells: Sequence[Row] = field(default_factory=list)
-    embeddings: Sequence[Row] = field(default_factory=list)
-    model: Optional[str] = None
 
 
 def _require(row: Row, *keys: str) -> Any:
@@ -273,7 +265,7 @@ def map_document_extraction(rows: ShardRows) -> DocumentExtraction:
     """Assemble one document's read model from its element/chunk/cell rows.
 
     Chunks are ordered by `chunk_index` so the emitted `chunks` list is stable
-    and its ordinals are contiguous — the property the embeddings join relies on.
+    and its ordinals are contiguous.
     """
     chunks = sorted(rows.chunks, key=lambda row: int(_require(row, "chunk_index")))
     return DocumentExtraction(
@@ -284,76 +276,33 @@ def map_document_extraction(rows: ShardRows) -> DocumentExtraction:
     )
 
 
-def map_document_embeddings(rows: ShardRows) -> Optional[DocumentEmbeddings]:
-    """Assemble the embeddings sibling, or ``None`` when the embed stage is absent.
-
-    A document with no `*.embeddings.parquet` (the air-gapped / Isaacus-off path)
-    yields ``None`` — an absent resource, mapped upstream to `NOT_FOUND` — never
-    an empty payload (ADR-0014). Each vector joins its chunk on
-    `(source_hash, chunk_index)`, recomposed into the `chunkId` the extraction
-    also carries, and the resource declares the model womblex's embed stage used.
-    """
-    if not rows.embeddings:
-        return None
-    if not rows.model:
-        # The embed stage ran but did not declare its model: refuse rather than
-        # emit vectors a consumer cannot confirm are in the query's space.
-        raise ShardSchemaError(
-            f"embeddings for {rows.source_hash} carry no declared model; "
-            "a consumer cannot confirm they match the query vectors' space (ADR-0014)"
-        )
-    vectors: List[EmbeddingRecord] = []
-    for row in sorted(rows.embeddings, key=lambda r: int(_require(r, "chunk_index"))):
-        chunk_index = int(_require(row, "chunk_index"))
-        vectors.append(
-            EmbeddingRecord(
-                chunkId=f"{rows.source_hash}:{chunk_index}",
-                chunkIndex=chunk_index,
-                values=[float(value) for value in _require(row, "embedding", "values", "vector")],
-            )
-        )
-    # `make_document_embeddings` re-L2-normalises and re-validates; a producer that
-    # already normalised pays only an idempotent second pass.
-    return make_document_embeddings(
-        document_id=rows.source_hash,
-        model=rows.model,
-        vectors=vectors,
-    )
-
-
 def group_rows_by_document(
     *,
     elements: Sequence[Row],
     chunks: Sequence[Row],
     table_cells: Sequence[Row],
-    embeddings: Sequence[Row],
-    models_by_source_hash: Mapping[str, str],
 ) -> List[ShardRows]:
     """Fan a flat set of decoded shard rows out into one `ShardRows` per document.
 
     womblex batches multiple documents into one shard set, tagging every row with
-    its `source_hash`; this regroups them so the mapping runs per document. A
-    document that appears only in the embeddings shard (no elements) is ignored —
-    an embedding with no chunk to attach to is not a document we can serve.
+    its `source_hash`; this regroups them so the mapping runs per document.
     """
     by_hash: Dict[str, Dict[str, List[Row]]] = {}
 
     def bucket(kind: str, rows: Sequence[Row]) -> None:
         for row in rows:
             source_hash = str(_require(row, "source_hash", "source_doc_id"))
-            by_hash.setdefault(source_hash, {"elements": [], "chunks": [], "table_cells": [], "embeddings": []})
+            by_hash.setdefault(source_hash, {"elements": [], "chunks": [], "table_cells": []})
             by_hash[source_hash][kind].append(row)
 
     bucket("elements", elements)
     bucket("chunks", chunks)
     bucket("table_cells", table_cells)
-    bucket("embeddings", embeddings)
 
     documents: List[ShardRows] = []
     for source_hash, grouped in by_hash.items():
         if not grouped["elements"] and not grouped["chunks"]:
-            # No structural content — do not synthesise a document from stray cells
-            # or orphan vectors.
+            # No structural content — do not synthesise a document from stray cells.
             continue
         documents.append(
             ShardRows(
@@ -361,8 +310,6 @@ def group_rows_by_document(
                 elements=grouped["elements"],
                 chunks=grouped["chunks"],
                 table_cells=grouped["table_cells"],
-                embeddings=grouped["embeddings"],
-                model=models_by_source_hash.get(source_hash),
             )
         )
     return documents

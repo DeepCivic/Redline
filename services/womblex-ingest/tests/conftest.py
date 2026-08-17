@@ -2,55 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence
+from typing import Dict, List
 
 import pytest
 from fastapi.testclient import TestClient
 
-from womblex_ingest.extraction import (
-    STUB_EMBEDDING_DIMENSIONS,
-    STUB_EMBEDDING_MODEL,
-    ExtractionResult,
-    Shard,
-)
+from womblex_ingest.extraction import ExtractionResult, Shard
 from womblex_ingest.main import build_app
-from womblex_ingest.records import (
-    ChunkRecord,
-    DocumentEmbeddings,
-    DocumentExtraction,
-    ElementRecord,
-    EmbeddingRecord,
-    TableCellRecord,
-    make_document_embeddings,
-)
-from womblex_ingest.money_span_store import MoneySpanRow
+from womblex_ingest.records import ChunkRecord, DocumentExtraction, ElementRecord, TableCellRecord
 from womblex_ingest.storage import ObjectNotFound, ObjectStorage
-
-
-class RecordingMoneySpanStore:
-    """In-memory `MoneySpanStore`, scoped the way the Postgres one is.
-
-    Exposes the landed rows directly so the load path's exit test can assert them
-    field by field against the shard, and counts the replaces so a re-load can be
-    told from a duplicate insert.
-    """
-
-    def __init__(self) -> None:
-        self.spans: Dict[str, List[MoneySpanRow]] = {}
-        self.replace_calls = 0
-
-    def replace_evaluation_spans(
-        self, evaluation_id: str, rows: Sequence[MoneySpanRow]
-    ) -> None:
-        self.replace_calls += 1
-        self.spans[evaluation_id] = list(rows)
-
-    def for_document(self, evaluation_id: str, document_id: str) -> List[MoneySpanRow]:
-        return [
-            row
-            for row in self.spans.get(evaluation_id, [])
-            if row.document_id == document_id
-        ]
 
 
 class FakeObjectStorage(ObjectStorage):
@@ -83,10 +43,10 @@ class FakeObjectStorage(ObjectStorage):
 class StubExtractor:
     """Deterministic womblex stand-in.
 
-    Emits one manifest shard plus one elements shard per document, a JSON read
-    model per document (documentId = the document name, for readable test
-    assertions), and its embeddings sibling, so tests can assert shard fan-out,
-    provenance, and both read seams without running real womblex/Isaacus.
+    Emits one manifest shard plus one elements shard per document, and a JSON
+    read model per document (documentId = the document name, for readable test
+    assertions), so tests can assert shard fan-out, provenance, and the read
+    seam without running real womblex.
     """
 
     def __init__(self) -> None:
@@ -101,7 +61,6 @@ class StubExtractor:
     ) -> ExtractionResult:
         self.calls.append((evaluation_id, tuple(document_names)))
         self.run_ids.append(run_id)
-        embeddings: List[DocumentEmbeddings] = []
         shards: List[Shard] = [
             Shard(
                 filename="_manifest.parquet",
@@ -142,27 +101,10 @@ class StubExtractor:
                     ],
                 )
             )
-            embeddings.append(
-                make_document_embeddings(
-                    document_id=name,
-                    model=STUB_EMBEDDING_MODEL,
-                    vectors=[
-                        EmbeddingRecord(
-                            chunkId=f"{name}:0",
-                            chunkIndex=0,
-                            values=[
-                                float(index + 1)
-                                for index in range(STUB_EMBEDDING_DIMENSIONS)
-                            ],
-                        )
-                    ],
-                )
-            )
         return ExtractionResult(
             document_count=len(document_names),
             shards=shards,
             documents=documents,
-            embeddings=embeddings,
         )
 
 
