@@ -57,12 +57,12 @@ For UI bugs, add a Playwright e2e covering the exact repro.
 ### Step 6 — On completion
 
 - Record root cause, fix and regression test in the commit message.
-- Update the affected item's entry in `docs/delivery-plan.md` only if the bug
-  re-opened outstanding work (e.g. an item thought finished must return to §2).
+- Update the affected step's entry in `docs/Redline-Plan.md` §9 only if the bug
+  re-opened outstanding work (e.g. a step thought finished must return to §9).
   A fix to already-shipped code leaves no status row — the plan tracks
   outstanding work only.
-- If the bug was a wrong assumption about a seam, correct
-  `docs/architecture.md` §7 so it is not re-derived.
+- If the bug was a wrong assumption about a seam, correct the plan's design
+  sections so it is not re-derived.
 - Apply a PATCH bump intent.
 - Run `./validate.sh` one final time.
 - Commit.

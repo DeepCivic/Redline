@@ -69,7 +69,7 @@ def build_app(
     def health() -> dict:
         # Surfaces the live extraction path and whether Isaacus is reachable.
         # On the real lane `isaacusEnabled: false` means retrieval cannot run —
-        # a misconfiguration to surface, not a supported offline mode (ADR-0008).
+        # a misconfiguration to surface, not a supported offline mode.
         return {
             "status": "ok",
             "bucket": bucket,

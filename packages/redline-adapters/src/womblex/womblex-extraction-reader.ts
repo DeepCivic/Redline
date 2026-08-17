@@ -8,7 +8,7 @@
 // document-scoped payload and slices it into elements / chunks / table cells, so all
 // three port methods hit the same durable object and share provenance.
 //
-// Designed "as if C" (ADR-0001): the only coupling to the sidecar is HTTP + JSON.
+// Designed "as if C": the only coupling to the sidecar is HTTP + JSON.
 
 import {
   domainError,

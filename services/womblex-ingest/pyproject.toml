@@ -14,20 +14,14 @@ dependencies = [
     # read side of the binding is meant to run wherever pyarrow resolves, engine
     # or no engine.
     "pyarrow>=16,<25",
-    # The driver behind both writers into redline's own Postgres — the chunk store
-    # and the money-span store. A base dependency, not an extra: the `sidecar`
-    # image installs the base package alone and its `/ingest` route projects
-    # chunks whenever REDLINE_DATABASE_URL is set, so an extra would ship an image
-    # that fails on import the moment a DSN is configured.
-    "psycopg[binary]>=3.1,<4.0",
 ]
 
 [project.optional-dependencies]
 # There is deliberately no `womblex` extra here. The engine publishes no release
 # to any index, so a `womblex==X.Y.Z` requirement could never be resolved — every
 # image that needs the engine installs it from the services/womblex submodule
-# source instead (infra/docker/womblex-money.Dockerfile). A version pin here
-# would be a string nothing installs, kept in step with the submodule by hand.
+# source instead. A version pin here would be a string nothing installs, kept in
+# step with the submodule by hand.
 #
 # The engine stays out of the API image by DEPLOYMENT CHOICE — heavy
 # OCR/tokeniser/model runtime, independently scaled via its own cloud runner —

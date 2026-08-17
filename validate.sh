@@ -181,8 +181,8 @@ fi
 
 # ── 11. Python lint (ruff) over redline's own Python ─────────────────────────
 # The Python half of check #2's lint pass. Rules and exclusions live in ruff.toml
-# at the root — including the two upstream submodules, which we never modify
-# (ADR-0015). Unlike the pytest checks above, ruff's output is NOT silenced: a
+# at the root — including the two upstream submodules, which we never modify.
+# Unlike the pytest checks above, ruff's output is NOT silenced: a
 # lint failure is only actionable with its diagnostics. SKIPs cleanly when python3
 # is absent or ruff cannot be installed, so an offline host still gates on the
 # rest, matching check #9.
@@ -208,7 +208,7 @@ else
 fi
 
 # ── 12. Wayfinder fork hygiene (services/wayfinder submodule) ────────────────
-# The Wayfinder fork is a submodule we RUN and EDIT (ADR-0019), unlike the
+# The Wayfinder fork is a submodule we RUN and EDIT, unlike the
 # byte-identical Python submodules. One invariant replaces "never modified": the
 # checkout is on the fork's `main` branch commit the superproject
 # records — redline's mount lives on johntooth/wayfinder's `main`.

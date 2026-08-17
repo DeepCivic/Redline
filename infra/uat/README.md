@@ -5,9 +5,8 @@ so you can click through Wayfinder and (with an adjudicator key) a seeded redlin
 evaluation.
 
 This is local UAT scaffolding. The shipped design runs the fork's `apps/web` on
-the host with `pnpm dev` — see
-[`docs/guides/two-stack-local-run.md`](../../docs/guides/two-stack-local-run.md).
-It exists because this host has no local Node.
+the host with `pnpm dev`; this compose overlay exists because this host has no
+local Node.
 
 ## Topology
 
@@ -26,7 +25,7 @@ perfectly healthy.
 | `langfuse` | `redline-uat` | observability (optional) | 3030 |
 | `wayfinder-postgres` | `redline-uat` | the fork's own Postgres (pgvector) | 5443 |
 | `wayfinder-minio` | `redline-uat` | the fork's object storage + console | 9020 / 9021 |
-| `redline-postgres` | `redline` | the `redline_` schema (ADR-0002) | 5433 |
+| `redline-postgres` | `redline` | redline's own Postgres, standalone until the report domain (step 2) re-owns it | 5433 |
 | `minio` | `redline` | redline's object storage + console | 9000 / 9001 |
 | `womblex-ingest` | `redline` | Parquet→JSON extraction sidecar | 8000 |
 
@@ -120,7 +119,7 @@ WOMBLEX_CORPUS=services/womblex-ingest/tests/corpus-local \
 
 # b) write the manifest. `documentIds` are womblex `source_hash` values, NOT
 #    filenames — they do not exist until (a) has run, and come from the run's
-#    manifest.parquet. See two-stack-local-run.md for the worked example.
+#    manifest.parquet.
 
 # c) seed. Pass an ABSOLUTE path: pnpm --filter runs the script with the package
 #    directory as its working directory.
@@ -135,7 +134,8 @@ non-admin test account can reach it.
 
 A UAT run needs **no Isaacus account** — `ISAACUS_API_KEY=uat-local` in
 `infra/.env` produces chunks offline. Only the embed stage spends against a real
-key, and its output is inert while ADR-0018's addendum defers similarity search.
+key, and its output is inert while v1 stays point-only (see
+`docs/Redline-Plan.md` §1.1 — search is a re-entry, not a v1 feature).
 
 ## 6. The report tool server (optional)
 

@@ -390,14 +390,46 @@ whose exit test joins two independently-testable behaviours is two steps.
     shapes would look more finished than the store actually is. Redesigning them against
     real data is step 1, gated on step 0c.
     _Exit: `./validate.sh` green — met 2026-08-17, without restoring the seven ports._
-0b. **Legacy removal.** The full §10 itinerary (docs, code, config) — its own commit
-    (or several, one per §10 subsection, if the diff runs past the ≤500-line cap on a
-    single one), separate from 0a because a green build and a clean tree are two
-    independently-testable outcomes. Still outstanding — 0a landed as trash removal, not
-    the full §10 sweep; `docs/architecture.md` and the other §10 documents are still
-    present.
-    _Exit: every path listed in §10 is gone and no reference to a removed symbol
-    remains (`grep` clean for each removed export/route/profile)._
+0b. ~~**Legacy removal.**~~ **Landed 2026-08-17**, scoped to redline's own repo — the
+    fork half of §10 is deferred to step 10 below, since `services/wayfinder` is an
+    uninitialised submodule in every session that has touched this plan so far and
+    surgery on an unpopulated checkout cannot be verified.
+
+    Most of §10's "Code and configuration" subsection turned out to be **already
+    resolved** by 0a's actual (extreme) landing, not still outstanding as originally
+    scoped: the barrels, the sidecar's `/runs`/`/embeddings`/Postgres wiring, the
+    `minio`/`@rbrasier/domain` adapters deps, the `pnpm-workspace.yaml` vendor glob,
+    `validate.sh` #5/#10/#13, the `money`/`stage`-Dockerfile compose wiring and
+    `infra/docker-compose.run-sidecar.yml` were all already gone. One §10 claim was
+    wrong outright: `scripts/thread-03-smoke.sh` was marked for removal on the
+    premise that the `ingest` profile and `POST /ingest` were gone — they are not,
+    `/ingest` is explicitly kept per 0a's own landing note, and the script still
+    proves it end-to-end. It stays.
+
+    What actually landed: the four legacy docs (`architecture.md`,
+    `guides/create-a-corpus.md`, `guides/two-stack-local-run.md`,
+    `reviews/2026-07-28-technical-review.md`); every dangling ADR-00xx citation
+    across 19 files in redline's own tree (Wayfinder's and womblex's own ADR
+    citations are untouched — they resolve to registers that still exist); the dead
+    `psycopg` dependency and its stale comment in `services/womblex-ingest`'s
+    `pyproject.toml`; the Wayfinder-vendoring apparatus in `scripts/podman-run.sh`
+    (nothing imports `@rbrasier/*` any more, so the scratch-copy vendoring step was
+    dead weight that would hard-fail on an uninitialised submodule for no reason);
+    and every reference to the four deleted docs plus the pre-existing
+    `docs/delivery-plan.md`/`docs/design-principles.md` deletions across
+    `README.md`, `apps/README.md`, `infra/uat/README.md`,
+    `services/womblex-ingest/README.md` (rewritten — it still documented the
+    deleted `/runs`, `/embeddings`, run-trigger and money-Postgres-load surface),
+    `apps/redline-mcp/README.md` (rewritten — it still documented all ten tools
+    and a required `REDLINE_DATABASE_URL` neither of which the code has),
+    `docs/guides/local-dev-and-validation.md` (rewritten — vendoring section gone,
+    check table corrected to the 10 checks that exist), `.claude/CLAUDE.md` and all
+    four `.claude/commands/*.md` skill files (which also named the never-existing
+    `services/numbatch` submodule).
+    _Exit: `./validate.sh` green — met 2026-08-17. Every path §10 named in redline's
+    own repo is gone or was already gone, and grep is clean for every removed
+    export/route/profile/doc path in that scope. The Fork subsection is carried
+    forward to step 10, where `services/wayfinder` is actually populated._
 0c. **Sample corpus handoff.** The user supplies a real Womblex corpus — documents staged
     through the engine and drained at least through `chunk` (further through `enrich` and
     `money` if graph/financial contracts are to be designed against real spans too), so
@@ -461,15 +493,30 @@ the verbatim/provenance rule (§4, rule 3). The duplicate-summarisation cost the
 2026-07-28 review measured no longer applies — summary generation is descoped entirely,
 not merely relocated. Nothing else in them survives the cuts.
 
+**Everything below except Fork is resolved** — the documents, the "Code and
+configuration" bullets and the ADR-00xx sweep landed in build step 0b (2026-08-17),
+several of them turning out to already be resolved by 0a's actual landing rather
+than still outstanding. See 0b's entry in §9 for exactly what landed and what
+turned out to be a stale claim (`scripts/thread-03-smoke.sh` was wrongly marked for
+removal — it stays, see 0b). Kept here only as the historical itinerary.
+
+### Fork — outstanding, carried to step 10
+
+`corpus.ts`, `container-redline.ts`, the `/create-corpus` route and its e2e spec, the
+sidebar entry and the `corpus:create` permission. Not attempted in 0b:
+`services/wayfinder` is an uninitialised submodule in every session that has touched
+this plan, and surgery on an unpopulated checkout cannot be verified. Step 9's step 10
+("The fork surface") folds this in alongside landing the rest of the fork PR and the
+gitlink bump.
+
+<details>
+<summary>Original itinerary (resolved 2026-08-17 except Fork, above)</summary>
+
 ### Documents — delete outright
 
 Three are **already deleted** (2026-08-17, deliberately, ahead of 0b): `delivery-plan.md`
 (240 lines), `design-principles.md` (141) and `NEXT-STEPS-create-corpus-e2e.md` (252).
 `delivery-plan.md` §0.3 is already folded into step 0a above, so nothing is owed to it.
-Their references from `.claude/CLAUDE.md` are live danglers — that file's edit is listed
-below and now blocks nothing else.
-
-Outstanding:
 
 | Path | Lines | Why it is legacy |
 |---|---|---|
@@ -483,41 +530,56 @@ Keep `docs/guides/local-dev-and-validation.md`, minus its vendoring section.
 ### Code and configuration
 
 - **Barrels** — dangling `export *` lines in `packages/redline-domain/src/index.ts` and
-  `packages/redline-adapters/src/index.ts`.
+  `packages/redline-adapters/src/index.ts`. *(Already resolved by 0a.)*
 - **Sidecar** — the `/runs`, `/runs/{id}/resume` and `/runs/{id}` routes plus `runs.py`;
   both `/embeddings` routes; the Postgres wiring on `POST /ingest`; the embedding DTOs
-  in `records.py`.
+  in `records.py`. *(Already resolved by 0a; `runs.py`'s in-memory `RunRegistry` stays —
+  it backs the surviving `/status/{run_id}` route, a different thing from the deleted
+  `/runs` CRUD routes.)*
 - **`packages/redline-adapters`** — the `minio` dependency and the `@rbrasier/domain`
-  optional dependency. **`drizzle.config.ts` and the Drizzle dependencies stay** —
-  Postgres returns for the report domain (step 2), which also makes `validate.sh` #6
-  (table naming) live again rather than a removal candidate.
+  optional dependency. *(Already resolved by 0a.)* **`drizzle.config.ts` and the Drizzle
+  dependencies stay** — Postgres returns for the report domain (step 2), which also
+  makes `validate.sh` #6 (table naming) live again rather than a removal candidate.
 - **Workspace** — `pnpm-workspace.yaml`'s `vendor/wayfinder/packages/*` glob and its
-  comment block, now that `scripts/vendor-wayfinder.sh` is deleted.
+  comment block, now that `scripts/vendor-wayfinder.sh` is deleted. *(Already resolved
+  by 0a; the dead vendoring dance inside `scripts/podman-run.sh` itself was not — 0b
+  removed it.)*
 - **`validate.sh`** — #5 (vendor not committed) and #10 (lockfile rewritten by an
-  unvendored install) police vendoring that no longer happens. **#13 is not merely
-  subjectless, it fails now**: it greps `infra/docker/womblex-money.Dockerfile` for
-  `ARG EXTRAS=`, and that Dockerfile was deleted in `59d4156`, so the check takes its
-  fail branch on every run. **#6 and #12 stay.**
-- **`infra/docker-compose.yml`** — the `ingest`, `money`, `stage` and `redline` profiles
-  and the `money` + `stage` services. `redline-postgres` **returns**, under `report`.
-- **`infra/docker-compose.run-sidecar.yml`** — orphaned twice over: it builds from the
-  deleted `infra/docker/womblex-money.Dockerfile` and exists to run `run_trigger.py`,
-  which went with the control plane. It goes with `validate.sh` #13.
-- **`infra/uat`** — `REDLINE_ADJUDICATOR_*` becomes the extraction model's config; the
-  Create Corpus env notes and the run-sidecar comment go.
-- **`scripts/thread-03-smoke.sh`** — drives the `ingest` profile and `POST /ingest`,
-  both removed. **`scripts/womblex-engine-smoke.sh` stays** — it stages a corpus and
-  drains the engine through its own CLI, which is how a corpus is made now.
+  unvendored install) police vendoring that no longer happens. #13 greps
+  `infra/docker/womblex-money.Dockerfile` for `ARG EXTRAS=`, and that Dockerfile was
+  deleted in `59d4156`. *(Already resolved by 0a — all three retired with explanatory
+  comments in place.)* **#6 and #12 stay.**
+- **`infra/docker-compose.yml`** — the `money` service and the broken
+  `womblex-money.Dockerfile` reference. *(Already resolved by 0a.)* **The `ingest` and
+  `stage` profiles and the `redline` (`redline-postgres`) profile stay** — `ingest` and
+  `stage` are live, and `redline-postgres` is standalone until step 2 re-owns it, not a
+  removal candidate.
+- **`infra/docker-compose.run-sidecar.yml`** — orphaned twice over: it built from the
+  deleted `infra/docker/womblex-money.Dockerfile` and existed to run `run_trigger.py`,
+  which went with the control plane. *(Already resolved by 0a, alongside `validate.sh`
+  #13.)*
+- **`infra/uat`** — the Create Corpus env notes and the run-sidecar comment.
+  *(Already resolved by 0a.)* `REDLINE_ADJUDICATOR_*` env vars are gone from the UAT
+  files (nothing reads them); reintroducing extraction-model config is step 5/8's, not
+  a rename of dead config.
+- **`scripts/thread-03-smoke.sh`** — ~~drives the `ingest` profile and `POST /ingest`,
+  both removed~~ **wrong**: neither is removed, `/ingest` is explicitly kept per 0a's
+  own landing note, and the script still proves the sidecar end to end. **It stays.**
+  `scripts/womblex-engine-smoke.sh` also stays — it stages a corpus and drains the
+  engine through its own CLI, which is how a corpus is made now.
 - **`.claude/CLAUDE.md`** — the `redline-web` references, `scripts/vendor-wayfinder.sh`,
   the migrations rule tied to the deleted schema, and the E2E deviation row with its
-  three Create Corpus paragraphs.
+  three Create Corpus paragraphs. *(Resolved in 0b, alongside repointing every
+  `architecture.md`/`delivery-plan.md`/`design-principles.md` reference in the file to
+  `Redline-Plan.md`, and the same repointing across all four `.claude/commands/*.md`
+  skill files — those named the never-existing `services/numbatch` submodule too.)*
 - **`ADR-00xx` comments** — across `packages/`, `apps/`, `services/`, `infra/`. The
-  register is abandoned and settled as such; 22 files still carry citations that resolve
-  to nothing (`grep -rln 'ADR-00' packages apps services infra`). Read a surviving number
-  as a pointer into git history until it is removed, except where it is plainly
-  upstream's — womblex's own register does still exist.
-- **Fork** — `corpus.ts`, `container-redline.ts`, the `/create-corpus` route and its e2e
-  spec, the sidebar entry and the `corpus:create` permission.
+  register is abandoned and settled as such; 19 files carried citations that resolved
+  to nothing. *(Resolved in 0b — every dangling redline-own citation removed; Wayfinder's
+  and womblex's own ADR citations, which resolve to registers that still exist, are
+  untouched.)*
+
+</details>
 
 ## 11. Open questions
 

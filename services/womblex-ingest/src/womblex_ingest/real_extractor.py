@@ -1,18 +1,18 @@
 """Real womblex extractor — Thread 37b, the binding behind the seam.
 
 The **womblex engine** (the `womblex` compose profile, which builds the engine's
-own image from the `services/womblex` submodule — ADR-0015) runs the real pipeline
+own image from the `services/womblex` submodule) runs the real pipeline
 (`extract` → `chunk` → `embed`) and lands its Parquet shards in object storage
-under `proc/{evaluationId}/` — the redline-owned bucket, whatever backs it
-(ADR-0002). This module is the *binding*: with `WOMBLEX_MODE=real` it reads those
+under `proc/{evaluationId}/` — the redline-owned bucket, whatever backs it.
+This module is the *binding*: with `WOMBLEX_MODE=real` it reads those
 engine-produced shards from object storage and maps womblex's
 schema into the JSON read model (`records.py`), so the TypeScript adapter never
-links a Parquet reader (ADR-0003). The pod owns the durable Parquet;
+links a Parquet reader. The pod owns the durable Parquet;
 the binding only *reads* it — hence `ExtractionResult.shards` is empty here
 (re-writing shards the pod already wrote would duplicate the record).
 
 Why read the engine's shards rather than invoke womblex in-process: the seam is
-object storage (ADR-0002), so the sidecar and the engine stay *separately
+object storage, so the sidecar and the engine stay *separately
 deployable and freely co-locatable* — neither imports the other, which is what
 lets the engine be a version-pinned submodule swapped without relinking the
 sidecar. womblex's runtime (PyMuPDF, OCR, the Kanon tokeniser, model weights) is
@@ -47,9 +47,9 @@ from womblex_ingest.shard_reader import (
 )
 from womblex_ingest.storage import ObjectStorage
 
-# The womblex shard-name suffixes the engine writes (see `architecture.md` §4 and
-# ADR-0008). We discover shards by suffix rather than by an assumed run-directory
-# name, because the batch/run segment is womblex's, not ours.
+# The womblex shard-name suffixes the engine writes. We discover shards by
+# suffix rather than by an assumed run-directory name, because the batch/run
+# segment is womblex's, not ours.
 _ELEMENTS_SUFFIX = ".elements.parquet"
 _CHUNKS_SUFFIX = ".chunks.parquet"
 _TABLE_CELLS_SUFFIX = ".table_cells.parquet"

@@ -1,7 +1,7 @@
 # redline runtime stack — womblex + postgres + minio, wired with
 # compose profiles so you bring up only what a given thread needs.
 #
-# Per ADR-0002, redline owns its own MinIO and Postgres; the seam stays plain
+# redline owns its own MinIO and Postgres; the seam stays plain
 # S3/Postgres so a deployment can repoint these at a shared instance by config.
 #
 # Credentials use dev defaults (minioadmin / a dev password) so ANY single
@@ -47,7 +47,7 @@ name: redline
 # docker-compose.yml so the two read side by side. WOMBLEX_STORE_URI is rooted at
 # redline's evaluation prefix, so the engine's native runs/<run_id>/documents/
 # layout lands *under* proc/{evaluationId}/ and the sidecar's suffix-based shard
-# discovery finds it unchanged (ADR-0002 keeps object storage the only seam).
+# discovery finds it unchanged (object storage is the only seam).
 x-womblex-env: &womblex-env
   WOMBLEX_DB_DSN: postgresql://womblex:womblex@womblex-queue:5432/womblex
   WOMBLEX_STORE_URI: s3://${REDLINE_BUCKET:-redline}/proc/${WOMBLEX_EVAL_ID:-womblex-pod}
