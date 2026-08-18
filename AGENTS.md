@@ -9,6 +9,7 @@
     No dead code — if something is unused, delete it entirely
     Australian spelling in comments and docs
     750 line hard cap per file — validate after every file save with wc -l; split if exceeded
+    500 diff cap per merge
 
 # Don't
 
