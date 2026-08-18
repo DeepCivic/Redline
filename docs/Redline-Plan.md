@@ -1,252 +1,189 @@
-## Redline Delivery Spec — Baseline: Anti-Fabrication
+# Redline Delivery Plan — Grounded Extraction Output → CSV
 
-### Objective
+## Objective
 
-Deliver the minimum viable Redline adapter that prevents fabricated values from reaching exported CSVs. The baseline does not guarantee the model selected the best possible evidence; it guarantees that every non-empty CSV cell is grounded in verified Womblex source content.
+Turn a batch of **already-extracted document content** into a downloadable,
+grounded CSV, where every non-empty cell is copied verbatim from — or
+deterministically normalised (allowlist only) from — that extracted content. An
+LLM may reason, search and select; it may not author a cell value.
 
-The LLM may reason, search, and select. It may not author CSV values.
+## What this consumes (and what it does not)
 
----
+redline reads **womblex output** — extracted content, not the womblex engine.
+The engine, OCR, embeddings, and any API gating are out of scope entirely and
+never appear in this loop. The output arrives from any of three sources, all of
+which must be supported:
 
-### Core invariant
+- a batch of files in a local folder,
+- a batch of objects in a bucket,
+- rows in a database.
 
-> Every non-empty CSV cell must be copied from, or deterministically normalized from, verified Womblex evidence. Any value lacking verified evidence is rejected — the cell is left empty or marked for review. No exception.
+Every source resolves to the same per-document shape, behind a single reader
+port:
 
-This is the only guardrail the baseline enforces. Contextual accuracy, row reconciliation, conflict resolution, and confidence scoring are deferred to later maturity phases.
+- `elements[]` — `{ documentId, elementOrder, page, text }`
+- `chunks[]` — `{ chunkId, documentId, text }` (chunkId is `{documentId}:{index}`)
+- `tableCells[]` — `{ documentId, elementOrder, rowIndex, columnIndex, rawValue, isCurrency }`
 
----
+`documentId` is the document identity. The source is swappable behind the port;
+the pipeline above it is source-agnostic.
 
-### Baseline scope
+## Core invariant
 
-| Component | Baseline responsibility |
-|---|---|
-| Womblex source adapter | Read immutable Womblex outputs and expose stable document/chunk/span references. |
-| Retrieval/evidence tools | Let the LLM list, search, and retrieve exact text spans from Womblex content. |
-| LLM extraction agent | Interpret the user schema, search documents, select evidence spans, and propose structured extraction claims. |
-| Deterministic validator | Verify every claim against immutable Womblex bytes. Reject anything unsupported. |
-| CSV assembler | Copy or normalize verified evidence into cells. Emit provenance metadata. |
-| Wayfinder integration | Use Wayfinder's existing schema editor, run progress, grid, and export. Minimal changes. |
+> Every non-empty CSV cell is copied verbatim from, or deterministically
+> normalised (allowlist only) from, a span of extracted content that the
+> verifier re-reads and matches. A value without a matching span is rejected —
+> the cell is left empty and the reason recorded. When in doubt, reject.
 
----
+Asserted mechanically — re-read the referenced span, compare bytes — never
+eyeballed.
 
-### Non-goals (deferred to later maturity)
+## What the LLM does, and does not do
 
-- Proving the LLM selected the optimal or contextually correct evidence.
-- Cross-document row reconciliation and deduplication.
-- Multi-candidate conflict resolution beyond safe rejection.
-- Review UI for ambiguous cells (export marks them; manual review is out of scope).
-- Sophisticated confidence or ambiguity scoring.
-- Complex normalization beyond a small allowlisted set.
+The agent:
+1. Reads the user's column spec (name, type, required).
+2. Reads a document's extracted content through the reader port.
+3. Proposes, per (row, column), a **span reference** — a document id plus the
+   span it believes holds the value (an element + char range, or a table-cell
+   anchor).
+4. Reports "not found" for a field it cannot ground, rather than guessing.
 
----
+Its output is a set of **claims requiring verification**. A claim carries a
+**reference, not a bare value**: the verifier derives the value from the
+referenced span, so the agent cannot inject a value it composed.
 
-### Agent responsibilities
+## What the verifier + assembler do (deterministic)
 
-The LLM agent:
+1. Resolve every reference against the reader.
+2. Re-read the referenced span and derive the cell value from it — element text
+   sliced by char range, or a table cell's `rawValue`.
+3. Reject and leave empty when the reference does not resolve, the derived value
+   is empty, normalisation is not allowlisted, or the value fails its column
+   type. Record the reason as a `DomainError`.
+4. Assemble verified row into the CSV one at a time.
+5. Repeat until corpus is complete.
 
-1. Reads the user-defined extraction schema (column names, types, required/optional).
-2. Searches Womblex documents and chunks via retrieval tools.
-3. Selects evidence spans it believes correspond to each requested field.
-4. Submits structured extraction claims — each claim references evidence, never a bare value.
-5. Reports missing or ambiguous fields rather than guessing.
-6. Never directly writes the final CSV cell value.
+Note: expectation is 1 document = 1 row and a single LLM call does not do more than 1 document.
 
-The agent's output is treated as a set of **claims requiring validation**, not as trusted data.
-
----
-
-### Deterministic responsibilities
-
-The validator and assembler:
-
-1. Resolve every evidence reference against immutable Womblex content.
-2. Verify the quoted text and offsets match the source exactly.
-3. Copy the raw value directly from the verified evidence span.
-4. Apply only allowlisted deterministic normalizations (e.g., date reformatting, currency parsing to a canonical form).
-5. Reject any claim where the proposed value is not copied from or allowlisted-normalized from the verified evidence.
-6. Reject any claim where the evidence reference is malformed, missing, or does not resolve to real Womblex content.
-
----
-
-### Data contracts
+## Data contracts (minimal; in the real domain types)
 
 ```ts
-interface ExtractionSchema {
-  columns: ColumnDef[];
+export interface ColumnSpec {
+  readonly name: string;
+  readonly type: "string" | "currency" | "date" | "number";
+  readonly required: boolean;
+  readonly normalisation: "iso_date" | "decimal_currency" | "none";
 }
 
-interface ColumnDef {
-  name: string;
-  type: "string" | "currency" | "date" | "number";
-  required: boolean;
-  normalization?: "iso_date" | "decimal_currency" | "none";
+// A claim references a span; it has NO value field.
+export type SpanReference =
+  | { readonly kind: "element"; readonly documentId: string; readonly elementOrder: number; readonly start: number; readonly end: number }
+  | { readonly kind: "table_cell"; readonly documentId: string; readonly elementOrder: number; readonly rowIndex: number; readonly columnIndex: number };
+
+export interface ExtractionClaim {
+  readonly rowKey: string;
+  readonly column: string;
+  readonly reference: SpanReference;
 }
 
-interface EvidenceReference {
-  sourceHash: string;
-  chunkId: string;
-  pageNum?: number;
-  start: number;
-  end: number;
-  quotedText: string;
-}
-
-interface ExtractionClaim {
-  rowKey: string;
-  column: string;
-  evidence: EvidenceReference;
-  // No bare "value" field — the validator derives the value from evidence
-  proposedNormalization?: "iso_date" | "decimal_currency" | "none";
-}
-
-interface VerifiedCell {
-  rowKey: string;
-  column: string;
-  value: string | null;
-  status: "VERIFIED" | "REJECTED" | "AMBIGUOUS";
-  reason?: string;
-  evidence?: EvidenceReference;
-}
-
-interface CsvRow {
-  rowKey: string;
-  cells: Record<string, VerifiedCell>;
+export interface VerifiedCell {
+  readonly rowKey: string;
+  readonly column: string;
+  readonly value: string | null;
+  readonly verified: boolean;
+  readonly rejection?: DomainError; // reuses the domain taxonomy — no new type
+  readonly reference?: SpanReference;
+  readonly rawText?: string;        // the exact span the value came from
 }
 ```
 
-The key design choice: `ExtractionClaim` contains **no `value` field**. The value is always derived by the validator from the evidence span. The agent cannot inject a value it composed.
+CSV output = the grounded value grid: one column per `ColumnSpec`, cells either
+a verified value or empty.
 
----
+## The reader port and its sources
 
-### Failure policy
+A single port returns the per-document shape above, implemented over each source:
 
-| Situation | Outcome |
-|---|---|
-| No evidence provided for a required field | `null`, status `REJECTED`, reason `NO_EVIDENCE` |
-| Evidence reference does not resolve in Womblex | `null`, status `REJECTED`, reason `EVIDENCE_NOT_FOUND` |
-| Quoted text does not match source bytes | `null`, status `REJECTED`, reason `TEXT_MISMATCH` |
-| Evidence resolves but field type validation fails | `null`, status `REJECTED`, reason `TYPE_MISMATCH` |
-| Normalization not in allowlist | `null`, status `REJECTED`, reason `UNSUPPORTED_NORMALIZATION` |
-| Agent provides a bare value with no evidence reference | `null`, status `REJECTED`, reason `NO_EVIDENCE` |
-| Multiple conflicting candidates (later maturity) | `null`, status `AMBIGUOUS`, reason `MULTIPLE_CANDIDATES` (optional in baseline; safe rejection also acceptable) |
+- **folder source** — reads a batch of extracted-output files from a local dir.
+- **bucket source** — reads a batch of objects from a bucket.
+- **db source** — reads rows.
 
-Baseline rule: when in doubt, reject and leave empty. A blank cell is always safer than a fabricated one.
+All three are built and proven together — the pipeline above the port cannot be
+trusted until it behaves identically regardless of source. The pipeline is
+tested against a **committed fixture batch** — a representative sample of
+extracted output authored as data — so the verifier and assembler are proven
+without any external system.
 
----
+## Fixtures
 
-### CSV output contract
+A small, redline-owned batch of extracted-output records committed as data:
+a handful of documents including at least one with a **table of cells** (so cell
+→ CSV row and currency/number normalisation are exercised) and one prose
+document (so element + char-range grounding is exercised). Authored directly to
+the reader's shape — nothing runs to produce it. The same fixture batch is read
+through each of the three sources so the source implementations are proven
+equivalent.
 
-The exported CSV contains:
+## Milestones (each shippable; small diffs)
 
-**User-facing value columns** — one per schema column, containing only verified values or empty cells.
+- **Step 0 — Strip to plan scope.** Delete every file in the redline repo that
+  does not exist in service to this plan. The repo is mostly wrong — leftover
+  from a prior direction, not something to preserve — so the strip is broad, not
+  surgical. Deleting a package means also removing every dangling reference to
+  it, so the workspace still resolves: its `workspace:*` dependency entries,
+  `tsconfig` project references, and `Dockerfile` COPY lines. In particular
+  `redline-application` and `redline-shared` are untracked build residue (stale
+  `dist/` with no `src/`, nothing committed) — delete the residue and every
+  reference, or recreate them with real `src/`; they must not be left half-
+  present. (Blast-radius analysis is the implementing dev's job, not this
+  plan's.)
+- **M0 — Baseline compiles.** Make the workspace resolve again after the strip,
+  and reconcile the domain and adapters `index.ts` barrels to what remains on
+  disk. Green validate is earned here, not immediate: `pnpm install` cannot
+  resolve while deleted packages are still referenced, so M0 is done only when
+  the strip's dangling references are all cleared.
+- **M1 — Contracts.** `ColumnSpec`, `SpanReference`, `ExtractionClaim`,
+  `VerifiedCell` in the domain, zero-dependency, tests first.
+- **M2 — Reader + all three sources + fixture batch.** The reader port and its
+  folder, bucket and db implementations over a committed extracted-output batch
+  (tables + prose + a currency cell), proven equivalent across sources. The
+  per-document shape in this plan is the source of truth: any reader port left
+  on disk after the strip is more to delete, not a contract to reconcile
+  against. Build the reader to this plan's shape, keyed on `documentId` alone.
+- **M3 — Verifier.** `verifyClaims(reader, spec, claims) → VerifiedCell[]`.
+  Resolves references, derives values, applies allowlist normalisation, rejects
+  with the right code. Proven against the fixture batch — no LLM.
+- **M4 — CSV assembler.** Verified rows → CSV. Deterministic ordering.
+- **M5 — Claim-producing agent.** LLM reads spec + extracted content, emits
+  claims (references only). Wired to the verifier; proven with a fake model.
+- **M6 — Surface it in Wayfinder (`0.23.1`).** Re-validate the mount against the
+  current version and expose the CSV download. The Wayfinder fork was fast-
+  forwarded, so its `apps/web` is not a fixed contract to protect: expect
+  breakage in the mount and fix it in-flight — that is anticipated build work,
+  not a design risk. Out of scope until M0–M5 are green.
 
-**Provenance columns** (appended, one set per value column or in a companion file):
+## Acceptance criteria (automated, no external systems)
 
-| Column | Content |
-|---|---|
-| `<col>_status` | `VERIFIED`, `REJECTED`, `AMBIGUOUS` |
-| `<col>_reason` | Rejection reason, if applicable |
-| `<col>_source_hash` | Womblex source hash |
-| `<col>_chunk_id` | Chunk containing the evidence |
-| `<col>_page` | Page number, if available |
-| `<col>_raw_text` | The exact source text span the value was copied from |
+1. Fabricated reference (span does not hold the value) → empty cell, not
+   verified, rejection recorded.
+2. Correct reference → populated cell, verified.
+3. Table-cell currency reference + `decimal_currency` → normalised value,
+   verified.
+4. Non-allowlisted normalisation → rejected `VALIDATION_FAILED`.
+5. Unresolvable reference → rejected `NOT_FOUND`.
+6. Missing required field → empty cell, reason recorded, CSV still emits.
+7. The reader returns identical results for the same fixture batch across the
+   folder, bucket and db sources.
+8. Assembling twice over the same input yields byte-identical CSVs.
 
-This makes every cell auditable. A reviewer can trace any value back to the exact Womblex bytes.
+## Non-goals
 
----
-
-### Retrieval and evidence tools
-
-The agent has access to these tools. All return immutable Womblex content with stable references:
-
-```ts
-// List documents in a corpus with metadata
-listDocuments(corpusId: string): DocumentSummary[]
-
-// Full-text search across chunks in a document or corpus
-searchChunks(query: string, opts?: { documentId?: string }): ChunkHit[]
-
-// Retrieve a specific chunk by ID
-getChunk(chunkId: string): WomblexChunk
-
-// Retrieve an exact text span from a chunk
-getEvidenceSpan(chunkId: string, start: number, end: number): EvidenceSpan
-```
-
-`EvidenceSpan` is the only object the validator accepts as source of truth:
-
-```ts
-interface EvidenceSpan {
-  sourceHash: string;
-  chunkId: string;
-  pageNum?: number;
-  start: number;
-  end: number;
-  text: string; // exact bytes from immutable Womblex content
-}
-```
-
-The validator independently re-fetches the span from Womblex using the reference. It does not trust the agent's quoted text. It compares the agent's `quotedText` against the freshly retrieved span.
-
----
-
-### Execution flow
-
-1. User defines extraction schema in Wayfinder's column editor.
-2. Redline reads Womblex outputs and indexes chunks for retrieval.
-3. Redline starts an extraction run; the LLM agent receives the schema and retrieval tools.
-4. The agent searches documents, selects evidence spans, and submits extraction claims (no bare values).
-5. The validator resolves every claim's evidence against immutable Womblex content.
-6. Verified cells are copied or normalized from evidence; rejected cells are left empty with a reason.
-7. Wayfinder renders the grid with values and status; export produces CSV with provenance columns.
-
----
-
-### Acceptance criteria
-
-The baseline is complete when these tests pass:
-
-1. **Fabricated value rejected.** Agent submits a claim with evidence that does not contain the implied value. Cell is `null`, status `REJECTED`.
-
-2. **Correct copied value accepted.** Agent submits a claim whose evidence span contains the value. Cell is populated, status `VERIFIED`, provenance is complete.
-
-3. **Allowlisted normalization accepted.** Agent submits evidence containing `31/07/2026`; schema requests ISO date normalization. Cell contains `2026-07-31`, status `VERIFIED`.
-
-4. **Non-allowlisted normalization rejected.** Agent attempts a normalization not in the allowlist. Cell is `null`, status `REJECTED`, reason `UNSUPPORTED_NORMALIZATION`.
-
-5. **Evidence mismatch rejected.** Agent's `quotedText` differs from the actual Womblex span at those offsets. Cell is `null`, status `REJECTED`, reason `TEXT_MISMATCH`.
-
-6. **Bare value rejected.** Agent submits a JSON object with a `value` field but no evidence reference. Cell is `null`, status `REJECTED`, reason `NO_EVIDENCE`.
-
-7. **Missing field handled.** Agent reports no evidence found for a required field. Cell is `null`, status `REJECTED`, reason `NO_EVIDENCE`.
-
-8. **Provenance completeness.** Every non-null cell in the exported CSV has non-empty `source_hash`, `chunk_id`, and `raw_text` provenance columns.
-
----
-
-### Delivery phases
-
-| Phase | Deliverable | Dependencies |
-|---|---|---|
-| 1. Source adapter + evidence contract | Womblex reader, `WomblexSource`/`EvidenceSpan` types, `listDocuments`/`searchChunks`/`getChunk`/`getEvidenceSpan` tools | Womblex S3/Postgres access |
-| 2. LLM tool orchestration | Agent that receives schema, calls retrieval tools, submits `ExtractionClaim[]` with evidence references and no bare values | Phase 1 |
-| 3. Validator + CSV assembler | Deterministic validation against immutable Womblex content, allowlisted normalization, CSV assembly with provenance | Phases 1–2 |
-| 4. Wayfinder integration | Schema editor hookup, run progress, grid rendering of values + status, export with provenance columns | Phase 3 |
-| 5. Test harness and fixtures | Real Womblex sample documents; acceptance criteria 1–8 automated | Phases 1–4 |
-
----
-
-### What this baseline does and does not guarantee
-
-**Guarantees:**
-- No fabricated value can reach the CSV. Every non-empty cell is copied from or allowlisted-normalized from verified Womblex evidence.
-- Every exported cell has full provenance traceable to exact source bytes.
-- The agent cannot inject values — the data contract has no value field on claims.
-
-**Does not guarantee (later maturity):**
-- The agent selected the contextually correct evidence among multiple candidates.
-- Rows are correctly reconciled across documents or within multi-record documents.
-- Ambiguous cases are resolved — they are safely rejected instead.
-- The extracted data is complete or optimal — it is only verified as grounded.
-
-This is the baseline. Everything beyond anti-fabrication is a later phase.
+- The womblex engine and everything it does — not in this loop.
+- Chunk/money/graph stores, run trigger, staged-corpus writer as prerequisites —
+  they return only if a CSV genuinely needs them.
+- Similarity search, cross-document reconciliation, conflict resolution,
+  confidence scoring — deferred; safe rejection stands in.
+- A provenance companion file or appended provenance columns — out of scope; the
+  CSV is the grounded value grid.
+- The report/workbook assembler in the Wayfinder submodule — separate path, left
+  untouched.

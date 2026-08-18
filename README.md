@@ -1,11 +1,11 @@
 # Redline
 
-> **Corpus-ingest-and-report substrate** — a Wayfinder plugin (its own repo). A
-> specialist stages a corpus of documents from the browser, the **womblex** engine
-> extracts, chunks, embeds, enriches and prices it, and the chunks, enrichment
-> graph, money spans and extraction JSON that run lands serve two consumers: the
-> Create Corpus UI and redline's MCP report tools. Reuses Wayfinder's typed
-> tabular/XLSX helpers read-only.
+> **Grounded extraction output → CSV.** Turns a batch of already-extracted
+> document content (womblex output — never the engine itself) into a downloadable
+> CSV where every non-empty cell is copied verbatim from, or deterministically
+> normalised from, a span of that content that a deterministic verifier re-reads
+> and matches. An LLM may reason, search and select; it may not author a cell
+> value.
 
 Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
@@ -13,48 +13,35 @@ Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
 ## Status
 
-Under construction. Two documents govern:
-[`docs/architecture.md`](./docs/architecture.md) is what redline **is**, and
-[`docs/delivery-plan.md`](./docs/delivery-plan.md) is what is **left to build**.
-Durable design rationale lives in [`docs/design-principles.md`](./docs/design-principles.md);
-it does not track work.
+Under construction. [`docs/Redline-Plan.md`](./docs/Redline-Plan.md) is the one
+document that governs — the core invariant, data contracts, milestones and
+acceptance criteria all live there; nothing here restates it.
 
-The substrate is built and green under `./validate.sh`: the `womblex-ingest`
-sidecar (the read seam, the run trigger/status seam and the chunk / money-span /
-graph loads), the `redline_` persistence layer and its four store adapters, the
-object-store staging seam, the Create Corpus control surface and run tracker
-mounted in the forked Wayfinder, and the MCP report tool surface.
-
-**The Evaluation surface was removed on 2026-08-15.** redline no longer models a
-judgement over a corpus: it serves the rows a run landed, and interpreting them
-belongs to a consumer above the store. See
-[`design-principles.md`](./docs/design-principles.md) §2.
+**The prior corpus-ingest-and-report architecture (Create Corpus UI, MCP report
+tool surface, the `redline_` persistence layer and its object-store/Postgres
+adapters) was removed.** It does not serve the plan above, and the repository was
+stripped back to what does. Milestone M0 (baseline compiles) is where the strip's
+dangling references were cleared; M1 onward builds the plan's contracts, reader
+and verifier fresh.
 
 ## Architecture
 
-A **plugin**, not a Wayfinder fork of its own. Wayfinder is consumed at runtime seams
-(HTTP/MCP + object storage + a separate `redline_`-prefixed DB schema) and its typed
-domain helpers are reused read-only.
+A **plugin**, not a Wayfinder fork of its own. Wayfinder is consumed at runtime
+seams only, and only from M6 — see the plan's milestones.
 
 Publishing target: the **DeepCivic** org.
 
 ```
 redline/
 ├── docs/
-│   ├── architecture.md          # what redline IS (design truth)
-│   ├── delivery-plan.md         # what is LEFT TO BUILD (tracking truth)
-│   └── design-principles.md     # durable adopted-principles + non-goals (not tracking)
+│   └── Redline-Plan.md          # the one governing document — design + tracking
 ├── packages/
 │   ├── redline-domain/             # ports (zero deps, Result pattern)
-│   ├── redline-adapters/           # sidecar client, object store, redline_ stores
-│   └── redline-shared/             # zod schemas shared with the UI
-├── apps/
-│   ├── redline-web/                # the Create Corpus brain + run tracker
-│   └── redline-mcp/                # the report tool surface (MCP over HTTP)
+│   └── redline-adapters/           # port implementations against real systems
 ├── services/
 │   ├── womblex/                 # SUBMODULE: the womblex engine @ latest main
 │   ├── womblex-ingest/          # redline's read + run sidecar
-│   └── wayfinder/               # SUBMODULE: the Wayfinder fork that serves the UI
+│   └── wayfinder/               # SUBMODULE: the Wayfinder fork (mounted from M6)
 └── vendor/
     └── wayfinder/               # materialised at build time (never committed) — typed reuse only
 ```
@@ -71,7 +58,7 @@ only the package we consume out of the `services/wayfinder` submodule, so the tr
 redline typechecks against is the tree it runs in. It is an **optional**
 dependency — `pnpm install` and `./validate.sh` are green with no Wayfinder
 present, and the one suite that needs it skips. To bump Wayfinder, move the
-submodule.
+submodule. Not consumed at all until M6.
 
 ## Toolchain
 
@@ -89,7 +76,7 @@ pnpm lint
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same `./validate.sh` gate on every push to
-`main` and every PR. See [`docs/guides/local-dev-and-validation.md`](./docs/guides/local-dev-and-validation.md).
+`main` and every PR.
 
 ### Running without a local Node (Podman)
 
@@ -106,13 +93,6 @@ WAYFINDER_PACKAGES="domain shared" scripts/podman-run.sh
 
 ## User guides
 
-How to drive the surface the fork serves, written for the people who use it
-rather than the people who build it:
-
-- [Creating a corpus](./docs/guides/create-a-corpus.md) — the **Create Corpus**
-  screen: build the dataset. Upload the documents, pick the extraction parameters
-  and the stages, run it.
-
-Operator runbooks live beside them:
-[running both stacks locally](./docs/guides/two-stack-local-run.md) and
-[local dev and validation](./docs/guides/local-dev-and-validation.md).
+None yet — the plan has no served surface before M6 (mounting the CSV download
+in the forked Wayfinder). Operator/dev-loop guidance until then is this README
+plus [`docs/Redline-Plan.md`](./docs/Redline-Plan.md).

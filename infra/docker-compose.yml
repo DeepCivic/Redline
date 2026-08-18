@@ -37,12 +37,6 @@
 #               image. It publishes EXTRACTION shards under proc/{evaluationId}/;
 #               chunk and embed are separate passes via the `stage` profile.
 #               Scale with `up --scale womblex=4 womblex`.
-#   report    — the report tool surface: redline's seven read ports served as an
-#               MCP server over streamable HTTP (apps/redline-mcp), for a
-#               report-assembler LLM inside Wayfinder. Shares REDLINE_DATABASE_URL
-#               with the ingest sidecar and reads it read-only. Bring `ingest` up
-#               too if the extraction tools are wanted — the four store-backed
-#               tools need no sidecar.
 #   redline   — redline's own Postgres for the redline_ schema (ADR-0002).
 #
 # Usage (Thread 3 exit test):
@@ -208,42 +202,6 @@ services:
       - ./womblex:/app/redline-config:z
     entrypoint: ["womblex", "run-stage"]
 
-  # ── the report tool surface (MCP) ─────────────────────────────────────────
-  # redline's seven read ports served as an MCP server over streamable HTTP, for a
-  # report-assembler LLM running inside Wayfinder. Wayfinder's MCP client speaks
-  # SSE and streamable-HTTP only (no stdio) and addresses servers by URL, so this
-  # is a long-running service with a URL, not a process the fork spawns.
-  #
-  # It shares `REDLINE_DATABASE_URL` with the sidecar above — same store, read
-  # only — and reads one document's extraction through the sidecar's JSON seam
-  # rather than linking a Parquet reader of its own.
-  #
-  # Register it in Wayfinder with transport `streamable-http`, url
-  # http://redline-mcp:8930/mcp, and communicatesExternally FALSE: it talks to
-  # redline's own Postgres inside this deployment and sends nothing out, so it is
-  # the self-contained internal utility that flag's `false` branch describes. An
-  # external server is registered but NOT selectable in flows, which would make
-  # the assembler unbuildable.
-  #
-  #   podman compose -f infra/docker-compose.yml --profile report up -d
-  redline-mcp:
-    build:
-      context: ..
-      dockerfile: apps/redline-mcp/Dockerfile
-    profiles: ["report"]
-    depends_on:
-      redline-postgres:
-        condition: service_healthy
-    environment:
-      REDLINE_DATABASE_URL: ${REDLINE_DATABASE_URL:-postgresql://${REDLINE_DB_USER:-redline}:${REDLINE_DB_PASSWORD:-redline-dev}@redline-postgres:5432/${REDLINE_DB_NAME:-redline}}
-      # The read seam for elements / chunks / table cells. The sidecar belongs to
-      # the `ingest` profile, so bring both up when the extraction tools are
-      # wanted; the four store-backed tools work without it.
-      WOMBLEX_INGEST_URL: ${WOMBLEX_INGEST_URL:-http://womblex-ingest:8000}
-      REDLINE_MCP_PORT: "8930"
-    ports:
-      - "8930:8930"
-
   # ── womblex engine (the submodule's OWN image) ────────────────────────────
   # The REAL womblex pipeline (extract → chunk → embed), built from
   # ../services/womblex (the submodule) using the ENGINE'S OWN Dockerfile and
@@ -343,7 +301,7 @@ services:
   # DATABASE_URL; the seam stays plain Postgres so a deployment can repoint it.
   redline-postgres:
     image: docker.io/library/postgres:16
-    profiles: ["ingest", "money", "redline", "report"]
+    profiles: ["ingest", "money", "redline"]
     environment:
       POSTGRES_USER: ${REDLINE_DB_USER:-redline}
       POSTGRES_PASSWORD: ${REDLINE_DB_PASSWORD:-redline-dev}

@@ -29,5 +29,5 @@ edit.
 
 The `docker-compose.yml` that wires these with Postgres + MinIO lives under
 [`../infra/`](../infra/docker-compose.yml), with compose profiles (`ingest`,
-`money`, `womblex`, `stage`, `redline`, `report`) so you bring up only what you
-need. redline owns its own MinIO and Postgres.
+`money`, `womblex`, `stage`, `redline`) so you bring up only what you need.
+redline owns its own MinIO and Postgres.
