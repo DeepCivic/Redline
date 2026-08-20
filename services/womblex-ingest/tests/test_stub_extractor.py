@@ -1,7 +1,7 @@
 """Tests for the built-in deterministic (non-womblex) extractor.
 
 The stub path is what the Isaacus-optional / air-gap mode leans on and
-what the Thread 3 exit test exercises when the real womblex dependency is absent.
+what the ingest smoke test exercises when the real womblex dependency is absent.
 """
 
 from __future__ import annotations

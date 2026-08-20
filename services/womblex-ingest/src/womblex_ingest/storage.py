@@ -7,7 +7,7 @@ or a live bucket. `get_object` backs the Parquet→JSON read seam: the JSON read
 model is durably stored alongside the Parquet shards, so `GET /extractions/...`
 survives a sidecar restart (MinIO is the record).
 
-`list_objects` was added for Thread 37b: the real extractor discovers the Parquet
+`list_objects` exists for the real extractor, which discovers the Parquet
 shards the womblex pod landed under `proc/{evaluationId}/` — whose
 batch/run-directory names are womblex's, not ours — rather than assuming a fixed
 set of keys.
@@ -38,7 +38,7 @@ class S3ObjectStorage:
     """boto3-backed writer against a MinIO/S3 endpoint.
 
     The bucket is created on first use if missing so a fresh MinIO comes up ready
-    for the Thread 3 smoke test without a manual `mc mb` step.
+    for the ingest smoke test without a manual `mc mb` step.
     """
 
     def __init__(

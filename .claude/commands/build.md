@@ -6,16 +6,16 @@ specific item.
 
 **Pre-flight — read before writing anything:**
 
-1. The item's entry in [`docs/Redline-Plan.md`](../../docs/Redline-Plan.md) §9
+1. The item's entry in [`docs/Redline-Status.md`](../../docs/Redline-Status.md) §3
    for outstanding build steps and their exit tests, §0/§8 for status and known
    blockers.
-2. The rest of `docs/Redline-Plan.md` (data model §2, architecture §3, the
+2. The rest of `docs/Redline-Status.md` (data model §2, architecture §3, the
    extraction call contract §4) for the seams the item touches. It is the
    design truth; §9 never restates it.
 
-**Upstream gate.** If the item builds anything an upstream engine
-might already provide, read that engine's source first: `services/womblex` is a
-submodule and is on disk (`git submodule update --init`). This is not optional
+**Upstream gate.** If the item builds anything Womblex already provides, stop:
+serving it is redline's job, reimplementing it is not. Check the schema in
+`docs/Womblex-Output-Contract.md` before writing any mapping. This is not optional
 diligence — redline has already shipped a duplicate container stack, an import
 of functions that do not exist, and a schema mapping against columns upstream
 never writes, all by integrating against a dependency nobody had opened.
@@ -48,7 +48,7 @@ chat before starting so the user can see the plan.
 - Make the tests pass with the minimum code required
 - Follow all architecture and code writing rules from `.claude/CLAUDE.md`
 - Before calling any third-party or upstream-engine API: verify the signature
-  in `node_modules/<package>/` or `services/womblex/` — not training data
+  in `node_modules/<package>/` or `docs/Womblex-Output-Contract.md` — not training data
 
 **C. Validate**
 - Run `./validate.sh` (uses Podman when no local Node — see
@@ -61,14 +61,12 @@ chat before starting so the user can see the plan.
 The item's exit test in the plan is the acceptance gate. Satisfy it explicitly
 and paste the passing output:
 - Pure package items → a passing vitest suite exercising the exit criterion.
-- Service items (the sidecar, womblex) → a compose-up + real-request proof.
-- UI items → a Playwright e2e test in the fork, under
-  `services/wayfinder/apps/web/e2e/redline-*.spec.ts`, beside Wayfinder's own
-  suite and running against the served routes.
+- Service items (the sidecar) → a compose-up + real-request proof.
+- Tool-surface items → a protocol-level test against the served MCP endpoint.
 
 ### Step 4 — On completion
 
-- **Remove the completed step** from `docs/Redline-Plan.md` §9: the plan
+- **Remove the completed step** from `docs/Redline-Status.md` §3: the plan
   tracks outstanding work only, so a finished step is deleted, not flipped to a
   status. Its reasoning lives in the commit and in git history. Renumber the
   remaining steps if the outstanding set changed — the numbers are local and
@@ -92,7 +90,7 @@ and paste the passing output:
 ## Scope discipline
 
 An item is **one build step including its test** (see the build-step contract in
-`docs/Redline-Plan.md` §9's header). If, mid-build, the item turns out to be larger:
+`docs/Redline-Status.md` §3's header). If, mid-build, the item turns out to be larger:
 
 - Build the part that satisfies the stated exit test, and stop.
 - Report what you left out and why, and propose the follow-up item(s).

@@ -1,55 +1,80 @@
 # Redline
 
-> **Corpus-ingest-and-report substrate** — a Wayfinder plugin (its own repo). A
-> specialist stages a corpus of documents, the **womblex** engine extracts, chunks,
-> embeds, enriches and prices it, and the chunks, graph, money spans and
-> extraction JSON that run lands serve redline's own per-document report
-> extraction engine and its MCP report tools.
+> **Redline is a read-only MCP server providing verbatim access to Womblex
+> extraction assets for provenance-backed report assembly.**
 
 Repository: [`DeepCivic/Redline`](https://github.com/DeepCivic/Redline).
 
 [![CI](https://github.com/DeepCivic/Redline/actions/workflows/ci.yml/badge.svg)](https://github.com/DeepCivic/Redline/actions/workflows/ci.yml)
 
-## Status
+## What it is, and what it refuses to be
 
-Under construction. [`docs/Redline-Plan.md`](./docs/Redline-Plan.md) is the one
-live plan: the product statement (what redline delivers), then the delivery
-detail — data model, architecture, build steps and their exit tests.
+Redline is headless and stateless. It serves what Womblex extracted, byte for
+byte, and does nothing else.
 
-**Nothing here models a judgement over a corpus.** redline serves the rows a
-run landed and the report engine's per-document extraction; interpreting what
-those rows mean is a step described in the plan, not a store-side concern.
+**No LLM generation happens here.** Redline never paraphrases, summarises,
+infers or composes. A tool call returns source text exactly as Womblex wrote it,
+or it returns an error — there is no third outcome in which Redline supplies
+content of its own. That refusal is the product: a report assembled from these
+tools is grounded in the extraction, and every value in it resolves back to a
+document.
 
-## Architecture
+**It stores nothing.** No database, no run state, no report. Two identical calls
+return identical bytes because the assets are immutable and the reads are pure.
 
-A **plugin**, not a Wayfinder fork of its own. Wayfinder is consumed at runtime
-seams (HTTP/MCP + object storage) and, later, a separate `redline_`-prefixed DB
-schema for the report domain (see the plan's step 2).
+## The three services
 
-Publishing target: the **DeepCivic** org.
+| | Responsibility | Boundary |
+| --- | --- | --- |
+| **Womblex** | Ingests unstructured documents; persists elements, chunks, table cells, form fields, money spans and graph edges as versioned Parquet assets | The source of truth. No LLM generation, no report assembly |
+| **Redline** (this repo) | Serves those assets verbatim over MCP, so a client can discover schemas and fetch exact source snippets | Headless, stateless, read-only. Refuses to paraphrase or generate |
+| **The client** | Whatever calls the MCP endpoint — an LLM assembling a report on a person's behalf | Holds the workflow state and everything found so far. Redline knows it only as a caller |
+
+The seams are deliberate and narrow. Womblex reaches Redline through object
+storage; Redline reaches its client through one MCP endpoint. **Neither neighbour
+is carried inside this repository** — there are no submodules, and nothing here
+imports their source.
+
+**The context window is what shapes the tool surface.** A corpus is hundreds of
+documents; no model holds them at once, and Redline must never return that much
+text in one response. So Redline does *navigation* (choose which documents and
+passages matter, from metadata alone) and *retrieval* (exact bytes for one narrow,
+named thing, in small pages). *Accumulation* — holding what has been found so far —
+belongs to the client, because Redline is stateless and will not remember.
+
+What Redline depends on from Womblex is its output schema, and that is written
+down rather than vendored: see
+[`docs/Womblex-Output-Contract.md`](./docs/Womblex-Output-Contract.md).
+
+## Layout
 
 ```
 redline/
 ├── docs/
-│   └── Redline-Plan.md          # the one live plan: product statement + delivery detail
+│   ├── Redline-Status.md             # what is present, and what is outstanding
+│   └── Womblex-Output-Contract.md    # the Womblex schemas Redline reads
 ├── packages/
-│   ├── redline-domain/          # ports (zero deps, Result pattern)
-│   └── redline-adapters/        # the womblex sidecar's Parquet→JSON read client
+│   ├── redline-domain/               # ports (zero deps, Result pattern)
+│   └── redline-adapters/             # the sidecar's Parquet→JSON read client
 ├── apps/
-│   └── redline-mcp/             # the report tool surface (MCP over HTTP)
-└── services/
-    ├── womblex/                 # SUBMODULE: the womblex engine @ latest main
-    ├── womblex-ingest/          # redline's read sidecar
-    └── wayfinder/               # SUBMODULE: the Wayfinder fork that serves the UI
+│   └── redline-mcp/                  # the MCP tool surface (streamable HTTP)
+├── services/
+│   └── womblex-ingest/               # the Parquet→JSON read sidecar (Python)
+└── infra/                            # compose: MinIO + sidecar + MCP
 ```
+
+## Status
+
+Under construction. [`docs/Redline-Status.md`](./docs/Redline-Status.md) is the
+one live document: what is actually in the repository today, and what is
+outstanding with its exit test.
 
 ## Toolchain
 
-Mirrors Wayfinder: pnpm 9, Node ≥ 20, Turborepo, TypeScript 5.6 (strict), Vitest 4,
-Prettier, ESLint 9.
+pnpm 9, Node ≥ 20, Turborepo, TypeScript 5.6 (strict), Vitest 4, Prettier,
+ESLint 9; Python 3.11+ with ruff and pytest for the sidecar.
 
 ```bash
-git submodule update --init   # services/womblex + services/wayfinder
 pnpm install
 pnpm build      # turbo run build across @redline/* packages
 pnpm test       # vitest across @redline/*
@@ -57,6 +82,8 @@ pnpm typecheck
 pnpm lint
 ./validate.sh   # the full gate — also what CI runs
 ```
+
+There is no submodule step. `git clone` is a complete checkout.
 
 CI (`.github/workflows/ci.yml`) runs the same `./validate.sh` gate on every push to
 `main` and every PR. See [`docs/guides/local-dev-and-validation.md`](./docs/guides/local-dev-and-validation.md).

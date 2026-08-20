@@ -31,7 +31,7 @@ ENV NODE_ENV=production
 ENV REDLINE_MCP_PORT=8930
 EXPOSE 8930
 
-# Wayfinder addresses this server by URL over streamable HTTP; /health is for the
+# Clients address this server by URL over streamable HTTP; /health is for the
 # orchestrator, not for MCP.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
   CMD wget -qO- "http://127.0.0.1:${REDLINE_MCP_PORT}/health" >/dev/null || exit 1

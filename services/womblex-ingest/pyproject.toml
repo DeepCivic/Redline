@@ -18,10 +18,9 @@ dependencies = [
 
 [project.optional-dependencies]
 # There is deliberately no `womblex` extra here. The engine publishes no release
-# to any index, so a `womblex==X.Y.Z` requirement could never be resolved — every
-# image that needs the engine installs it from the services/womblex submodule
-# source instead. A version pin here would be a string nothing installs, kept in
-# step with the submodule by hand.
+# to any index, so a `womblex==X.Y.Z` requirement could never be resolved — an
+# image that needs the engine installs it from the engine's own source. A version
+# pin here would be a string nothing installs.
 #
 # The engine stays out of the API image by DEPLOYMENT CHOICE — heavy
 # OCR/tokeniser/model runtime, independently scaled via its own cloud runner —

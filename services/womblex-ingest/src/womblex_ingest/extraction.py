@@ -4,14 +4,13 @@
 
 - `StubWomblexExtractor` — deterministic, dependency-free shards. This is the
   default and is what runs in air-gapped / no-womblex environments and in the
-  Thread 3 exit test.
+  ingest smoke test.
 - `RealWomblexExtractor` — invokes the actual womblex pipeline. Imported lazily
   (inside `build_extractor`) so the heavy dependency is only required when
   `WOMBLEX_MODE=real`.
 
 Every `ExtractionResult` carries both the durable Parquet `shards` and a JSON
-`documents` read model (see `records.py`). Thread 4 locks build-plan §8 decision
-#2 on the side of a JSON seam: this service reads its own Parquet and serves JSON,
+`documents` read model (see `records.py`). The seam is JSON: this service reads its own Parquet and serves JSON,
 so the TypeScript adapter (`redline-adapters`) never links a Parquet reader.
 """
 
@@ -47,7 +46,7 @@ class ExtractionResult:
     document_count: int
     shards: List[Shard]
     # The JSON read model, keyed by documentId. This is what the Parquet→JSON
-    # boundary serves to the TS adapter (Thread 4 decision #2); the Parquet
+    # boundary serves to the TS adapter; the Parquet
     # `shards` remain the durable MinIO record.
     documents: List[DocumentExtraction] = field(default_factory=list)
 
@@ -66,7 +65,7 @@ class StubWomblexExtractor:
 
     Emits the Parquet shard layout plus the JSON read model the Parquet→JSON
     boundary serves, without the heavy womblex/Isaacus stack — so the sidecar's
-    HTTP + storage behaviour and the Thread 4 adapter contract are both provable
+    HTTP + storage behaviour and the adapter contract are both provable
     end-to-end offline.
     """
 
@@ -103,7 +102,7 @@ class StubWomblexExtractor:
         """A deterministic read model whose documentId is a stable `source_hash`.
 
         The stub does not run womblex; it emits the *shape* the JSON seam serves
-        so the Thread 4 adapter's contract test has a real run to read.
+        so the adapter's contract test has a real run to read.
         """
         document_id = self._source_hash(evaluation_id, name)
         elements = [

@@ -1,8 +1,8 @@
 # CLAUDE.md — Routing Index (redline)
 
-> **Corpus-ingest-and-report substrate.** A Wayfinder plugin in its own repo. This
-> file adapts Wayfinder's engineering conventions; where we deliberately deviate,
-> it is called out explicitly under **Deliberate deviations from Wayfinder**.
+> **A read-only MCP server over Womblex extraction assets.** Its own repo, with
+> no submodules. Engineering conventions are inherited from the wider codebase;
+> where we deliberately deviate, it is called out under **Deliberate deviations**.
 
 ## Default Behaviour
 
@@ -31,7 +31,7 @@ run `./validate.sh` and fix all failures before declaring done.
 | Anything else                                                    | Answer directly |
 
 Planning new work is not its own skill: add or refine the item directly in
-`docs/Redline-Plan.md` §9 against the build-step contract there — one build
+`docs/Redline-Status.md` §3 against the build-step contract there — one build
 step including its test, one commit, one package where possible, an explicit
 `_Exit: …_` test — then route to `/doc-review`. Split the item if its exit test
 joins two independently-testable behaviours, spans two languages, or introduces a
@@ -47,37 +47,38 @@ rather than shipped. Wording is not what it catches; claims are.
 
 ## Project Identity
 
-This repo implements **redline**, a **corpus-ingest-and-report substrate** for
-**Wayfinder**. A specialist stages a corpus, the womblex engine processes it, and
-a per-document report extraction engine reads the chunks, graph and money spans
-that run lands to fill in user-defined report columns — see
-[`docs/Redline-Plan.md`](../docs/Redline-Plan.md) for the product statement.
+This repo implements **redline**: a **read-only MCP server** that serves Womblex's
+extraction assets verbatim, so a client LLM can assemble a report grounded
+entirely in extracted source. See [`../README.md`](../README.md) for the product
+statement and [`docs/Redline-Status.md`](../docs/Redline-Status.md) for what is
+built and what is outstanding.
 
-**Nothing here models a judgement over a corpus.** The Evaluation aggregate and
-the comprehension lens were removed on 2026-08-15; interpreting what a run landed
-belongs to a consumer, above the store — the report engine reads rows, it does
-not decide what they mean beyond the constraint rules the plan states.
+**Separate repos, no nesting.** Womblex extracts and persists; redline serves what
+it persisted; the client assembles. Womblex reaches redline through object storage,
+redline reaches its client through one MCP endpoint. **There are no git
+submodules** — neither neighbour is carried in this tree, and nothing here imports
+their source. What redline depends on from Womblex is its output *schema*, recorded
+in [`docs/Womblex-Output-Contract.md`](../docs/Womblex-Output-Contract.md).
 
-Our own packages live under `@redline/*` in `packages/`. Wayfinder is consumed
-read-only under `@rbrasier/*` — the package scope the fork inherits, not a
-pointer at rbrasier's repo. One document governs:
-[`docs/Redline-Plan.md`](../docs/Redline-Plan.md) is both the product statement
-(what redline delivers) and the delivery detail (data model, architecture, build
-steps §9 and their exit tests) — it superseded the former `architecture.md` /
-`delivery-plan.md` / `design-principles.md` split on 2026-08-17. Outstanding
-build steps are tracked in §9 only; a completed step is removed from it, its
-reasoning left in git history, and its item numbers are local to that section
-and renumbered whenever the outstanding set changes.
+**The context window shapes the tool surface.** A corpus is hundreds of documents
+and no model holds them at once. Redline does navigation (choose what matters, from
+metadata alone) and retrieval (exact bytes for one narrow thing, in small pages).
+Accumulating findings across documents is the client's — redline is stateless.
+A tool that could return a whole corpus is one that will.
 
-Both upstreams are **git submodules** consumed for their existing capabilities,
-not reimplemented: `services/womblex` and the Wayfinder fork `services/wayfinder`
-(johntooth/wayfinder, branch `main`). A submodule holds upstream source only —
-redline's own code sits beside it (`services/womblex-ingest`). Run
-`git submodule update --init` on a fresh clone.
+**Nothing here generates.** No LLM call, no summarisation, no inference, no report
+assembly. A tool returns bytes Womblex wrote, or it returns an error. Anything
+that would put model-authored content on redline's side of the boundary is out of
+scope by construction, not by omission.
 
-**The gitlink is the only pin.** Each submodule tracks its upstream's latest
-`main`, and no SHA or version is restated anywhere else — bumping one is one
-edit.
+**Nothing here persists.** No database, no run state, no report. redline is
+stateless; two identical calls return identical bytes.
+
+Our own packages live under `@redline/*` in `packages/`. One document governs:
+[`docs/Redline-Status.md`](../docs/Redline-Status.md) records what is present and
+what is outstanding. Outstanding work is tracked in its §3 only; a completed step
+is removed from it, its reasoning left in git history, and its item numbers are
+local to that section and renumbered whenever the outstanding set changes.
 
 Publishing target: the **DeepCivic** org (not johntooth).
 
@@ -90,32 +91,38 @@ present (see [`docs/guides/local-dev-and-validation.md`](../docs/guides/local-de
 
 Enforced by `validate.sh` and ESLint — skills that write code must respect these:
 
+- **Verbatim or nothing.** Every value a tool returns is byte-identical to what
+  Womblex wrote. No trimming, no normalisation, no re-encoding, no "helpful"
+  reformatting on the way out. Where a value is derived rather than read (for
+  example a currency flag inferred from cell text), it is labelled as derived and
+  never presented as an extracted column.
+- **No generation.** redline holds no LLM client and makes no model call. A change
+  that adds one is a change to the product boundary, not an implementation detail.
+- **No persistence.** redline owns no database and no mutable state. Reads are
+  pure functions of the assets in object storage.
+- **Every read is run-scoped.** Multiple Womblex runs co-exist under one corpus
+  prefix. A read that spans them serves each document once per run and its
+  provenance keys stop identifying anything.
 - `packages/redline-domain` has **zero external dependencies**. Pure TypeScript,
-  relative imports only. (Includes no import of `@rbrasier/*`.) It holds **ports
-  only** — there is no entity above the rows a run lands.
-- `packages/redline-adapters` implements ports from `redline-domain`. Drizzle, the
-  womblex sidecar HTTP client, object storage, and the read-only reuse of
-  Wayfinder's `@rbrasier/domain` typed helpers live here.
+  relative imports only. It holds **ports only** — there is no entity above the
+  rows a run landed.
+- `packages/redline-adapters` implements ports from `redline-domain` — today, the
+  womblex-ingest sidecar HTTP client.
 - Apps (`apps/*`) import from `@redline/redline-domain` (ports/types) and
   `@redline/redline-adapters` (implementations) only. Wiring lives in
   `lib/container.ts`.
 - All port interfaces use the **Result pattern**: `{ data: T } | { error: DomainError }`.
   Never throw across boundaries.
-- DB tables use the **`redline_` prefix** in a separate Postgres schema/DB, columns
-  snake_case. There is no schema today — redline's Postgres was removed with the
-  Evaluation surface; the report domain (definitions/runs/rows/values) re-owns it
-  at build step 2 (`docs/Redline-Plan.md` §9).
-- Migrations are **forward-only**, and every file is `IF NOT EXISTS`-guarded and
-  re-applied *in full on every boot*. So correcting a migration's **effect** means
-  adding another file, never rewriting history.
-- We **never modify Wayfinder's tree** (`services/wayfinder`) — it is read-only
-  reuse and excluded from lint/format/build/test scope (`--filter=@redline/*`).
+- The Womblex schema is read from
+  [`docs/Womblex-Output-Contract.md`](../docs/Womblex-Output-Contract.md), never
+  from memory. Column names have been invented before (`elem_order` /
+  `col_index` / `is_currency` on table cells) and raised on every real row.
 
 ---
 
 ## Code Writing Rules (non-negotiable)
 
-These apply whenever any skill writes code (inherited verbatim from Wayfinder):
+These apply whenever any skill writes code:
 
 - **Return early** — reduce nesting; never go more than 2 levels deep in a function
 - **Descriptive names** — `stagedCorpusReader` not `corpusRdr`, `error` not `err`; no abbreviations
@@ -127,27 +134,24 @@ These apply whenever any skill writes code (inherited verbatim from Wayfinder):
 
 ---
 
-## Deliberate deviations from Wayfinder
+## Deliberate deviations
 
-We adopt Wayfinder's quality bar but intentionally differ where the adapter's
-reality demands it. These are decisions, not omissions:
+Conventions this repo intentionally does not follow. These are decisions, not
+omissions:
 
-| Area | Wayfinder | redline | Why |
+| Area | Convention | redline | Why |
 |---|---|---|---|
-| Planning artefact | PRD + ADR + phase doc per feature | `docs/Redline-Plan.md` (product statement + delivery detail, outstanding build steps in §9, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the plan; documents never gate a build |
-| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed step is **removed** from `Redline-Plan.md` §9; its reasoning lives in git history and any durable change lands in the plan's design sections. **No per-item docs** — `docs/threads/` was deleted deliberately | Keeps the plan to outstanding work only |
-| Validation | `validate.sh` assuming local Node + services | `validate.sh` detects its runner — local Node when present, **Podman** otherwise; services added per build step | Written for a host with no local Node; both lanes are supported, so check the `runner:` line it prints rather than assuming |
-| E2E | Playwright suite exists day one (`/e2e`) | The UI cores + view models are framework-free and unit-tested in-repo; the Playwright acceptance spec lives in the forked Wayfinder (`services/wayfinder/apps/web/e2e/`) beside Wayfinder's own suite, running against the served route the fork surface mounts | UI logic lives in a pure, testable core; the spec targets the served mount inside the fork |
+| Planning artefact | PRD + ADR + phase doc per feature | `docs/Redline-Status.md` (what is present + what is outstanding, in §3, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the doc; documents never gate a build |
+| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed step is **removed** from `Redline-Status.md` §3 and reflected in its §2; its reasoning lives in git history. **No per-item docs** | Keeps the doc to what is true now plus what is outstanding |
+| Validation | `validate.sh` assuming local Node + services | `validate.sh` detects its runner — local Node when present, **Podman** otherwise | Written for a host with no local Node; both lanes are supported, so check the `runner:` line it prints rather than assuming |
+| Upstreams | monorepo packages | **Separate repos, no submodules.** Womblex is reached through object storage, the client through the MCP endpoint | A gateway couples to its neighbours' interfaces, not their trees |
+| UI | Next.js app in-repo | **None.** redline is headless; every surface belongs to the client that calls it | A stateless read gateway has no UI to own |
+| Persistence | Postgres + Drizzle + migrations | **None.** redline stores nothing | Statelessness is the boundary, not a stage it has not reached |
+| E2E | Playwright suite exists day one (`/e2e`) | Protocol-level tests against the served MCP endpoint | There is no browser surface here to drive |
 | Release model | alpha branches, `VERSION` sync | Pre-1.0; no alpha branches yet. Version bumps stated per build step | Not yet releasing |
-| Scope | `@rbrasier/*` | `@redline/*`, consuming `@rbrasier/*` read-only | This is a plugin, not the framework |
+| Scope | `@rbrasier/*` | `@redline/*` | This is a standalone server, not a framework |
 
-When a deviation stops making sense, add the corresponding Wayfinder
-convention and update this table.
-
-The fork surface (column editor, document picker, run + progress, read-only
-sample table, export) is unlanded — see `docs/Redline-Plan.md` §8 blocker 3 and
-§9 step 10. Its Playwright spec is written and reviewed alongside that step,
-not assumed here in advance.
+When a deviation stops making sense, adopt the convention and update this table.
 
 ---
 

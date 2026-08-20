@@ -1,7 +1,7 @@
 """In-memory run registry.
 
 The sidecar runs extraction synchronously within the request (womblex on a small
-document set is fast enough for the review flow, and this keeps Thread 3
+document set is fast enough for the review flow, and this keeps the sidecar
 dependency-free). `status` therefore reports terminal states; a queue/worker split
 is a later concern if runs grow long. State is process-local and non-durable —
 acceptable because MinIO is the durable record of a run's output.

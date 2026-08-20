@@ -1,11 +1,13 @@
-# run-throsby-demo — real womblex run shards (build step 0c)
+# run-throsby-demo — real womblex run shards
 
 A **real** `womblex run` output, copied verbatim from the womblex UI demo's
-sample corpus (`services/womblex` @ `d50ac76`, "Demo corpus: complete the
-Throsby run to the DEFAULT-Isaacus shape", `output/console-demo/run-throsby-demo/`).
-This is the corpus build step 0c (`docs/Redline-Plan.md` §9) hands to step 1's
-schema-design pass — the actual Parquet shapes the seven corpus-read ports are
-designed against, not invented column names.
+sample corpus (`output/console-demo/run-throsby-demo/` in the `womblex` repo).
+
+This is what redline's read seam is designed and tested against: the actual
+Parquet shapes, not invented column names. `tests/test_shards.py` reads these
+shards directly, so a mapping written against a column womblex does not write
+fails here rather than three layers downstream as an empty result. The schemas
+are documented in [`docs/Womblex-Output-Contract.md`](../../../../../docs/Womblex-Output-Contract.md).
 
 One document: `throsby-oosc.pdf` — byte-identical (sha256
 `c5c98a36…cef54`, the `source_hash` every shard keys on) to the ACT FOI 213A
@@ -48,20 +50,22 @@ those are pipeline resume state, not part of the corpus schema.
 
 ## Coverage — what this corpus cannot prove
 
-One small, narrative, text-layer PDF. It is enough to design the port
-contracts against real column names and real values, which is 0c's job. It is
-not enough to *prove* the following, and a step that needs them needs a second
-corpus, not a fake row appended here:
+One small, narrative, text-layer PDF. It is enough to check the read seam
+against real column names and real values. It is not enough to *prove* the
+following, and a step that needs them needs a second corpus, not a fake row
+appended here:
 
 - **`table_cells` is empty** (`table_cells_count: 0` in the manifest agrees).
-  `read_extraction_table_cells` — one of the three tools that survived 0a —
-  has no real row to answer with. Same for any table-cell money locus.
+  The table-cell read has no real row to answer with, and neither has any
+  table-cell money locus. The shard is present and schema-correct, so the
+  "empty, not missing" case is covered; the populated case is not.
 - **`money_columns` is empty and `money_spans` has two rows**, both `narrative`
   locus (`$10 000` / `$50 000` AUD statutory penalties). The `table_cell` and
   `sheet_cell` loci and column classification are entirely unexercised.
-- **One document, one run.** Blocker 1 (§8) is that a corpus run twice serves
-  every document twice; a single-run corpus cannot regress that. Step 3's exit
-  test explicitly wants two runs and must stage them.
+- **One document, one run.** A corpus run twice must serve every document once;
+  a single-run corpus cannot regress that. `test_shards.py` stages two runs by
+  copying this one, which proves the run-scoping mechanism but not a genuine
+  second extraction.
 
 ## Identity columns differ by shard family
 
@@ -80,4 +84,5 @@ From the `womblex` repo (not this one), the source run lives at
 `output/console-demo/run-throsby-demo/`. Re-copy `manifest.parquet` and every
 `documents/batch-*.parquet` (excluding the `.*-checkpoint/` directories) here
 after any upstream schema change, so this fixture never drifts silently ahead
-of the schema the port contracts are designed against.
+of the schema the read seam is designed against. Update
+`docs/Womblex-Output-Contract.md` in the same commit.

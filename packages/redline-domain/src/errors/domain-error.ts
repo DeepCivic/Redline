@@ -1,6 +1,5 @@
-// redline's domain error taxonomy. Mirrors Wayfinder's DomainError shape so
-// adapters can translate between the two without surprises, but is defined
-// locally to keep redline-domain zero-dependency.
+// redline's domain error taxonomy. Defined locally, because redline-domain takes
+// no dependency on anything.
 export type DomainErrorCode =
   | "NOT_FOUND"
   | "ALREADY_EXISTS"

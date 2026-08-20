@@ -1,4 +1,4 @@
-"""Thread 37b — the womblex-schema → JSON mapping, proven on plain row dicts.
+"""The womblex-schema → JSON mapping, proven on plain row dicts.
 
 These tests exercise `shard_reader.py` — the one place that understands womblex's
 real Parquet schema — with hand-built row dicts, so the schema *contract* is
@@ -46,7 +46,7 @@ def test_element_without_elem_order_is_a_schema_error() -> None:
         map_element(SOURCE_HASH, {"page": 1, "text": "x"})
 
 
-# Thread 61 (V1a) — non-text element kinds. womblex's `Element.text` is `str |
+# Non-text element kinds. womblex's `Element.text` is `str |
 # None`; only the text-bearing kinds (TEXT_KINDS) populate it, and `table`,
 # `image`, `figure`, `form`, `page_break`, `sheet_meta` and `sheet_cell` all
 # serialise `text: None`. `map_element` must map every element rather than
@@ -326,7 +326,7 @@ def test_extraction_orders_chunks_by_chunk_index() -> None:
 
 
 def test_extraction_maps_every_element_including_non_text_kinds() -> None:
-    # Thread 61 exit test: a shard whose elements include `table`, `image` and
+    # A shard whose elements include `table`, `image` and
     # `page_break` maps to a DocumentExtraction with every element present and no
     # raise. Before this, the `table` row (the only kind that has `table_cells`
     # children) would raise `ShardSchemaError` on its null text and lose the whole

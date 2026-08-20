@@ -1,12 +1,13 @@
-"""Thread 37b — the womblex-schema → JSON-seam mapping.
+"""The womblex-schema → JSON-seam mapping.
 
 This module is the **one place** that understands womblex's real Parquet schema —
 `source_hash`, `elem_order` on elements but `parent_elem_order` on table cells,
 and `chunk_index` on chunks. It maps that schema into the `records.py`
 dataclasses the Parquet→JSON boundary serves; everything downstream sees JSON.
 
-The schema here is the one `services/womblex` @ `v0.2.0` actually writes
-(`src/womblex/store/output.py`), read from the submodule rather than assumed.
+The schema here is the one the engine actually writes
+(`src/womblex/store/output.py`), recorded in `docs/Womblex-Output-Contract.md`
+rather than assumed.
 An earlier version of this mapping was written against invented column names —
 `elem_order`/`col_index`/`is_currency` on table cells — which raised on every
 real row; `tests/test_real_extractor.py` now pins the mirror against the engine's

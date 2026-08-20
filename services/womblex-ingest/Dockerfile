@@ -1,14 +1,13 @@
 # womblex-ingest — the lightweight FastAPI read seam (Parquet→JSON) for redline.
 #
 # This image stays LIGHT and never installs womblex: it reads the shards the
-# engine wrote (from object storage) and serves them as JSON. The real
-# womblex engine is a REQUIRED subsystem of redline; it runs from the engine's OWN
-# image (shipped by the submodule, built by the `womblex` compose service). That
-# split is a DEPLOYMENT choice for resource/lifecycle isolation, not a hard
-# requirement — the engine can equally be co-located with this sidecar (this image
-# is python:3.12-slim, inside womblex's 3.11/3.12 support). Keeping this image
-# womblex-free is what lets the sidecar stay light either way; the seam is object
-# storage, and neither imports the other.
+# engine wrote (from object storage) and serves them as JSON. The Womblex engine
+# is a separate product that runs from its own image; the seam between them is
+# object storage, and neither imports the other. That split is a DEPLOYMENT
+# choice for resource/lifecycle isolation, not a hard requirement — the engine
+# can equally be co-located with this sidecar (this image is python:3.12-slim,
+# inside womblex's 3.11/3.12 support). Keeping this image womblex-free is what
+# lets the sidecar stay light either way.
 #
 # This image has a single build target:
 #   - `sidecar` (default): the light read seam, no womblex. The `womblex-ingest`

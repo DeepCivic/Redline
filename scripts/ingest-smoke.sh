@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# thread-03-smoke.sh — Thread 3 exit test.
+# ingest-smoke.sh — proves the sidecar end to end against a real MinIO.
 #
 # Proves the womblex-ingest sidecar end to end against a real MinIO:
 #   1. bring up the `ingest` compose profile (minio + womblex-ingest),
@@ -8,12 +8,12 @@
 #   4. confirm /status reports the run succeeded.
 #
 # Requires: podman (or docker) with compose. Uses the redline-owned stack only —
-# no Wayfinder infrastructure.
+# no external infrastructure.
 #
 # Usage:
-#   scripts/thread-03-smoke.sh                    # brings the stack up and tears it down
-#   KEEP_UP=1 scripts/thread-03-smoke.sh          # leave the stack running afterwards
-#   COMPOSE="docker compose" scripts/thread-03-smoke.sh
+#   scripts/ingest-smoke.sh                    # brings the stack up and tears it down
+#   KEEP_UP=1 scripts/ingest-smoke.sh          # leave the stack running afterwards
+#   COMPOSE="docker compose" scripts/ingest-smoke.sh
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

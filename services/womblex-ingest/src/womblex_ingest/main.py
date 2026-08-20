@@ -1,8 +1,16 @@
 """FastAPI surface for the womblex-ingest sidecar.
 
-Routes: `POST /ingest` (run extraction, write shards + JSON, and return a run
-id), `GET /status/{run_id}`, `GET /extractions/{evaluation_id}/{document_id}` —
-the Parquet→JSON read seam the Thread 4 adapter consumes — and `GET /health`.
+The read seam redline serves everything through:
+
+- `GET /runs/{corpus_id}` — the corpus's runs, newest first
+- `GET /runs/{corpus_id}/{run_id}/assets` — which shard families the run holds
+- `GET /runs/{corpus_id}/{run_id}/shards/{asset}` — one run's rows for one shard
+  family, with the schema they conform to, in womblex's own column names
+
+Plus the ingest lifecycle (`POST /ingest`, `GET /status/{run_id}`), the earlier
+per-document read model (`GET /extractions/{evaluation_id}/{document_id}`) and
+`GET /health`.
+
 Errors cross the HTTP boundary as a Result-shaped body
 `{"error": {"code", "message"}}`, mirroring redline's domain Result pattern so
 the adapter maps them into `DomainError` cleanly.
@@ -19,6 +27,15 @@ from pydantic import BaseModel
 
 from womblex_ingest.extraction import Extractor
 from womblex_ingest.runs import Run, RunRegistry
+from womblex_ingest.shards import (
+    ASSETS,
+    DEFAULT_LIMIT,
+    AssetNotReadable,
+    UnknownAsset,
+    list_runs,
+    read_shard,
+    run_id_for_key,
+)
 from womblex_ingest.storage import ObjectNotFound, ObjectStorage
 
 
@@ -129,6 +146,83 @@ def build_app(
         if run is None:
             return _error(404, "RUN_NOT_FOUND", f"no run with id {run_id}")
         return JSONResponse(status_code=200, content=_run_view(run))
+
+    @app.get("/runs/{corpus_id}")
+    def corpus_runs(corpus_id: str) -> JSONResponse:
+        """Every womblex run under the corpus prefix, newest first."""
+        runs = list_runs(storage, corpus_id)
+        if not runs:
+            return _error(
+                404,
+                "NOT_FOUND",
+                f"no womblex shards under proc/{corpus_id}/ — has the engine run "
+                "for this corpus?",
+            )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "corpusId": corpus_id,
+                "runs": [
+                    {
+                        "runId": run.run_id,
+                        "versioned": run.versioned,
+                        "shardCount": run.shard_count,
+                    }
+                    for run in runs
+                ],
+            },
+        )
+
+    @app.get("/runs/{corpus_id}/{run_id}/assets")
+    def run_assets(corpus_id: str, run_id: str) -> JSONResponse:
+        """The shard families this run holds, and which of them redline serves."""
+        keys = [
+            key
+            for key in storage.list_objects(f"proc/{corpus_id}/")
+            if run_id_for_key(key) == run_id
+        ]
+        return JSONResponse(
+            status_code=200,
+            content={
+                "corpusId": corpus_id,
+                "runId": run_id,
+                "assets": [
+                    {
+                        "name": asset.name,
+                        "readable": asset.readable,
+                        "present": any(key.endswith(asset.suffix) for key in keys),
+                        "identityColumns": list(asset.identity_columns),
+                    }
+                    for asset in ASSETS.values()
+                ],
+            },
+        )
+
+    @app.get("/runs/{corpus_id}/{run_id}/shards/{asset}")
+    def run_shard(
+        corpus_id: str,
+        run_id: str,
+        asset: str,
+        documentId: Optional[str] = None,
+        limit: int = DEFAULT_LIMIT,
+        offset: int = 0,
+    ) -> JSONResponse:
+        """One run's rows for one shard family, verbatim, with their schema."""
+        try:
+            page = read_shard(
+                storage,
+                corpus_id,
+                run_id,
+                asset,
+                document_id=documentId,
+                limit=limit,
+                offset=offset,
+            )
+        except UnknownAsset as unknown:
+            return _error(404, "NOT_FOUND", str(unknown))
+        except AssetNotReadable as refused:
+            return _error(422, "ASSET_NOT_READABLE", str(refused))
+        return JSONResponse(status_code=200, content=page.to_json())
 
     @app.get("/extractions/{evaluation_id}/{document_id}")
     def read_extraction(evaluation_id: str, document_id: str) -> JSONResponse:

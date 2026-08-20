@@ -1,10 +1,4 @@
 # CI — the same gate as ./validate.sh, run on a real Node runner.
-#
-# services/wayfinder is checked out (submodules: true) so validate.sh #12 (the
-# fork's checkout is on the branch .gitmodules names) can actually run instead
-# of skipping. There is no separate Wayfinder pin: the gitlink IS the pin, so
-# the tree redline runs against and the tree it typechecks in cannot disagree.
-# To move Wayfinder, move the submodule.
 
 name: CI
 
@@ -28,27 +22,6 @@ jobs:
     steps:
       - name: Checkout redline
         uses: actions/checkout@v5
-        with:
-          # The submodules are not optional here: services/womblex is the schema
-          # redline's Parquet mapping is written against, and services/wayfinder
-          # is what gets vendored below. Without them the tree has empty
-          # directories where both sources of truth should be.
-          submodules: true
-
-      # `submodules: true` runs `git submodule update --init --depth=1`: each
-      # submodule lands detached at its pinned commit with NO remote-tracking
-      # branch refs. validate.sh #12 asserts the wayfinder fork sits on the
-      # branch .gitmodules names and compares commits to allow a detached-but-
-      # correct checkout — which needs that ref to exist. Without this step the
-      # check cannot resolve it and skips, so CI would stop exercising the
-      # guard check #12 relies on. Shallow: we need the branch tip's SHA, not its
-      # history. Non-fatal — if the fetch fails, #12 skips rather than lying.
-      - name: Fetch the fork's branch ref (for validate.sh #12)
-        continue-on-error: true
-        run: |
-          branch="$(git config -f .gitmodules submodule.services/wayfinder.branch)"
-          git -C services/wayfinder fetch --depth=1 origin \
-            "+refs/heads/${branch}:refs/remotes/origin/${branch}"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6

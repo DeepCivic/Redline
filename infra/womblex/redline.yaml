@@ -1,16 +1,19 @@
-# redline's womblex pipeline config.
+# The Womblex run profile redline's reads assume.
 #
-# Derived from the engine's own `configs/example.yaml` (services/womblex, the
-# submodule) and trimmed to the stages redline consumes: extract -> chunk ->
-# embed. Everything redline does not read is left disabled so a run does not pay
-# for shards nothing consumes.
+# redline does not run the engine — Womblex is a separate product with its own
+# repo and runner, and the seam between them is object storage. This file is the
+# configuration to hand that run so it lands the assets redline serves. Derived
+# from the engine's own `configs/example.yaml` and trimmed to the stages redline
+# consumes; everything redline does not read is left disabled so a run does not
+# pay for shards nothing consumes.
 #
 # `paths` are placeholders: under `womblex worker` the cloud runner stages each
 # batch into a throwaway scratch dir and publishes the resulting shards back to
 # WOMBLEX_STORE_URI, so these are only used by a local `womblex run`.
 #
-# Bump alongside the submodule — a config key the pinned engine does not know is
-# a silent no-op, not an error.
+# Check it against the engine release being run — a config key that release does
+# not know is a silent no-op, not an error. The assets this profile must produce
+# are listed in docs/Womblex-Output-Contract.md.
 
 dataset:
   name: redline
@@ -92,11 +95,11 @@ spellfix:
   enabled: false
 pii:
   enabled: false
-# The Kanon-2 entity/edge graph — the navigation mechanic the report engine's
-# base call uses for entity resolution and one-hop lookup (see
-# docs/Redline-Plan.md). It is REAL Isaacus spend (`kanon-2-enricher`), unlike
-# chunking's vendored tokeniser, and it is not part of `womblex
-# run`/`worker`: it is a separate `run-stage --stage enrich` pass.
+# The Kanon-2 entity/edge graph — the navigation mechanic redline's graph tools
+# expose for entity resolution and one-hop lookup (see docs/Redline-Status.md §2).
+# It is REAL Isaacus spend (`kanon-2-enricher`), unlike chunking's vendored
+# tokeniser, and it is not part of `womblex run`/`worker`: it is a separate
+# `run-stage --stage enrich` pass.
 #
 # Enrich now runs BEFORE chunk, because `chunking_model` above makes chunk reuse
 # the Document enrich persists. Chunks are a non-strict input to enrich, so that
@@ -120,7 +123,7 @@ linking:
 # The retrieval leg. `retrieval/document` is the task the chunk vectors must
 # carry so a query embedded at `retrieval/query` is comparable. Requires
 # ISAACUS_API_KEY — without it no *.embeddings.parquet is produced. v1 points
-# at rows rather than searching them (see docs/Redline-Plan.md §1.1); the
+# at rows rather than searching them (see docs/Redline-Status.md §2); the
 # vectors this stage produces are the re-entry condition's prerequisite, not
 # something v1 reads yet.
 embedding:
@@ -129,12 +132,11 @@ embedding:
   task: retrieval/document
 
 # ── The pricing leg ──────────────────────────────────────────────────────────
-# LIVE as of the v0.3.0 submodule bump: the pinned engine defines `MoneyConfig`
-# (services/womblex/src/womblex/config.py:521, mounted at `WomblexConfig.money`),
-# so these keys are read rather than ignored. The money stage runs over object
+# Read from womblex v0.3.0 onwards, where the engine defines `MoneyConfig`
+# (mounted at `WomblexConfig.money`). The money stage runs over object
 # storage (`womblex run-stage --stage money`) and writes MONEY_SPANS_SCHEMA
 # rows a report run's financial constraint prefers over parsing a raw string
-# (see docs/Redline-Plan.md §5).
+# (see docs/Womblex-Output-Contract.md).
 #
 # Not part of `womblex run`/`worker`: this is a separate per-stage command
 # (`womblex money --shards <dir>`) run after the pipeline, writing

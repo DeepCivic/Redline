@@ -1,13 +1,15 @@
 # womblex-ingest
 
-womblex document-extraction sidecar for **redline**. A thin FastAPI wrapper
-around the **womblex** engine (pinned as a git submodule at
-`services/womblex`): it serves the Parquet shards womblex produced for a
-corpus's documents as JSON, under `proc/{evaluationId}/`.
+womblex document-extraction sidecar for **redline**. A thin FastAPI read seam
+over the **womblex** engine's output: it serves the Parquet shards womblex
+produced for a corpus's documents as JSON, read back from `proc/{corpusId}/`.
 
-Like Wayfinder's `services/australian-writing-mcp`, this is a **foreign-runtime
-sidecar** composed over runtime seams (HTTP + object storage). It is never
-imported into the TypeScript packages; the extraction-reader adapter
+The engine is a separate product and is not carried in this repo. The shard
+schemas this sidecar maps are recorded in
+[`docs/Womblex-Output-Contract.md`](../../docs/Womblex-Output-Contract.md).
+
+This is a **foreign-runtime sidecar** composed over runtime seams (HTTP + object
+storage). It is never imported into the TypeScript packages; the extraction-reader adapter
 (`WomblexExtractionReader`) consumes its output over those seams as **JSON**.
 
 ## The Parquet→JSON boundary
@@ -45,17 +47,15 @@ a sidecar restart (MinIO is the durable record).
 and concatenates by suffix, merging every run under it. Every route this
 sidecar adds for the report engine (documents, chunks, graph, money spans)
 must be run-scoped, and this route needs the same fix — see
-`docs/Redline-Plan.md` §8 blocker 1.
+`docs/Redline-Status.md` §1.
 
 ## Extraction modes & the womblex pod
 
 **womblex is a required subsystem of redline**, not an optional extra: it is
-the only source of the chunks, graph edges and money spans a report run reads.
-redline runs it from the engine's **own image** — the one the engine itself
-ships, built from the `services/womblex` submodule by the `womblex` compose
-service and driven through the engine's own `enqueue` / `worker` cloud runner.
-Running it as its own image is a **deployment choice** for resource/lifecycle
-isolation, not a hard requirement: the sidecar image is `python:3.12-slim`
+the only source of the chunks, graph edges and money spans redline serves.
+It runs from the engine's **own image**, driven through the engine's own
+`enqueue` / `worker` cloud runner, in its own repo. Running it separately is a
+**deployment choice** for resource/lifecycle isolation, not a hard requirement: the sidecar image is `python:3.12-slim`
 (inside womblex's 3.11/3.12 support), so the engine can equally be co-located
 with the sidecar on one host. Either way the seam is object storage, and what
 backs it — an S3 bucket or an AWS-managed equivalent — is config.
@@ -86,7 +86,7 @@ are not driven from this sidecar.
 ## Configuration
 
 All from the environment — the S3 target is fully config-driven, never a
-hardcoded Wayfinder endpoint:
+hardcoded endpoint:
 
 | Var | Default | Meaning |
 |-----|---------|---------|
@@ -104,7 +104,7 @@ Via the redline compose stack (`ingest` profile brings up MinIO + this service):
 ```sh
 podman compose -f ../../infra/docker-compose.yml --profile ingest up -d
 # smoke check (compose up → POST docs → assert shards in MinIO):
-../../scripts/thread-03-smoke.sh
+../../scripts/ingest-smoke.sh
 podman compose -f ../../infra/docker-compose.yml --profile ingest down -v
 ```
 

@@ -1,4 +1,4 @@
-"""Thread 37b — the real binding, driven over real Parquet shards.
+"""The real binding, driven over real Parquet shards.
 
 This suite proves the binding's own contract *without* invoking the engine: given
 the Parquet shard layout womblex lands in MinIO (`proc/{evaluationId}/
@@ -49,9 +49,9 @@ SOURCE_HASH = "82f9355eabcd0001"
 OTHER_HASH = "aaaa000011112222"
 
 
-# womblex's `TABLE_CELLS_SCHEMA`, mirrored exactly from `services/womblex` @
-# `v0.2.0` (`src/womblex/store/output.py:82`). Mirrored rather than imported
-# because the default validate box does not install the engine;
+# womblex's `TABLE_CELLS_SCHEMA`, mirrored exactly from the engine's
+# `src/womblex/store/output.py` (see docs/Womblex-Output-Contract.md). Mirrored
+# rather than imported because the default validate box does not install the engine;
 # `test_the_mirrored_table_cells_schema_matches_the_engines` asserts the mirror
 # against the real object whenever womblex IS importable, so the two cannot drift
 # in silence. That guard is the point: the previous fixtures here invented
@@ -136,7 +136,7 @@ def _put_document_shards(
             [
                 {"source_hash": source_hash, "elem_order": 0, "page": 1, "kind": "heading", "text": "Heading", "alt_text": None},
                 {"source_hash": source_hash, "elem_order": 1, "page": 1, "kind": "paragraph", "text": "network security controls", "alt_text": None},
-                # Thread 61: non-text kinds serialise `text: None`. The `table`
+                # Non-text kinds serialise `text: None`. The `table`
                 # element is the parent of the `table_cells` below, so if its null
                 # text raised, the document — and all of its pricing — would be
                 # lost. The `image` carries only `alt_text`.
@@ -202,7 +202,7 @@ def test_reads_the_pod_shards_into_a_json_read_model() -> None:
     assert result.shards == []
     document = result.documents[0]
     assert document.documentId == SOURCE_HASH
-    # Thread 61: every element maps, including the non-text `table` and `image`
+    # Every element maps, including the non-text `table` and `image`
     # kinds. `table` (null text) → ""; `image` → its `alt_text`. elementOrder
     # stays contiguous, which the table-cell join below relies on.
     assert [(e.elementOrder, e.text) for e in document.elements] == [
@@ -213,7 +213,7 @@ def test_reads_the_pod_shards_into_a_json_read_model() -> None:
     ]
     # Chunks come back ordered by chunk_index, with the recomposed join key.
     assert [c.chunkId for c in document.chunks] == [f"{SOURCE_HASH}:0", f"{SOURCE_HASH}:1"]
-    # Thread 56's exit test, on a shard carrying womblex's real column names:
+    # On a shard carrying womblex's real column names:
     # `parent_elem_order` maps, `col` maps, and the marked cell flags as currency
     # while the bare number beside it does not.
     assert [(c.columnIndex, c.rawValue, c.isCurrency) for c in document.tableCells] == [
@@ -279,9 +279,9 @@ def test_the_mirrored_table_cells_schema_matches_the_engines() -> None:
     """redline's assumed `table_cells` schema is womblex's actual one.
 
     The guard that would have caught this thread's defect at the source. It runs
-    only where the engine is installed — but where it runs, a submodule bump that
+    only where the engine is installed — but where it runs, an engine upgrade that
     changes the shard schema fails here rather than three layers downstream as an
-    empty pricing column. This is the only thing that catches such a bump, which
+    empty pricing column. This is the only thing that catches such a change, which
     is why it asserts against the real object rather than a second mirror.
     """
     output = pytest.importorskip("womblex.store.output")

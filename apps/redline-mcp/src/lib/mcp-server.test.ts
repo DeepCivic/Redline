@@ -203,4 +203,23 @@ describe("an MCP client over streamable HTTP", () => {
       startReportMcpHttpServer({ dependencies, port: takenPort, host: "127.0.0.1" }),
     ).rejects.toMatchObject({ code: "EADDRINUSE" });
   });
+
+  // The instructions are the only thing a client reads before choosing a tool, so
+  // naming one that is not registered sends it looking for a capability that does
+  // not exist. This has already happened once: the instructions described money
+  // span and graph tools through three scope cuts that removed them.
+  it("names no tool in its instructions that it does not register", async () => {
+    const client = await connectClient();
+    const registered = new Set((await client.listTools()).tools.map((tool) => tool.name));
+    const instructions = client.getInstructions() ?? "";
+    await client.close();
+
+    const mentioned = instructions.match(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g) ?? [];
+    const toolLike = mentioned.filter((name) => name.startsWith("read_") || name.startsWith("get_") || name.startsWith("list_") || name.startsWith("fetch_") || name.startsWith("graph_"));
+
+    expect(toolLike.length).toBeGreaterThan(0);
+    for (const name of new Set(toolLike)) {
+      expect(registered, `instructions name "${name}"`).toContain(name);
+    }
+  });
 });

@@ -8,13 +8,12 @@ import {
 } from "@redline/redline-domain";
 import { z } from "zod";
 
-// The report tool surface. Currently the three extraction-reader reads —
-// elements, chunks and table cells — described so a report-assembler LLM can
-// call them. The chunk-store, money-span-store and enrichment-graph tools
+// The tool surface. Currently the three extraction-reader reads — elements,
+// chunks and table cells — described so an assembling client can call them. The chunk-store, money-span-store and enrichment-graph tools
 // (fetch_chunks, fetch_chunks_by_structure, fetch_money_spans_by_document,
 // fetch_money_spans_by_structure, graph_find_entities, graph_edges_from,
 // graph_edges_to) are removed along with the ports they read — the store those
-// ports queried no longer exists. See docs/Redline-Plan.md for what replaces it.
+// ports queried no longer exists. See docs/Redline-Status.md for what replaces it.
 //
 // Why these are hand-built rather than a generic call over the same rows: the
 // port encodes a contract a raw read does not. Ordering is stable, so a report

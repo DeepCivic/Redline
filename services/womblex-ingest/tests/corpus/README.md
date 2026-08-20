@@ -26,7 +26,7 @@ something to bite on:
   the currency-cell path and null handling are both exercised.
 
 Not a benchmark corpus: it exists to prove the engine runs and lands shards, not
-to measure retrieval quality (that is Thread 37b's proof, and the
+to measure retrieval quality (that is the real extractor's proof, and the
 ambiguity-threshold measurement is a further follow-up). Non-redistributable /
 real documents belong in the git-ignored sibling `corpus-local/`, not here.
 

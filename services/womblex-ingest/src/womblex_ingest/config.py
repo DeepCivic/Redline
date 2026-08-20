@@ -1,7 +1,7 @@
 """Process configuration, read from the environment at startup.
 
-The S3 target is fully config-driven — the sidecar never assumes a
-Wayfinder-hosted endpoint. `WOMBLEX_MODE` selects the extractor; it defaults to
+The S3 target is fully config-driven — the sidecar assumes no particular
+endpoint. `WOMBLEX_MODE` selects the extractor; it defaults to
 `stub` so the service starts (and the exit test passes) without the heavy womblex
 dependency or an Isaacus key.
 

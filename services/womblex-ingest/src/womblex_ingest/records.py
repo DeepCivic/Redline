@@ -1,12 +1,12 @@
 """The Parquet→JSON boundary — server side.
 
-Thread 4 locks build-plan §8 decision #2 in favour of a **JSON seam**: the sidecar
+The seam is **JSON**: the sidecar
 (which already owns the heavy womblex/Parquet stack) reads its own Parquet shards
 and serves them as JSON, so the TypeScript adapter never links a Parquet reader.
 
 These dataclasses are the canonical wire shape. Field names are the JSON keys and
 mirror `IProcurementExtractionReader`'s DTOs in `redline-domain` (camelCase), so the
-Thread 4 TS adapter is a thin, allocation-only mapping. The womblex provenance keys
+TS adapter is a thin, allocation-only mapping. The womblex provenance keys
 (`source_hash`, `elem_order`, `chunk_id`) are normalised into that vocabulary here,
 at the one place that understands womblex's schema.
 """
