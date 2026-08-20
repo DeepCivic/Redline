@@ -12,7 +12,7 @@ Ask all of these via `AskUserQuestion` before proceeding:
 1. What's changing, and why?
 2. Which entities, ports, or use cases are affected?
 3. Are DB changes needed? (Confirm `redline_` prefix.)
-4. Does it change a runtime seam (Wayfinder / womblex)?
+4. Does it change a runtime seam (the MCP surface / womblex)?
 5. Is this a MINOR or PATCH bump? If it's really new scope, stop — plan it as a
    new step in `docs/Redline-Status.md` §3 and route to `/doc-review` instead.
 

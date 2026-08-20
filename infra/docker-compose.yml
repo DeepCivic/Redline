@@ -76,16 +76,13 @@ services:
       - "8000:8000"
 
   # ── the MCP tool surface ──────────────────────────────────────────────────
-  # Womblex's extraction assets served verbatim to an MCP client. Wayfinder's MCP
-  # client speaks SSE and streamable-HTTP only (no stdio) and addresses servers by
-  # URL, so this is a long-running service with a URL, not a process a client
-  # spawns.
+  # Womblex's extraction assets served verbatim to an MCP client. Clients address
+  # this server by URL over SSE or streamable HTTP — there is no stdio transport —
+  # so it is a long-running service, not a process a client spawns.
   #
-  # Register it in Wayfinder with transport `streamable-http`, url
-  # http://redline-mcp:8930/mcp, and communicatesExternally FALSE: it sends
-  # nothing outside this deployment, so it is the self-contained internal utility
-  # that flag's `false` branch describes. An external server is registered but NOT
-  # selectable in flows, which would make the report assembler unbuildable.
+  # Register it with transport `streamable-http` at http://redline-mcp:8930/mcp.
+  # Where a client classifies servers by egress, this one is INTERNAL: it reads
+  # object storage inside this deployment and sends nothing anywhere.
   #
   #   podman compose -f infra/docker-compose.yml --profile report up -d
   redline-mcp:

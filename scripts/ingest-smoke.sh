@@ -8,7 +8,7 @@
 #   4. confirm /status reports the run succeeded.
 #
 # Requires: podman (or docker) with compose. Uses the redline-owned stack only —
-# no Wayfinder infrastructure.
+# no external infrastructure.
 #
 # Usage:
 #   scripts/ingest-smoke.sh                    # brings the stack up and tears it down

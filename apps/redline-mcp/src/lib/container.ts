@@ -4,12 +4,10 @@ import type { ReportToolDependencies } from "./report-tools";
 
 // The app's wiring (CLAUDE.md: "wiring lives in lib/container.ts"). This process
 // composes the read-side adapters and serves them as tools; it holds no use case,
-// because exposure is all this item is — the ports already existed.
+// because exposure is all this package is.
 //
 // It lives in an app rather than in `redline-adapters` because adapters is a
-// library, not a process, and only apps compose adapters. It is not in the
-// Wayfinder fork either: the fork consumes this over a URL, and putting it there
-// would make redline's own store reachable only through Wayfinder.
+// library, not a process, and only apps compose adapters.
 
 export interface ServerConfiguration {
   readonly womblexIngestUrl: string;

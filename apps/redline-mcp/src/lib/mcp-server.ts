@@ -4,56 +4,59 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isErr } from "@redline/redline-domain";
 import { buildReportTools, type ReportTool, type ReportToolDependencies } from "./report-tools";
 
-// The MCP framing around the report tools.
+// The MCP framing around the tools.
 //
-// **Transport is constrained, not chosen.** Wayfinder's MCP client speaks SSE and
-// streamable-HTTP only — no stdio (`ai-sdk-mcp-client.ts`), and servers are
-// URL-addressed — so a stdio server could not be reached from the fork at all.
-// This serves streamable HTTP.
+// **Transport is constrained, not chosen.** This is a long-running service
+// addressed by URL, not a process a client spawns, so there is no stdio transport
+// here — the clients this serves speak SSE and streamable HTTP only. This serves
+// streamable HTTP.
 //
 // **Stateless, one transport per request.** The tools are pure reads with no
-// cross-call state, so there is nothing a session would carry. Wayfinder opens a
-// fresh client per call and closes it (the AI SDK does not pool), which is exactly
-// the traffic shape stateless mode is for, and it removes a class of failure —
-// a session map that outlives its client, and 404s after a restart.
+// cross-call state, so there is nothing a session would carry. A client opening a
+// fresh connection per call and closing it is exactly the traffic shape stateless
+// mode is for, and it removes a class of failure — a session map that outlives its
+// client, and 404s after a restart.
 //
-// **Registration in Wayfinder: `communicatesExternally: false`.** The flag
-// classifies whether a server talks *outside Wayfinder*, and this one does not: it
-// reads redline's own Postgres inside the same deployment and sends nothing
-// anywhere. That it reads commercial-in-confidence tender documents is a
-// confidentiality concern about the data, not about egress, and it is exactly the
-// case Wayfinder's `false` branch governs — a self-contained internal utility under
-// the document human-review gate. Asserting `true` would be a category error with
-// teeth: an external server is registered but *not selectable in flows*
-// (`mcp.ts`), which would make the report assembler unbuildable.
+// **The instructions are load-bearing.** They are the only thing a client reads
+// before choosing a tool, so a tool named there but not registered sends it after
+// a capability that does not exist. Three scope cuts left this file describing
+// money span and graph tools long after they were deleted; `mcp-server.test.ts`
+// now fails when the instructions name an unregistered tool.
 
 const SERVER_NAME = "redline-report-tools";
 const SERVER_VERSION = "0.1.0";
 
 const SERVER_INSTRUCTIONS = [
-  "redline's report tool surface: read-only, provenance-addressed access to one",
-  "procurement evaluation's extracted text and financial expressions.",
+  "redline serves one womblex extraction run's assets, verbatim. It is a catalogue",
+  "and a retrieval system: it never summarises, never infers, and never remembers a",
+  "previous call.",
   "",
-  "Chunk text is verbatim and safe to transfer into a report slot unchanged — that",
-  "byte-identity is the provenance claim the report makes, so never paraphrase a",
-  "passage you are quoting. Money spans arrive as womblex wrote them: an exact",
-  "decimal `value` that ALREADY carries its magnitude suffix and its sign, so",
-  '`multiplier` ("million") and `negative` are an audit trail of how it was read —',
-  "never arithmetic to redo. Do not multiply a value by its multiplier or re-apply",
-  "its sign. `currency` may be unresolved. The one qualifier womblex refuses to fold",
-  'in is `modifier` ("up to", "approximately"), so a bounded amount is not an exact',
-  "one; and `rangeGroup`/`rangeRole` link a range's two endpoints, which are two",
-  "rows for one amount. Nothing here totals or converts them.",
+  "TEXT IS VERBATIM. Every value is byte-identical to what womblex wrote, including",
+  "whitespace and punctuation. That byte-identity is the provenance claim a report",
+  "makes, so a passage you quote must be transferred unchanged — never paraphrase,",
+  "tidy or re-wrap it. If a value is not here, you get an error, never a substitute.",
   "",
-  "There is no similarity search on this surface. To find a passage, work from ids",
-  "and anchors you were given, or traverse the enrichment graph: graph_find_entities",
-  "locates people, places and terms and gives the chunk each was found in, and",
-  "graph_edges_from / graph_edges_to follow relations between nodes. The graph",
-  "LOCATES source rows; the transfer itself is still an exact fetch_chunks read.",
-  "A graph tool that returns graphAvailable: false means no enrichment graph has",
-  "been loaded for this evaluation — report that you could not reach it rather than",
-  "writing the section anyway, and never mistake an empty match over a loaded graph",
-  "for an absent one.",
+  "MIND THE CONTEXT BUDGET. A corpus holds far more text than you can. Every tool",
+  "caps its rows and reports `returned`, `available` and `truncated` — a payload",
+  "with truncated: true is a slice, not the answer, and treating it as the answer is",
+  "the most expensive mistake available on this surface. Narrow the call instead:",
+  "read one document at a time, and keep what you find outside this conversation as",
+  "you go, because redline holds no state and will not hand it back to you.",
+  "",
+  "WHAT IS HERE. read_extraction_elements returns a document's ordered element",
+  "stream — the coordinate space every anchor cites. read_extraction_chunks returns",
+  "its chunks, keyed on a stable chunk id. read_extraction_table_cells returns its",
+  "table cells at their (row, column) anchors. All three are scoped to one document.",
+  "",
+  "WHAT IS NOT HERE. There is no similarity search and no ranking: womblex writes",
+  "embeddings but ships no index, so nothing on this surface can find a passage by",
+  "meaning. Work from ids and anchors you were given. There is also no write of any",
+  "kind. Asking for either is a mistake about what redline is, not a gap to work",
+  "around.",
+  "",
+  "DERIVED VALUES ARE MARKED. `isCurrency` on a table cell is inferred from the",
+  "cell's text — womblex writes no currency column at all. Treat it as a hint about",
+  "where to look, never as an extracted fact you can cite.",
 ].join("\n");
 
 const toCallToolResult = async (tool: ReportTool, args: unknown) => {
@@ -99,8 +102,8 @@ export interface ReportMcpHttpServerOptions {
   readonly dependencies: ReportToolDependencies;
   readonly port: number;
   readonly host?: string;
-  // The path the MCP endpoint is served on. Wayfinder addresses this server by URL,
-  // so the path is part of the contract an admin registers.
+  // The path the MCP endpoint is served on. Clients address this server by URL, so
+  // the path is part of the contract an admin registers.
   readonly endpoint?: string;
 }
 

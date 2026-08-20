@@ -1,7 +1,6 @@
 import type { DomainError } from "./errors/domain-error";
 
-// Result pattern at every boundary — no thrown exceptions cross the domain edge
-// (mirrors Wayfinder ADR-001).
+// Result pattern at every boundary — no thrown exceptions cross the domain edge.
 export type Result<T, E extends DomainError = DomainError> =
   | { data: T; error?: undefined }
   | { data?: undefined; error: E };

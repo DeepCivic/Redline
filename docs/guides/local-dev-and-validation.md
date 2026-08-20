@@ -1,13 +1,13 @@
 # Local dev & validation
 
-redline mirrors Wayfinder's toolchain (pnpm 9, Node ≥ 20, Turborepo,
-TypeScript 5.6 strict, Vitest 4). Two ways to run it.
+The toolchain: pnpm 9, Node ≥ 20, Turborepo, TypeScript 5.6 strict, Vitest 4.
+Two ways to run it.
 
 ## On a fresh clone
 
-`git clone` is the whole of it. **There are no submodules** — Womblex and
-Wayfinder are separate products reached over runtime seams, not trees carried
-here, so a plain clone is a complete checkout.
+`git clone` is the whole of it. **There are no submodules** — Womblex is a
+separate product reached over object storage, not a tree carried here, so a plain
+clone is a complete checkout.
 
 ## A. You have local Node ≥ 20 + pnpm
 
@@ -83,9 +83,9 @@ written to.
 | 9 | `services/womblex-ingest` pytest (isolated venv) | needs Python 3 |
 | 11 | `ruff check` over redline's own Python (config: `ruff.toml`) | needs Python 3 |
 
-Checks 5, 6, 10, 12 and 13 are retired — they policed a Wayfinder-vendoring step,
-a Wayfinder submodule and a Postgres schema, none of which redline has (see
-`validate.sh` for the retirement notes).
+Checks 5, 6, 10, 12 and 13 are retired — they policed a vendoring step, a
+submodule and a Postgres schema, none of which redline has (see `validate.sh` for
+the retirement notes).
 
 Check 11 is the Python counterpart of check 2. Rules live in `ruff.toml` at the
 root and are deliberately a floor — pyflakes plus pycodestyle's error classes, no

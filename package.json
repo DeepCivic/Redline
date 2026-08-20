@@ -2,7 +2,7 @@
   "name": "redline",
   "version": "0.0.0",
   "private": true,
-  "description": "Corpus-ingest-and-report substrate \u2014 a Wayfinder plugin over the womblex engine.",
+  "description": "A read-only MCP server providing verbatim access to Womblex extraction assets.",
   "packageManager": "pnpm@9.12.0",
   "engines": {
     "node": ">=20.0.0",

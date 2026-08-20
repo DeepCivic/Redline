@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # validate.sh — every check that must pass before a redline change ships.
 #
-# Adopts Wayfinder's validate.sh spirit, adapted for this adapter:
+# Every check that must pass before a change ships:
 #  - Podman-aware: if no local `node`/`pnpm`, the workspace checks run inside a
 #    Node 20 container via scripts/podman-run.sh (see docs/guides/local-dev-and-validation.md).
 #  - Scoped to @redline/* — this repo holds redline's own source and nothing else.
@@ -112,9 +112,9 @@ if [ -z "$DOMAIN_LEAKS" ]; then pass "redline-domain purity"; else
   fail "redline-domain purity — non-relative imports found:"; echo "$DOMAIN_LEAKS"
 fi
 
-# Checks 5 and 10 (Wayfinder vendoring / lockfile-resolved-against-vendor) are
-# retired: they policed a vendoring script that no longer exists, for a tree this
-# repo no longer carries.
+# Checks 5 and 10 (vendoring / lockfile-resolved-against-vendor) are retired: they
+# policed a vendoring script that no longer exists, for a tree this repo no longer
+# carries.
 
 # Check 6 (Drizzle table naming, redline_ prefix) is retired: redline is
 # stateless — it stores nothing of its own, so there are no tables to name.
@@ -191,10 +191,8 @@ else
   find services -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
-# Check 12 (Wayfinder fork checkout hygiene) is retired: it policed the
-# services/wayfinder submodule, and redline has no submodules. Wayfinder is a
-# separate product that reaches this repo over the MCP endpoint, so there is no
-# tree of its own here to keep on a branch.
+# Check 12 (fork checkout hygiene) is retired: it policed a submodule, and redline
+# has no submodules.
 
 # Check 13 (run-sidecar isaacus extras) is retired: it policed
 # infra/docker-compose.run-sidecar.yml and infra/docker/womblex-money.Dockerfile,

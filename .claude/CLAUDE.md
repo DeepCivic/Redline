@@ -1,9 +1,8 @@
 # CLAUDE.md — Routing Index (redline)
 
 > **A read-only MCP server over Womblex extraction assets.** Its own repo, with
-> no submodules. This file adapts Wayfinder's engineering conventions; where we
-> deliberately deviate, it is called out explicitly under **Deliberate deviations
-> from Wayfinder**.
+> no submodules. Engineering conventions are inherited from the wider codebase;
+> where we deliberately deviate, it is called out under **Deliberate deviations**.
 
 ## Default Behaviour
 
@@ -54,13 +53,18 @@ entirely in extracted source. See [`../README.md`](../README.md) for the product
 statement and [`docs/Redline-Status.md`](../docs/Redline-Status.md) for what is
 built and what is outstanding.
 
-**Three services, three repos, no nesting.** Womblex extracts and persists;
-redline serves what it persisted; Wayfinder orchestrates the human-guided
-assembly. Womblex reaches redline through object storage, redline reaches
-Wayfinder through one MCP endpoint. **There are no git submodules** — neither
-upstream is carried in this tree, and nothing here imports their source. What
-redline depends on from Womblex is its output *schema*, recorded in
-[`docs/Womblex-Output-Contract.md`](../docs/Womblex-Output-Contract.md).
+**Separate repos, no nesting.** Womblex extracts and persists; redline serves what
+it persisted; the client assembles. Womblex reaches redline through object storage,
+redline reaches its client through one MCP endpoint. **There are no git
+submodules** — neither neighbour is carried in this tree, and nothing here imports
+their source. What redline depends on from Womblex is its output *schema*, recorded
+in [`docs/Womblex-Output-Contract.md`](../docs/Womblex-Output-Contract.md).
+
+**The context window shapes the tool surface.** A corpus is hundreds of documents
+and no model holds them at once. Redline does navigation (choose what matters, from
+metadata alone) and retrieval (exact bytes for one narrow thing, in small pages).
+Accumulating findings across documents is the client's — redline is stateless.
+A tool that could return a whole corpus is one that will.
 
 **Nothing here generates.** No LLM call, no summarisation, no inference, no report
 assembly. A tool returns bytes Womblex wrote, or it returns an error. Anything
@@ -118,7 +122,7 @@ Enforced by `validate.sh` and ESLint — skills that write code must respect the
 
 ## Code Writing Rules (non-negotiable)
 
-These apply whenever any skill writes code (inherited verbatim from Wayfinder):
+These apply whenever any skill writes code:
 
 - **Return early** — reduce nesting; never go more than 2 levels deep in a function
 - **Descriptive names** — `stagedCorpusReader` not `corpusRdr`, `error` not `err`; no abbreviations
@@ -130,25 +134,24 @@ These apply whenever any skill writes code (inherited verbatim from Wayfinder):
 
 ---
 
-## Deliberate deviations from Wayfinder
+## Deliberate deviations
 
-We adopt Wayfinder's quality bar but intentionally differ where this server's
-reality demands it. These are decisions, not omissions:
+Conventions this repo intentionally does not follow. These are decisions, not
+omissions:
 
-| Area | Wayfinder | redline | Why |
+| Area | Convention | redline | Why |
 |---|---|---|---|
 | Planning artefact | PRD + ADR + phase doc per feature | `docs/Redline-Status.md` (what is present + what is outstanding, in §3, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the doc; documents never gate a build |
 | Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed step is **removed** from `Redline-Status.md` §3 and reflected in its §2; its reasoning lives in git history. **No per-item docs** | Keeps the doc to what is true now plus what is outstanding |
 | Validation | `validate.sh` assuming local Node + services | `validate.sh` detects its runner — local Node when present, **Podman** otherwise | Written for a host with no local Node; both lanes are supported, so check the `runner:` line it prints rather than assuming |
-| Upstreams | monorepo packages | **Separate repos, no submodules.** Womblex is reached through object storage, Wayfinder through the MCP endpoint | A gateway couples to its neighbours' interfaces, not their trees |
+| Upstreams | monorepo packages | **Separate repos, no submodules.** Womblex is reached through object storage, the client through the MCP endpoint | A gateway couples to its neighbours' interfaces, not their trees |
 | UI | Next.js app in-repo | **None.** redline is headless; every surface belongs to the client that calls it | A stateless read gateway has no UI to own |
 | Persistence | Postgres + Drizzle + migrations | **None.** redline stores nothing | Statelessness is the boundary, not a stage it has not reached |
 | E2E | Playwright suite exists day one (`/e2e`) | Protocol-level tests against the served MCP endpoint | There is no browser surface here to drive |
 | Release model | alpha branches, `VERSION` sync | Pre-1.0; no alpha branches yet. Version bumps stated per build step | Not yet releasing |
 | Scope | `@rbrasier/*` | `@redline/*` | This is a standalone server, not a framework |
 
-When a deviation stops making sense, add the corresponding Wayfinder
-convention and update this table.
+When a deviation stops making sense, adopt the convention and update this table.
 
 ---
 

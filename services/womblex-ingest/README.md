@@ -8,9 +8,8 @@ The engine is a separate product and is not carried in this repo. The shard
 schemas this sidecar maps are recorded in
 [`docs/Womblex-Output-Contract.md`](../../docs/Womblex-Output-Contract.md).
 
-Like Wayfinder's `services/australian-writing-mcp`, this is a **foreign-runtime
-sidecar** composed over runtime seams (HTTP + object storage). It is never
-imported into the TypeScript packages; the extraction-reader adapter
+This is a **foreign-runtime sidecar** composed over runtime seams (HTTP + object
+storage). It is never imported into the TypeScript packages; the extraction-reader adapter
 (`WomblexExtractionReader`) consumes its output over those seams as **JSON**.
 
 ## The Parquet→JSON boundary
@@ -87,7 +86,7 @@ are not driven from this sidecar.
 ## Configuration
 
 All from the environment — the S3 target is fully config-driven, never a
-hardcoded Wayfinder endpoint:
+hardcoded endpoint:
 
 | Var | Default | Meaning |
 |-----|---------|---------|

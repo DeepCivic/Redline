@@ -1,9 +1,8 @@
 # services
 
-redline's own Python, and nothing else. **There are no submodules** — Womblex and
-Wayfinder are separate products with their own repos, reached over runtime seams
-(object storage and HTTP), never carried in this tree or imported into the
-TypeScript packages.
+redline's own Python, and nothing else. **There are no submodules** — Womblex is a
+separate product with its own repo, reached over object storage, never carried in
+this tree or imported into the TypeScript packages.
 
 - **`womblex-ingest/`** — the read seam: a lightweight FastAPI sidecar that reads
   the Womblex engine's Parquet shards from object storage and serves them as JSON,

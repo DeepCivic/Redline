@@ -28,12 +28,19 @@ return identical bytes because the assets are immutable and the reads are pure.
 | --- | --- | --- |
 | **Womblex** | Ingests unstructured documents; persists elements, chunks, table cells, form fields, money spans and graph edges as versioned Parquet assets | The source of truth. No LLM generation, no report assembly |
 | **Redline** (this repo) | Serves those assets verbatim over MCP, so a client can discover schemas and fetch exact source snippets | Headless, stateless, read-only. Refuses to paraphrase or generate |
-| **Wayfinder** | The human-in-the-loop interface: the chat surface where an LLM helps a person define a report schema, then assembles the report from Redline's reads | All UI, user intent and workflow state. Delegates every fetch to Redline |
+| **The client** | Whatever calls the MCP endpoint — an LLM assembling a report on a person's behalf | Holds the workflow state and everything found so far. Redline knows it only as a caller |
 
 The seams are deliberate and narrow. Womblex reaches Redline through object
-storage; Redline reaches Wayfinder through one MCP endpoint. **None of the three
-is carried inside another** — there are no submodules in this repository, and
-nothing here imports Womblex or Wayfinder source.
+storage; Redline reaches its client through one MCP endpoint. **Neither neighbour
+is carried inside this repository** — there are no submodules, and nothing here
+imports their source.
+
+**The context window is what shapes the tool surface.** A corpus is hundreds of
+documents; no model holds them at once, and Redline must never return that much
+text in one response. So Redline does *navigation* (choose which documents and
+passages matter, from metadata alone) and *retrieval* (exact bytes for one narrow,
+named thing, in small pages). *Accumulation* — holding what has been found so far —
+belongs to the client, because Redline is stateless and will not remember.
 
 What Redline depends on from Womblex is its output schema, and that is written
 down rather than vendored: see
@@ -45,7 +52,6 @@ down rather than vendored: see
 redline/
 ├── docs/
 │   ├── Redline-Status.md             # what is present, and what is outstanding
-│   ├── Wayfinder-Integration.md      # the contract Wayfinder builds against
 │   └── Womblex-Output-Contract.md    # the Womblex schemas Redline reads
 ├── packages/
 │   ├── redline-domain/               # ports (zero deps, Result pattern)
