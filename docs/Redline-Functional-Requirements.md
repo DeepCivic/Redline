@@ -20,7 +20,55 @@ exact sentence it came from"**. Every requirement below exists to protect that p
 a value that cannot be traced back to a verbatim quote in a source document is never
 presented as a result.
 
-## 2. Scope
+## 2. Where this sits in a Wayfinder flow
+
+Wayfinder is an AI-guided workflow agent: a flow owner designs a multi-step business
+process on a canvas, and users work through it in a chat interface that gathers
+information and produces filled-in Word documents at the end. Redline is a plugin that
+covers the one part of that journey a conversation cannot do — pulling **the same set of
+facts out of many documents at once**.
+
+A worked example, using a tender assessment:
+
+1. **The flow is designed once.** An administrator builds the "Tender assessment" flow on
+   Wayfinder's canvas — the steps, what each step asks for, and what it produces. Redline
+   is registered once for the deployment as an available tool surface; flow authors do not
+   configure it per flow.
+2. **A specialist stages the corpus.** The tender responses are uploaded and prepared for
+   reading. Preparation is upstream of Redline and is not covered by these requirements.
+3. **A user starts a session and works the flow in chat.** The early steps gather context
+   conversationally — which panel, which period, which evaluation criteria apply.
+4. **The flow reaches the step chat cannot do.** The assessor needs the same twenty facts
+   from each of fifty responses — price, term, insurance, referees, exclusions. A
+   conversation handles one document at a time; this needs a table.
+5. **The user defines the columns** they want, in plain English, and marks any that are
+   money or dates (FR-1.1 to FR-1.4).
+6. **The user picks the documents and starts the run** (FR-2.1, FR-2.2), then watches
+   progress until it completes (FR-2.3).
+7. **Redline reads each document once** and fills in every column for it, checking each
+   value back against the source text before accepting it (FR-3.1, FR-4.1 to FR-4.4).
+8. **The user reads the results table**, which is read-only, and sees which cells are
+   verified and which are flagged (FR-8.4, FR-6.1 to FR-6.3).
+9. **The user exports the table** as CSV or XLSX, with the flagged cells and their reasons
+   visible in the file (FR-7.1 to FR-7.3). The export is the review surface — flagged
+   values are chased down outside the product, by opening the source document at the
+   quoted passage (FR-6.4).
+10. **The table goes back into the Wayfinder flow.** The assessor carries the verified
+    facts into the later steps, where Wayfinder's AI drafts the assessment document and an
+    approval step routes it for sign-off.
+
+**Where the boundary sits.** Points 1 to 3 and point 10 are Wayfinder's own capabilities
+and are not specified here. Points 4 to 9 are what this document covers. In v1 the handoff
+at point 10 is **a file, moved by the user** — the exported spreadsheet — not an automated
+pass-back into the flow. Whether that handoff should later become automatic is an open
+question, not a v1 commitment (see §7).
+
+**What the flow gains that chat alone cannot give it:** fifty documents answered
+consistently against the same twenty questions; every accepted value traceable to a
+verbatim quote in its source; and every value that could not be verified visibly flagged
+rather than quietly guessed.
+
+## 3. Scope
 
 ### In scope for v1
 
@@ -47,7 +95,7 @@ These are recorded so reviewers do not assume them. Each is a decision, not an o
 | Free-text pattern and pick-list constraints | Only money and date constraints are supported in v1 |
 | Judgement, scoring or rating of documents | Redline reports what the documents say; it does not assess them |
 
-## 3. Glossary
+## 4. Glossary
 
 | Term | Meaning |
 | --- | --- |
@@ -64,12 +112,12 @@ These are recorded so reviewers do not assume them. Each is a decision, not an o
 
 ---
 
-## 4. Functional requirements
+## 5. Functional requirements
 
 Each requirement is written as **Given / When / Then**. "The user" means a business user
 operating the product; "the system" means Redline.
 
-### 4.1 Defining the report
+### 5.1 Defining the report
 
 ---
 
@@ -110,7 +158,7 @@ operating the product; "the system" means Redline.
 
 ---
 
-### 4.2 Selecting documents and starting a run
+### 5.2 Selecting documents and starting a run
 
 ---
 
@@ -157,7 +205,7 @@ operating the product; "the system" means Redline.
 
 ---
 
-### 4.3 Extracting values
+### 5.3 Extracting values
 
 ---
 
@@ -217,7 +265,7 @@ operating the product; "the system" means Redline.
 
 ---
 
-### 4.4 Trust rules — what the system refuses to accept
+### 5.4 Trust rules — what the system refuses to accept
 
 These four rules are applied by the system to its own extraction output, automatically
 and mechanically, on every value. They are not manual review steps.
@@ -265,7 +313,7 @@ and mechanically, on every value. They are not manual review steps.
 
 ---
 
-### 4.5 Money and date normalisation
+### 5.5 Money and date normalisation
 
 ---
 
@@ -342,7 +390,7 @@ and mechanically, on every value. They are not manual review steps.
 
 ---
 
-### 4.6 Statuses and what reaches the report
+### 5.6 Statuses and what reaches the report
 
 ---
 
@@ -388,7 +436,7 @@ and mechanically, on every value. They are not manual review steps.
 
 ---
 
-### 4.7 Export
+### 5.7 Export
 
 ---
 
@@ -422,7 +470,7 @@ and mechanically, on every value. They are not manual review steps.
 
 ---
 
-### 4.8 The user interface
+### 5.8 The user interface
 
 ---
 
@@ -469,7 +517,7 @@ and mechanically, on every value. They are not manual review steps.
 
 ---
 
-## 5. Assumptions
+## 6. Assumptions
 
 1. A corpus has already been prepared before a report run starts. Preparing a corpus
    (loading documents, extracting their text and structure, identifying monetary amounts
@@ -477,13 +525,13 @@ and mechanically, on every value. They are not manual review steps.
 2. Document preparation output is available to Redline for reading, scoped to a single
    named preparation run (see FR-2.4).
 3. The extraction step is performed by a language model. Which model is used is a
-   deployment decision, not a functional requirement — but the trust rules in §4.4 apply
+   deployment decision, not a functional requirement — but the trust rules in §5.4 apply
    regardless of the model chosen.
 4. Extraction quality is bounded by what the document actually contains and by the
    precision of the user's column descriptions. Redline's guarantee is provenance and
    honest flagging, not completeness.
 
-## 6. Open questions for the reviewer
+## 7. Open questions for the reviewer
 
 1. **Flagging convention in the export.** FR-6.3 and FR-7.3 require a withheld value to
    be visibly distinct from an empty one, but do not specify the convention (a status
@@ -497,17 +545,22 @@ and mechanically, on every value. They are not manual review steps.
    the earlier one?
 4. **Column count ceiling.** FR-3.1 answers all columns in one pass per document. Is
    there a practical upper limit on columns that should be stated to users up front?
+5. **Handoff back into the flow (§2 point 10).** In v1 the completed table leaves as a
+   file the user moves themselves. Should a later version pass the verified rows back into
+   the Wayfinder session automatically, so a downstream step can draft from them without a
+   re-upload? This is a scoping decision, not a gap in v1.
 
-## 7. Traceability
+## 8. Traceability
 
 | Requirement group | Source in `Redline-Plan.md` |
 | --- | --- |
-| §4.1 Defining the report | Product statement "Input"; §2 data model; §5 constraints decision |
-| §4.2 Selecting documents and starting a run | Product statement "Run" 1–2; §2 `ReportRun`; §8 blocker 1 |
-| §4.3 Extracting values | Product statement "Run" 3; §4 extraction call contract |
-| §4.4 Trust rules | §4 rules 1–3 and the graph-is-not-evidence rule; §6 status table |
-| §4.5 Money and date normalisation | §5 constraints and normalisation |
-| §4.6 Statuses and what reaches the report | Product statement "Run" 4–5; §6 |
-| §4.7 Export | Product statement "Run" 6; §7 |
-| §4.8 The user interface | §3 UI row; §9 build step 10 |
-| §2 Out of scope | Decisions taken 2026-08-17; §1.1 v1 retrieval scope |
+| §5.1 Defining the report | Product statement "Input"; §2 data model; §5 constraints decision |
+| §5.2 Selecting documents and starting a run | Product statement "Run" 1–2; §2 `ReportRun`; §8 blocker 1 |
+| §5.3 Extracting values | Product statement "Run" 3; §4 extraction call contract |
+| §5.4 Trust rules | §4 rules 1–3 and the graph-is-not-evidence rule; §6 status table |
+| §5.5 Money and date normalisation | §5 constraints and normalisation |
+| §5.6 Statuses and what reaches the report | Product statement "Run" 4–5; §6 |
+| §5.7 Export | Product statement "Run" 6; §7 |
+| §5.8 The user interface | §3 UI row; §9 build step 10 |
+| §2 Where this sits in a Wayfinder flow | §3 architecture table (UI row); §9 build step 10; Wayfinder's own flow model |
+| §3 Out of scope | Decisions taken 2026-08-17; §1.1 v1 retrieval scope |
