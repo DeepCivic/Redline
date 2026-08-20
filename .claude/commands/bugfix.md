@@ -26,9 +26,8 @@ approach. Do this as regular chat text — NOT inside `AskUserQuestion`. Then us
 
 State in chat:
 - Root cause diagnosis (**verified, not assumed** — read the code, and if the bug
-  is at a seam, read the upstream submodule under `services/`; several redline
-  bugs have been bindings written against symbols and columns that upstream never
-  had)
+  is at the Womblex seam, check `docs/Womblex-Output-Contract.md`; several redline
+  bugs have been bindings written against symbols and columns upstream never had)
 - Reproduction steps
 - Fix plan
 

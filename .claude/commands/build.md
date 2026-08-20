@@ -13,9 +13,9 @@ specific item.
    extraction call contract §4) for the seams the item touches. It is the
    design truth; §9 never restates it.
 
-**Upstream gate.** If the item builds anything an upstream engine
-might already provide, read that engine's source first: `services/womblex` is a
-submodule and is on disk (`git submodule update --init`). This is not optional
+**Upstream gate.** If the item builds anything Womblex already provides, stop:
+serving it is redline's job, reimplementing it is not. Check the schema in
+`docs/Womblex-Output-Contract.md` before writing any mapping. This is not optional
 diligence — redline has already shipped a duplicate container stack, an import
 of functions that do not exist, and a schema mapping against columns upstream
 never writes, all by integrating against a dependency nobody had opened.
@@ -48,7 +48,7 @@ chat before starting so the user can see the plan.
 - Make the tests pass with the minimum code required
 - Follow all architecture and code writing rules from `.claude/CLAUDE.md`
 - Before calling any third-party or upstream-engine API: verify the signature
-  in `node_modules/<package>/` or `services/womblex/` — not training data
+  in `node_modules/<package>/` or `docs/Womblex-Output-Contract.md` — not training data
 
 **C. Validate**
 - Run `./validate.sh` (uses Podman when no local Node — see
@@ -61,10 +61,8 @@ chat before starting so the user can see the plan.
 The item's exit test in the plan is the acceptance gate. Satisfy it explicitly
 and paste the passing output:
 - Pure package items → a passing vitest suite exercising the exit criterion.
-- Service items (the sidecar, womblex) → a compose-up + real-request proof.
-- UI items → a Playwright e2e test in the fork, under
-  `services/wayfinder/apps/web/e2e/redline-*.spec.ts`, beside Wayfinder's own
-  suite and running against the served routes.
+- Service items (the sidecar) → a compose-up + real-request proof.
+- Tool-surface items → a protocol-level test against the served MCP endpoint.
 
 ### Step 4 — On completion
 
