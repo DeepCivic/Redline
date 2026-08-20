@@ -2,7 +2,7 @@
 // over the womblex-ingest sidecar's Parquet→JSON read seam
 // (`GET /extractions/{evaluationId}/{documentId}`).
 //
-// Thread 4 decision (build plan §8 #2): the boundary is JSON. The heavy
+// The boundary is JSON, deliberately. The heavy
 // Parquet/womblex stack lives entirely in the Python sidecar, which reads its own
 // shards and serves JSON; this adapter never links a Parquet reader. It fetches one
 // document-scoped payload and slices it into elements / chunks / table cells, so all

@@ -14,18 +14,9 @@ target-version = "py311"  # services/womblex-ingest declares requires-python >=3
 # when a formatter is wired, not before.
 line-length = 120
 
-# The upstream engines are submodules holding upstream source we never modify
-# (ADR-0015), so they are excluded here exactly as vendor/wayfinder is excluded
-# from the Node scope and as validate.sh #9 excludes them from the size guard.
-# services/wayfinder is the Wayfinder fork submodule (ADR-0019): its tree —
-# including any Python it carries — is the fork's, not redline's, so it is
-# excluded too. redline's own Python — services/womblex-ingest — sits beside
-# them and IS linted.
-extend-exclude = [
-    "services/womblex",
-    "services/wayfinder",
-    "vendor",
-]
+# services/womblex-ingest is the only Python redline owns, and it IS linted. There
+# is nothing else to exclude — the upstream engines are separate repos, not trees
+# carried here.
 
 [lint]
 # Ruff's default selection, stated explicitly so it cannot drift with a ruff

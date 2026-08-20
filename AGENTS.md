@@ -31,7 +31,7 @@
 
     Prefer podman over docker — on this specific machine podman is the container
     runtime to use for any local testing, compose stacks or containerised runs
-    (e.g. scripts/podman-run.sh, the infra/ and infra/uat/ compose stacks). The
+    (e.g. scripts/podman-run.sh, the infra/ compose stack). The
     scripts fall back to docker, but on this host always drive them with podman —
     set COMPOSE="podman compose" and PODMAN="podman" (or the flatpak-spawn form
     PODMAN="flatpak-spawn --host podman" if running from inside the flatpak).

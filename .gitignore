@@ -5,8 +5,8 @@ coverage/
 *.log
 .env
 .env.local
-# Suffixed env files hold real API keys (infra/uat/.env.uat). The bare `.env`
-# pattern above does not match them, and infra/uat/ is committed as a directory.
+# Suffixed env files hold real API keys. The bare `.env` pattern above does not
+# match them.
 .env.*
 !.env.example
 !.env.*.example
@@ -23,17 +23,12 @@ __pycache__/
 .claude/settings.json
 .claude/settings.local.json
 
-# Non-redistributable local test corpus for the womblex pod (Thread 37a). The
+# Non-redistributable local test corpus. The
 # committed fixture corpus is services/womblex-ingest/tests/corpus/ (must be
 # redistributable); real/sensitive documents live here and are never committed.
 # Point the pod at them with WOMBLEX_CORPUS=.../tests/corpus-local.
 services/womblex-ingest/tests/corpus-local/*
 !services/womblex-ingest/tests/corpus-local/README.md
-
-# Wayfinder is consumed read-only and never committed (validate.sh check #6).
-# CI materialises vendor/wayfinder at build time via scripts/vendor-wayfinder.sh;
-# local Podman dev vendors into its own scratch copy. Either way, keep it untracked.
-vendor/
 
 # uv's resolver lock for the sidecar. Not the project's workflow: this package's
 # documented dev path is `python3 -m venv && pip install -e '.[dev]'` (see its

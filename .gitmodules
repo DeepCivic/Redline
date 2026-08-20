@@ -1,7 +1,0 @@
-[submodule "services/womblex"]
-	path = services/womblex
-	url = https://github.com/DeepCivic/womblex.git
-[submodule "services/wayfinder"]
-	path = services/wayfinder
-	url = https://github.com/johntooth/wayfinder.git
-	branch = main

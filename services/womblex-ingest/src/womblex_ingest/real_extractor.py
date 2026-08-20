@@ -1,7 +1,6 @@
-"""Real womblex extractor — Thread 37b, the binding behind the seam.
+"""Real womblex extractor — the binding behind the seam.
 
-The **womblex engine** (the `womblex` compose profile, which builds the engine's
-own image from the `services/womblex` submodule) runs the real pipeline
+The **womblex engine** — a separate product, run from its own image — runs the real pipeline
 (`extract` → `chunk` → `embed`) and lands its Parquet shards in object storage
 under `proc/{evaluationId}/` — the redline-owned bucket, whatever backs it.
 This module is the *binding*: with `WOMBLEX_MODE=real` it reads those
@@ -14,8 +13,7 @@ the binding only *reads* it — hence `ExtractionResult.shards` is empty here
 Why read the engine's shards rather than invoke womblex in-process: the seam is
 object storage, so the sidecar and the engine stay *separately
 deployable and freely co-locatable* — neither imports the other, which is what
-lets the engine be a version-pinned submodule swapped without relinking the
-sidecar. womblex's runtime (PyMuPDF, OCR, the Kanon tokeniser, model weights) is
+lets the engine be upgraded without relinking the sidecar. womblex's runtime (PyMuPDF, OCR, the Kanon tokeniser, model weights) is
 also heavier than this API layer, so keeping the coupling to storage means the
 sidecar image stays light whether or not the engine is deployed beside it. The
 production orchestration of the worker (one-shot, scaled fleet, or co-located)

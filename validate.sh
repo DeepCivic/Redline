@@ -4,7 +4,7 @@
 # Adopts Wayfinder's validate.sh spirit, adapted for this adapter:
 #  - Podman-aware: if no local `node`/`pnpm`, the workspace checks run inside a
 #    Node 20 container via scripts/podman-run.sh (see docs/guides/local-dev-and-validation.md).
-#  - Scoped to @redline/* — the vendored Wayfinder tree is never checked.
+#  - Scoped to @redline/* — this repo holds redline's own source and nothing else.
 #  - Static guards (purity, prefixes, focused tests, file size) run on the host
 #    with plain shell — no Node needed.
 #
@@ -113,22 +113,11 @@ if [ -z "$DOMAIN_LEAKS" ]; then pass "redline-domain purity"; else
 fi
 
 # Checks 5 and 10 (Wayfinder vendoring / lockfile-resolved-against-vendor) are
-# retired: they policed scripts/vendor-wayfinder.sh materialising vendor/wayfinder,
-# and that script no longer exists — there is nothing left to vendor.
+# retired: they policed a vendoring script that no longer exists, for a tree this
+# repo no longer carries.
 
-# ── 6. DB table naming (redline_ prefix) ────────────────────────────────────────
-section "6. all Drizzle tables match ^redline_[a-z_]+\$"
-SCHEMA_GLOB="packages/redline-adapters/src"
-if [ -d "$SCHEMA_GLOB" ]; then
-  BAD_TABLES=$(grep -rhE "pgTable\(\"[^\"]+\"" "$SCHEMA_GLOB" 2>/dev/null \
-    | sed -E 's/.*pgTable\("([^"]+)".*/\1/' \
-    | grep -vE "^redline_[a-z_]+$" || true)
-  if [ -z "$BAD_TABLES" ]; then pass "table names (or none yet)"; else
-    fail "table names — must use the redline_ prefix:"; echo "$BAD_TABLES"
-  fi
-else
-  skip "table names — no adapters schema yet"
-fi
+# Check 6 (Drizzle table naming, redline_ prefix) is retired: redline is
+# stateless — it stores nothing of its own, so there are no tables to name.
 
 # ── 7. no focused tests ──────────────────────────────────────────────────────
 section "7. no describe.only / it.only / test.only committed"
@@ -145,12 +134,7 @@ while IFS= read -r f; do
   lc=$(wc -l < "$f")
   [ "$lc" -lt 700 ] && continue
   if [ "$lc" -ge 800 ]; then SIZE_FAILURES+="  $lc  $f\n"; else SIZE_WARNINGS+="  $lc  $f\n"; fi
-# services/womblex and services/wayfinder are the submodules — source we never
-# modify (the Wayfinder fork carries redline's mount on its `main` branch, but
-# that tree is the fork's to shape, not redline source to lint), excluded from
-# our own static guards exactly as vendor/wayfinder is.
 done < <(find packages/*/src apps/*/src services/*/src -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.py" \) \
-  ! -path "services/womblex/*" ! -path "services/wayfinder/*" \
   ! -name "*.test.ts" ! -name "*.test.tsx" 2>/dev/null)
 [ -n "$SIZE_WARNINGS" ] && { warn "files ≥ 700 lines — split when next touched:"; printf '%b' "$SIZE_WARNINGS"; }
 if [ -z "$SIZE_FAILURES" ]; then pass "no source file ≥ 800 lines"; else
@@ -181,7 +165,7 @@ fi
 
 # ── 11. Python lint (ruff) over redline's own Python ─────────────────────────
 # The Python half of check #2's lint pass. Rules and exclusions live in ruff.toml
-# at the root — including the two upstream submodules, which we never modify.
+# at the root.
 # Unlike the pytest checks above, ruff's output is NOT silenced: a
 # lint failure is only actionable with its diagnostics. SKIPs cleanly when python3
 # is absent or ruff cannot be installed, so an offline host still gates on the
@@ -207,62 +191,10 @@ else
   find services -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 fi
 
-# ── 12. Wayfinder fork hygiene (services/wayfinder submodule) ────────────────
-# The Wayfinder fork is a submodule we RUN and EDIT, unlike the
-# byte-identical Python submodules. One invariant replaces "never modified": the
-# checkout is on the fork's `main` branch commit the superproject
-# records — redline's mount lives on johntooth/wayfinder's `main`.
-#
-# This is the only Wayfinder pin redline has. The gitlink alone fixes the
-# runtime mount, so there is no second ref that can drift from it.
-#
-# The check once also asserted the fork's `main` had not diverged from
-# rbrasier's — protecting a clean upstreaming diff. redline builds and runs
-# against johntooth/wayfinder only, so that guard policed a relationship we do
-# not have, and PR #9 breached it with no consequence. Removed rather than left
-# failing. The branch is read from .gitmodules, so it follows a rename there
-# rather than hard-coding a name.
-#
-# SKIPs (never fails) on a clone without the submodule initialised, matching the
-# clean-clone posture of the checks above.
-section "12. Wayfinder fork checkout is on the branch .gitmodules names"
-if [ ! -d services/wayfinder/.git ] && [ ! -f services/wayfinder/.git ]; then
-  skip "wayfinder fork — services/wayfinder not initialised (git submodule update --init)"
-elif ! command -v git >/dev/null 2>&1; then
-  skip "wayfinder fork — git unavailable"
-else
-  WF_CONFIGURED_BRANCH="$(git config -f .gitmodules submodule.services/wayfinder.branch 2>/dev/null)"
-  WF_CURRENT_BRANCH="$(git -C services/wayfinder rev-parse --abbrev-ref HEAD 2>/dev/null)"
-  # (a) The submodule must sit on the branch .gitmodules names. A detached HEAD
-  # (git's default submodule checkout) reads as "HEAD" and is allowed only when
-  # it points at that branch's commit — so we compare commits, not branch names,
-  # to stay robust to a detached-but-correct checkout.
-  # --verify --quiet, not a bare rev-parse: a bare `git rev-parse <unknown-ref>`
-  # ECHOES its argument to stdout before failing, so the fallback below would set
-  # this to the literal string "origin/main" rather than leaving
-  # it empty — silently defeating every emptiness test downstream.
-  WF_BRANCH_SHA="$(git -C services/wayfinder rev-parse --verify --quiet "origin/${WF_CONFIGURED_BRANCH}" 2>/dev/null || git -C services/wayfinder rev-parse --verify --quiet "${WF_CONFIGURED_BRANCH}" 2>/dev/null)"
-  WF_HEAD_SHA="$(git -C services/wayfinder rev-parse HEAD 2>/dev/null)"
-  WF_ON_BRANCH=false
-  if [ "$WF_CURRENT_BRANCH" = "$WF_CONFIGURED_BRANCH" ]; then WF_ON_BRANCH=true;
-  elif [ -n "$WF_BRANCH_SHA" ] && [ "$WF_HEAD_SHA" = "$WF_BRANCH_SHA" ]; then WF_ON_BRANCH=true; fi
-
-  if [ "$WF_ON_BRANCH" != true ] && [ -z "$WF_BRANCH_SHA" ]; then
-    # Neither a branch name nor a resolvable branch commit: a shallow submodule
-    # checkout (actions/checkout's `git submodule update --depth=1`) fetches the
-    # pinned commit detached and NO branch refs, so a correct checkout is
-    # indistinguishable from a wrong one. Refusing here failed every CI run from
-    # this check's introduction (966361b) onward. Skip rather than assert what
-    # cannot be observed. The workflow fetches the ref so CI still exercises the
-    # guard.
-    warn "wayfinder fork: '${WF_CONFIGURED_BRANCH}' is not resolvable in services/wayfinder — a shallow checkout carries no branch refs, so a detached-but-correct HEAD cannot be told from a wrong one"
-    skip "wayfinder fork — no ${WF_CONFIGURED_BRANCH} ref to compare HEAD against"
-  elif [ "$WF_ON_BRANCH" != true ]; then
-    fail "wayfinder fork: checkout is not on '${WF_CONFIGURED_BRANCH}' (redline's mount must live only there). Run 'git submodule update --init' or 'git -C services/wayfinder checkout ${WF_CONFIGURED_BRANCH}'"
-  else
-    pass "wayfinder fork on ${WF_CONFIGURED_BRANCH}"
-  fi
-fi
+# Check 12 (Wayfinder fork checkout hygiene) is retired: it policed the
+# services/wayfinder submodule, and redline has no submodules. Wayfinder is a
+# separate product that reaches this repo over the MCP endpoint, so there is no
+# tree of its own here to keep on a branch.
 
 # Check 13 (run-sidecar isaacus extras) is retired: it policed
 # infra/docker-compose.run-sidecar.yml and infra/docker/womblex-money.Dockerfile,

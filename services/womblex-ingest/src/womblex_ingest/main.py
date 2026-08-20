@@ -2,7 +2,7 @@
 
 Routes: `POST /ingest` (run extraction, write shards + JSON, and return a run
 id), `GET /status/{run_id}`, `GET /extractions/{evaluation_id}/{document_id}` —
-the Parquet→JSON read seam the Thread 4 adapter consumes — and `GET /health`.
+the Parquet→JSON read seam the TS adapter consumes — and `GET /health`.
 Errors cross the HTTP boundary as a Result-shaped body
 `{"error": {"code", "message"}}`, mirroring redline's domain Result pattern so
 the adapter maps them into `DomainError` cleanly.
