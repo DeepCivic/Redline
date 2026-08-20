@@ -1,7 +1,7 @@
 # @redline/redline-mcp
 
-The **report tool surface**: redline's extraction-reader port, exposed to a
-report-assembler LLM as an MCP server over **streamable HTTP**.
+Womblex's extraction assets, exposed verbatim to a report-assembler LLM as an MCP
+server over **streamable HTTP**. Read-only, stateless, and generating nothing.
 
 This is an **app**, so it is the only place that composes adapters
 ([`src/lib/container.ts`](./src/lib/container.ts)). It holds no use case — the
@@ -19,27 +19,30 @@ Every tool is a pure read of one document's JSON extraction (served by the
 `womblex-ingest` sidecar), scoped to one `evaluationId` + `documentId`, and is
 annotated `readOnlyHint` / `idempotentHint`.
 
-**Seven more tools are coming.** `fetch_chunks`, `fetch_chunks_by_structure`,
-both money-span fetches and the three graph tools (`graph_find_entities`,
-`graph_edges_from`, `graph_edges_to`) were removed along with the Postgres-backed
-ports they read — the store those ports queried no longer exists. They are
-rebuilt at build step 4 against the fresh, sidecar-backed contracts step 1
-designs. See `docs/Redline-Plan.md` §3.1 for what survived and what step 4
-rebuilds.
+**This is not the whole surface.** Womblex writes twelve shard families and these
+tools reach three of them. `get_schema`, `get_verbatim_data`, `list_runs`,
+`list_documents`, form fields, money spans and the three graph tools are
+outstanding — see `docs/Redline-Status.md` §3. The sidecar already serves every
+family generically (`GET /runs/{corpusId}/{runId}/shards/{asset}`); what is
+missing is the port, the adapter and the tools on top of it.
 
-## Why hand-built tools rather than a generic call over the same rows
-
-The port encodes a contract a raw read does not.
+## What these tools guarantee
 
 - **Stable ordering**, so a report assembled twice is the same report.
 - **Verbatim text** — byte-identical, copied into report slots, never paraphrased.
   That byte-identity _is_ the provenance claim the product makes.
 
+One caveat, recorded because it is a live defect rather than a design choice:
+these three tools serve a **camelCase read model**, not womblex's own column
+names, and their `isCurrency` is *derived* from cell text rather than read from a
+shard. Both breach the verbatim rule. `docs/Redline-Status.md` §3 item 1 is the
+fix.
+
 ## What the tools deliberately do not do
 
-- **No similarity search.** v1 points at rows — structural fetch by
-  document/page/content type — and never discovers them by embedding
-  similarity. See `docs/Redline-Plan.md` §1.1.
+- **No similarity search.** Womblex writes `*.embeddings.parquet` and ships no
+  index, so nothing ranks those vectors. A client works from ids and anchors it
+  was given, or traverses the graph.
 - **No writes.** There is no mutation on this surface at all.
 
 Each payload reports `returned` / `available` / `truncated`, so the

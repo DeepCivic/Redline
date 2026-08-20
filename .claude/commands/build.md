@@ -6,10 +6,10 @@ specific item.
 
 **Pre-flight — read before writing anything:**
 
-1. The item's entry in [`docs/Redline-Plan.md`](../../docs/Redline-Plan.md) §9
+1. The item's entry in [`docs/Redline-Status.md`](../../docs/Redline-Status.md) §3
    for outstanding build steps and their exit tests, §0/§8 for status and known
    blockers.
-2. The rest of `docs/Redline-Plan.md` (data model §2, architecture §3, the
+2. The rest of `docs/Redline-Status.md` (data model §2, architecture §3, the
    extraction call contract §4) for the seams the item touches. It is the
    design truth; §9 never restates it.
 
@@ -66,7 +66,7 @@ and paste the passing output:
 
 ### Step 4 — On completion
 
-- **Remove the completed step** from `docs/Redline-Plan.md` §9: the plan
+- **Remove the completed step** from `docs/Redline-Status.md` §3: the plan
   tracks outstanding work only, so a finished step is deleted, not flipped to a
   status. Its reasoning lives in the commit and in git history. Renumber the
   remaining steps if the outstanding set changed — the numbers are local and
@@ -90,7 +90,7 @@ and paste the passing output:
 ## Scope discipline
 
 An item is **one build step including its test** (see the build-step contract in
-`docs/Redline-Plan.md` §9's header). If, mid-build, the item turns out to be larger:
+`docs/Redline-Status.md` §3's header). If, mid-build, the item turns out to be larger:
 
 - Build the part that satisfies the stated exit test, and stop.
 - Report what you left out and why, and propose the follow-up item(s).

@@ -44,8 +44,7 @@ down rather than vendored: see
 ```
 redline/
 ├── docs/
-│   ├── Redline-Plan.md               # the live plan: scope + build steps
-│   ├── Redline-Functional-Requirements.md
+│   ├── Redline-Status.md             # what is present, and what is outstanding
 │   ├── Wayfinder-Integration.md      # the contract Wayfinder builds against
 │   └── Womblex-Output-Contract.md    # the Womblex schemas Redline reads
 ├── packages/
@@ -60,9 +59,9 @@ redline/
 
 ## Status
 
-Under construction. [`docs/Redline-Plan.md`](./docs/Redline-Plan.md) is the one
-live plan: what Redline serves, and the outstanding build steps with their exit
-tests.
+Under construction. [`docs/Redline-Status.md`](./docs/Redline-Status.md) is the
+one live document: what is actually in the repository today, and what is
+outstanding with its exit test.
 
 ## Toolchain
 

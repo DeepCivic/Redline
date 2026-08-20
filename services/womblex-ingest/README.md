@@ -48,7 +48,7 @@ a sidecar restart (MinIO is the durable record).
 and concatenates by suffix, merging every run under it. Every route this
 sidecar adds for the report engine (documents, chunks, graph, money spans)
 must be run-scoped, and this route needs the same fix — see
-`docs/Redline-Plan.md` §8 blocker 1.
+`docs/Redline-Status.md` §1.
 
 ## Extraction modes & the womblex pod
 

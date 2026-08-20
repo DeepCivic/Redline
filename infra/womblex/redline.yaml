@@ -96,7 +96,7 @@ spellfix:
 pii:
   enabled: false
 # The Kanon-2 entity/edge graph — the navigation mechanic redline's graph tools
-# expose for entity resolution and one-hop lookup (see docs/Redline-Plan.md §3).
+# expose for entity resolution and one-hop lookup (see docs/Redline-Status.md §2).
 # It is REAL Isaacus spend (`kanon-2-enricher`), unlike chunking's vendored
 # tokeniser, and it is not part of `womblex run`/`worker`: it is a separate
 # `run-stage --stage enrich` pass.
@@ -123,7 +123,7 @@ linking:
 # The retrieval leg. `retrieval/document` is the task the chunk vectors must
 # carry so a query embedded at `retrieval/query` is comparable. Requires
 # ISAACUS_API_KEY — without it no *.embeddings.parquet is produced. v1 points
-# at rows rather than searching them (see docs/Redline-Plan.md §3); the
+# at rows rather than searching them (see docs/Redline-Status.md §2); the
 # vectors this stage produces are the re-entry condition's prerequisite, not
 # something v1 reads yet.
 embedding:

@@ -14,7 +14,7 @@ Ask all of these via `AskUserQuestion` before proceeding:
 3. Are DB changes needed? (Confirm `redline_` prefix.)
 4. Does it change a runtime seam (Wayfinder / womblex)?
 5. Is this a MINOR or PATCH bump? If it's really new scope, stop — plan it as a
-   new step in `docs/Redline-Plan.md` §9 and route to `/doc-review` instead.
+   new step in `docs/Redline-Status.md` §3 and route to `/doc-review` instead.
 
 **After gathering answers:** Output a bulleted plan to the chat covering the
 likely changes — entities/ports/use-cases touched, files to modify, DB
@@ -37,7 +37,7 @@ look right?" Wait for confirmation before starting.
 4. Satisfy the affected exit test again (add a regression test for the specific
    behaviour changed). For UI work, update/add the Playwright e2e.
 5. On completion:
-   - Update `docs/Redline-Plan.md` §9 only if the revision changed the outstanding
+   - Update `docs/Redline-Status.md` §3 only if the revision changed the outstanding
      set (a re-opened step, a new follow-up). A finished revision leaves no
      status row — the plan tracks outstanding work only.
    - Update the plan's design sections (§1-§8) only if the revision changed what

@@ -8,7 +8,7 @@ building, or when an item has been planned and the user says "let's build this."
 ## Workflow
 
 1. Read, in full: the target step's entry in
-   [`docs/Redline-Plan.md`](../../docs/Redline-Plan.md) §9 (outstanding build
+   [`docs/Redline-Status.md`](../../docs/Redline-Status.md) §3 (outstanding build
    steps and their exit tests, §0/§8 for status and known blockers), and the
    parts of the plan's design sections (§1-§8) it touches.
 2. Extract the key elements that would be implemented (entities, ports, DB
@@ -46,7 +46,7 @@ columns that do not exist upstream. Verify against the contract doc, not memory.
 PASS — Item entry is complete
 PASS — Exit test is measurable (vitest suite asserting X)
 FAIL — DB table missing redline_ prefix
-WARN — Risk section is sparse; note the content_type join-key gap (Redline-Plan.md §3)
+WARN — Risk section is sparse; note the content_type join-key gap (Redline-Status.md §2)
 ```
 
 **Do NOT proceed to `/build` until all checks are PASS (WARNs are acceptable).**

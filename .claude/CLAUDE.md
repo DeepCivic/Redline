@@ -32,7 +32,7 @@ run `./validate.sh` and fix all failures before declaring done.
 | Anything else                                                    | Answer directly |
 
 Planning new work is not its own skill: add or refine the item directly in
-`docs/Redline-Plan.md` §9 against the build-step contract there — one build
+`docs/Redline-Status.md` §3 against the build-step contract there — one build
 step including its test, one commit, one package where possible, an explicit
 `_Exit: …_` test — then route to `/doc-review`. Split the item if its exit test
 joins two independently-testable behaviours, spans two languages, or introduces a
@@ -51,8 +51,8 @@ rather than shipped. Wording is not what it catches; claims are.
 This repo implements **redline**: a **read-only MCP server** that serves Womblex's
 extraction assets verbatim, so a client LLM can assemble a report grounded
 entirely in extracted source. See [`../README.md`](../README.md) for the product
-statement and [`docs/Redline-Plan.md`](../docs/Redline-Plan.md) for the delivery
-detail.
+statement and [`docs/Redline-Status.md`](../docs/Redline-Status.md) for what is
+built and what is outstanding.
 
 **Three services, three repos, no nesting.** Womblex extracts and persists;
 redline serves what it persisted; Wayfinder orchestrates the human-guided
@@ -71,11 +71,10 @@ scope by construction, not by omission.
 stateless; two identical calls return identical bytes.
 
 Our own packages live under `@redline/*` in `packages/`. One document governs:
-[`docs/Redline-Plan.md`](../docs/Redline-Plan.md) is both the product statement
-and the delivery detail (data model, architecture, build steps §9 and their exit
-tests). Outstanding build steps are tracked in §9 only; a completed step is
-removed from it, its reasoning left in git history, and its item numbers are local
-to that section and renumbered whenever the outstanding set changes.
+[`docs/Redline-Status.md`](../docs/Redline-Status.md) records what is present and
+what is outstanding. Outstanding work is tracked in its §3 only; a completed step
+is removed from it, its reasoning left in git history, and its item numbers are
+local to that section and renumbered whenever the outstanding set changes.
 
 Publishing target: the **DeepCivic** org (not johntooth).
 
@@ -138,8 +137,8 @@ reality demands it. These are decisions, not omissions:
 
 | Area | Wayfinder | redline | Why |
 |---|---|---|---|
-| Planning artefact | PRD + ADR + phase doc per feature | `docs/Redline-Plan.md` (product statement + delivery detail, outstanding build steps in §9, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the plan; documents never gate a build |
-| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed step is **removed** from `Redline-Plan.md` §9; its reasoning lives in git history and any durable change lands in the plan's design sections. **No per-item docs** | Keeps the plan to outstanding work only |
+| Planning artefact | PRD + ADR + phase doc per feature | `docs/Redline-Status.md` (what is present + what is outstanding, in §3, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the doc; documents never gate a build |
+| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed step is **removed** from `Redline-Status.md` §3 and reflected in its §2; its reasoning lives in git history. **No per-item docs** | Keeps the doc to what is true now plus what is outstanding |
 | Validation | `validate.sh` assuming local Node + services | `validate.sh` detects its runner — local Node when present, **Podman** otherwise | Written for a host with no local Node; both lanes are supported, so check the `runner:` line it prints rather than assuming |
 | Upstreams | monorepo packages | **Separate repos, no submodules.** Womblex is reached through object storage, Wayfinder through the MCP endpoint | A gateway couples to its neighbours' interfaces, not their trees |
 | UI | Next.js app in-repo | **None.** redline is headless; every surface belongs to the client that calls it | A stateless read gateway has no UI to own |
