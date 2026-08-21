@@ -9,6 +9,8 @@ import type {
 } from "@redline/redline-domain";
 import {
   buildReportTools,
+  DEFAULT_DOCUMENT_LIMIT,
+  DEFAULT_ENTITY_NAME_LIMIT,
   DEFAULT_TOOL_LIMIT,
   type ReportToolDependencies,
 } from "./report-tools";
@@ -21,13 +23,17 @@ import {
 // An asset reader with a fixed set of rows per asset, paging them exactly as the
 // sidecar would, so the tool's page window is exercised without a sidecar.
 class InMemoryAssetReader implements IWomblexAssetReader {
+  readonly assetsRead: string[] = [];
+
   constructor(private readonly rowsByAsset: Readonly<Record<string, readonly ShardRow[]>>) {}
 
   async readShard(request: WomblexAssetRequest): Promise<Result<ShardPage>> {
+    this.assetsRead.push(request.asset);
     const rows = this.rowsByAsset[request.asset] ?? [];
     const offset = request.offset ?? 0;
     const limit = request.limit ?? rows.length;
-    const window = rows.slice(offset, offset + limit);
+    // A negative limit serves every matching row, exactly as the sidecar does.
+    const window = limit < 0 ? rows.slice(offset) : rows.slice(offset, offset + limit);
     return ok({
       asset: request.asset,
       runId: request.runId,
@@ -70,6 +76,7 @@ describe("buildReportTools — the surface itself", () => {
     const tools = buildReportTools(dependencies());
 
     expect(tools.map((tool) => tool.name)).toEqual([
+      "list_documents",
       "read_extraction_elements",
       "read_extraction_chunks",
       "read_extraction_table_cells",
@@ -223,5 +230,288 @@ describe("determinism — the reason this is not a generic read", () => {
     const second = await tool.call(documentArgs());
 
     expect(first).toEqual(second);
+  });
+});
+
+// list_documents — the navigation entry point. The one tool called against a whole
+// run, and the one that must never touch a shard carrying document body.
+
+const manifestRow = (over: Record<string, unknown> = {}): ShardRow => ({
+  source_hash: "hashA",
+  doc_id: "DOC-1",
+  filename: "throsby-oosc.pdf",
+  ext: ".pdf",
+  status: "ok",
+  elements_count: 24,
+  table_cells_count: 0,
+  form_fields_count: 2,
+  ...over,
+});
+
+const listArgs = (over: Record<string, unknown> = {}) => ({
+  corpusId: "throsby",
+  runId: "run-throsby-demo",
+  ...over,
+});
+
+const documentsIn = (payload: Record<string, unknown>) =>
+  payload.documents as Record<string, unknown>[];
+
+describe("list_documents — navigation", () => {
+  it("reads only the shards that carry no document text", async () => {
+    const reader = new InMemoryAssetReader({ manifest: [manifestRow()] });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    await tool.call(listArgs());
+
+    expect(reader.assetsRead.sort()).toEqual(["enrichment_meta", "entities", "manifest"]);
+    expect(reader.assetsRead).not.toContain("elements");
+    expect(reader.assetsRead).not.toContain("chunks");
+  });
+
+  it("carries the manifest's own columns verbatim at the top level", async () => {
+    const reader = new InMemoryAssetReader({ manifest: [manifestRow()] });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs());
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const [document] = documentsIn(result.data);
+    expect(document).toMatchObject({
+      source_hash: "hashA",
+      doc_id: "DOC-1",
+      filename: "throsby-oosc.pdf",
+      ext: ".pdf",
+      status: "ok",
+      elements_count: 24,
+      table_cells_count: 0,
+      form_fields_count: 2,
+    });
+    expect(document).not.toHaveProperty("documentId");
+    expect(document).not.toHaveProperty("elementsCount");
+  });
+
+  it("puts enrichment under its own key, never among the manifest columns", async () => {
+    const reader = new InMemoryAssetReader({
+      manifest: [manifestRow()],
+      enrichment_meta: [
+        {
+          document_id: "hashA",
+          title: "Notice under s 213A",
+          doc_type_enriched: "decision",
+          jurisdiction: "ACT",
+          person_count: 3,
+        },
+      ],
+    });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs());
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const [document] = documentsIn(result.data);
+    expect(document!.enrichment).toEqual({
+      title: "Notice under s 213A",
+      doc_type_enriched: "decision",
+      jurisdiction: "ACT",
+    });
+    expect(document).not.toHaveProperty("title");
+    expect(document).not.toHaveProperty("jurisdiction");
+  });
+
+  it("reports enrichment as null when the enrich stage did not run, not as empty fields", async () => {
+    const reader = new InMemoryAssetReader({ manifest: [manifestRow()] });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs());
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const [document] = documentsIn(result.data);
+    expect(document!.enrichment).toBeNull();
+  });
+
+  it("caps entity names per document and says what it withheld", async () => {
+    const entities = Array.from({ length: 34 }, (_unused, index) => ({
+      document_id: "hashA",
+      entity_id: `e${index}`,
+      name: `Entity ${index}`,
+    }));
+    const reader = new InMemoryAssetReader({ manifest: [manifestRow()], entities });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs());
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const [document] = documentsIn(result.data);
+    const names = document!.entity_names as Record<string, unknown>;
+    expect((names.names as string[]).length).toBe(DEFAULT_ENTITY_NAME_LIMIT);
+    expect(names.returned).toBe(DEFAULT_ENTITY_NAME_LIMIT);
+    expect(names.available).toBe(34);
+    expect(names.truncated).toBe(true);
+  });
+
+  it("counts an entity name once however many times it is mentioned", async () => {
+    const reader = new InMemoryAssetReader({
+      manifest: [manifestRow()],
+      entities: [
+        { document_id: "hashA", entity_id: "e1", name: "Throsby" },
+        { document_id: "hashA", entity_id: "e2", name: "Throsby" },
+        { document_id: "hashA", entity_id: "e3", name: "ACT Government" },
+      ],
+    });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs());
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const names = documentsIn(result.data)[0]!.entity_names as Record<string, unknown>;
+    expect(names.names).toEqual(["Throsby", "ACT Government"]);
+    expect(names.available).toBe(2);
+    expect(names.truncated).toBe(false);
+  });
+
+  it("joins a graph shard spelling its identity document_id to a manifest keyed on source_hash", async () => {
+    const reader = new InMemoryAssetReader({
+      manifest: [manifestRow({ source_hash: "hashA" }), manifestRow({ source_hash: "hashB" })],
+      entities: [{ document_id: "hashB", entity_id: "e1", name: "Only B" }],
+    });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs());
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const [first, second] = documentsIn(result.data);
+    expect((first!.entity_names as Record<string, unknown>).names).toEqual([]);
+    expect((second!.entity_names as Record<string, unknown>).names).toEqual(["Only B"]);
+  });
+
+  it("defaults to a bounded page of documents and reports what it left behind", async () => {
+    const many = Array.from({ length: DEFAULT_DOCUMENT_LIMIT + 5 }, (_unused, index) =>
+      manifestRow({ source_hash: `hash${index}` }),
+    );
+    const tool = toolNamed("list_documents", {
+      assetReader: new InMemoryAssetReader({ manifest: many }),
+    });
+
+    const result = await tool.call(listArgs());
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.returned).toBe(DEFAULT_DOCUMENT_LIMIT);
+    expect(result.data.available).toBe(DEFAULT_DOCUMENT_LIMIT + 5);
+    expect(result.data.truncated).toBe(true);
+  });
+
+  it("pages: an offset continues where the previous page stopped", async () => {
+    const many = Array.from({ length: 3 }, (_unused, index) =>
+      manifestRow({ source_hash: `hash${index}` }),
+    );
+    const tool = toolNamed("list_documents", {
+      assetReader: new InMemoryAssetReader({ manifest: many }),
+    });
+
+    const result = await tool.call(listArgs({ limit: 2, offset: 2 }));
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.returned).toBe(1);
+    expect(result.data.truncated).toBe(false);
+    expect(documentsIn(result.data)[0]!.source_hash).toBe("hash2");
+  });
+
+  it("filters on a manifest column by exact match", async () => {
+    const reader = new InMemoryAssetReader({
+      manifest: [
+        manifestRow({ source_hash: "hashA", status: "ok" }),
+        manifestRow({ source_hash: "hashB", status: "failed" }),
+      ],
+    });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs({ status: "failed" }));
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.available).toBe(1);
+    expect(documentsIn(result.data)[0]!.source_hash).toBe("hashB");
+  });
+
+  it("filters on an enrichment column, which lives outside the manifest", async () => {
+    const reader = new InMemoryAssetReader({
+      manifest: [manifestRow({ source_hash: "hashA" }), manifestRow({ source_hash: "hashB" })],
+      enrichment_meta: [
+        { document_id: "hashA", title: "A", doc_type_enriched: "contract", jurisdiction: "NSW" },
+        { document_id: "hashB", title: "B", doc_type_enriched: "decision", jurisdiction: "ACT" },
+      ],
+    });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs({ jurisdiction: "ACT" }));
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.available).toBe(1);
+    expect(documentsIn(result.data)[0]!.source_hash).toBe("hashB");
+  });
+
+  it("matches an entity name past the cap, so a capped list never hides a document", async () => {
+    const entities = Array.from({ length: 34 }, (_unused, index) => ({
+      document_id: "hashA",
+      entity_id: `e${index}`,
+      name: `Entity ${index}`,
+    }));
+    const reader = new InMemoryAssetReader({ manifest: [manifestRow()], entities });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs({ entityName: "Entity 33" }));
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.available).toBe(1);
+    const names = documentsIn(result.data)[0]!.entity_names as Record<string, unknown>;
+    expect(names.names).not.toContain("Entity 33");
+    expect(names.available).toBe(34);
+  });
+
+  it("matches an entity name exactly — this is not a text search", async () => {
+    const reader = new InMemoryAssetReader({
+      manifest: [manifestRow()],
+      entities: [{ document_id: "hashA", entity_id: "e1", name: "ACT Government" }],
+    });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs({ entityName: "Government" }));
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.data.available).toBe(0);
+  });
+
+  it("rejects a call with no runId, since runs co-exist under a corpus", async () => {
+    const tool = toolNamed("list_documents");
+
+    const result = await tool.call({ corpusId: "throsby" });
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("propagates a port failure as a DomainError, never as a thrown exception", async () => {
+    const tool = toolNamed("list_documents", {
+      assetReader: new FailingAssetReader(domainError("NOT_FOUND", "no such run")),
+    });
+
+    const result = await tool.call(listArgs());
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("NOT_FOUND");
   });
 });

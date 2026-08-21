@@ -128,9 +128,19 @@ Three tools are exposed today, all whole-document reads over the one port:
 Each takes `corpusId` + `runId` + `documentId`, serves Womblex's own columns
 verbatim, defaults to a page of `DEFAULT_TOOL_LIMIT` (500) rows with `limit`/`offset`
 pass-through, and reports `returned` / `available` / `truncated` straight from the
-sidecar page. **None of them is navigable**: there is no metadata-only entry point
-and no way to ask what a document contains without pulling its rows. §4 item 1 is
-that gap.
+sidecar page.
+
+**`list_documents`** is the navigation entry point above them, and the only tool
+called against a whole run rather than one document. It reads `manifest`,
+`enrichment_meta` and `entities` — the three shards carrying no document body —
+and returns each document's manifest columns verbatim at the top level, with
+`enrichment` (`null` where the enrich stage did not run) and a capped
+`entity_names` under their own labelled keys. It pages in documents
+(`DEFAULT_DOCUMENT_LIMIT`, 25) and caps names per document
+(`DEFAULT_ENTITY_NAME_LIMIT`, 20), each reporting its own
+`returned` / `available` / `truncated`. Filtering is exact match over `status`,
+`ext`, `doc_type_enriched`, `jurisdiction` and an entity name — never a text
+search.
 
 ### Services
 
@@ -181,7 +191,7 @@ against assumptions the suite and the implementation share.
 purity; no focused tests; source file size; sidecar pytest; ruff. CI runs the same
 gate.
 
-Tests today: 38 TypeScript (2 domain, 10 adapters, 26 MCP) and 116 Python.
+Tests today: 53 TypeScript (2 domain, 10 adapters, 41 MCP) and 116 Python.
 
 ---
 
@@ -190,67 +200,7 @@ Tests today: 38 TypeScript (2 domain, 10 adapters, 26 MCP) and 116 Python.
 Numbered locally; renumbered whenever the set changes. One commit each,
 tests-first, with an explicit exit test.
 
-### 1. `list_documents` — the navigation entry point
-
-**One tool, one step.** Metadata for a run's documents, assembled from the three
-shards that carry no document text — `manifest`, `enrichment_meta` and `entities`.
-This is what a client uses to narrow a corpus to the handful of documents worth
-opening, and it is the only tool that reads a run without naming a document.
-
-Per document:
-
-| Field | Source |
-|---|---|
-| `source_hash`, `doc_id`, `filename`, `ext`, `status` | `manifest`, verbatim, at the top level |
-| `elements_count`, `table_cells_count`, `form_fields_count` | `manifest`, verbatim |
-| `enrichment.title`, `enrichment.doc_type_enriched`, `enrichment.jurisdiction` | `enrichment_meta`, verbatim, under a labelled key — `null` when the enrich stage did not run |
-| `entity_names.names` | distinct `name` values from `entities`, verbatim, under a labelled key carrying its own `returned` / `available` / `truncated` |
-
-The top level is manifest columns and nothing else. Everything joined or assembled
-sits under its own labelled key, on the same terms the derived currency signal does
-(§4 item 7) — a client must never mistake an aggregation for a column Womblex wrote.
-
-`manifest` here is the seam's asset: the per-batch `._manifest.parquet` sidecars,
-**not** the run-root `manifest.parquet` that consolidates them. Both carry
-`MANIFEST_SCHEMA`; reading both serves every document twice, which is the failure
-run-scoping exists to prevent, one level down.
-
-**Paging.** The document list takes `limit` / `offset` and reports `returned` /
-`available` / `truncated`, defaulting to 25 documents. `entity_names` is capped
-separately at 20 names per document, because it is an unbounded list in its own
-right — one small document in the fixture carries 34 entities.
-
-**Filtering** is exact match only, over `status`, `ext`, `doc_type_enriched`,
-`jurisdiction` and `entity_name` — never a text search over document bodies, which
-is a capability Redline does not have and must not fake. `entity_name` matches
-against a document's full distinct set, evaluated **before** the cap, so a capped
-list never hides a document that matched.
-
-**`chunk_count` and `page_count` are out of scope**, and the reason is §2's rule: a
-count over `chunks` and a max over `elements.page` can only come from shards that
-carry `text`, so computing them would put every document's body into one read — the
-run-wide tool holding breadth and body at once. See §5.
-
-No new port and no domain change. The join, the caps and the filters live in
-`apps/redline-mcp/src/lib/report-tools.ts`; `redline-domain` holds ports only.
-Version bump: **MINOR** — one additive tool, no schema change, no existing tool
-altered.
-
-The risk is what the fixture cannot prove. It holds one document and one run, so
-breadth and the per-document `entity_names` cap are exercised against the MCP
-suite's stub reader rather than real rows, and the two identity spellings carry the
-same value there — a join that reads only one still passes. §4 item 8 is what proves
-them. The tool answering *correctly* at run size and answering *efficiently* at run
-size are separate; the second is bounded by the read seam, not by this tool (§5).
-
-_Exit: `list_documents` answers the throsby run reading only `manifest`,
-`enrichment_meta` and `entities` — no text-bearing shard — with manifest columns
-verbatim at the top level, `entity_names` capped and carrying its own
-`returned`/`available`/`truncated` against the fixture's 34 entities, and a run
-whose enrichment shards are absent reporting `enrichment: null` rather than empty
-fields._
-
-### 2. `get_document_elements` — paginated verbatim retrieval
+### 1. `get_document_elements` — paginated verbatim retrieval
 
 One document's elements, verbatim, **strictly paginated** — default 20, never
 unbounded — filterable by element kind and by the document's printed page.
@@ -272,7 +222,7 @@ _Exit: a document's elements come back 20 at a time, in `elem_order`, with
 `returned`/`available`/`truncated` honest at every page; a kind filter and a page
 filter each narrow the set; the last page reports `truncated: false`._
 
-### 3. `get_document_entities` — the graph, as navigation
+### 2. `get_document_entities` — the graph, as navigation
 
 One document's entities and graph edges, verbatim: `entity_id`, `entity_label`,
 `name`, `entity_type`, `role`, `mention_start`/`mention_end`, `chunk_index`, and
@@ -291,7 +241,7 @@ _Exit: entities and edges answer from the real fixture (34 and 156 rows), each
 entity carrying its chunk anchor; a run with no enrichment shards says so rather
 than returning empty._
 
-### 4. `get_verbatim_data` — exact bytes for one named thing
+### 3. `get_verbatim_data` — exact bytes for one named thing
 
 Exact bytes for a document plus an element, chunk or cell reference, echoing back
 the anchor it resolved. This is the end of every navigation path: the client has
@@ -300,7 +250,7 @@ narrowed to one passage and wants precisely it.
 _Exit: the returned text is byte-identical to the shard's value for each reference
 kind; an unresolvable reference is a `NOT_FOUND` error, never an empty string._
 
-### 5. `get_schema` — dynamic discovery
+### 4. `get_schema` — dynamic discovery
 
 Three scopes: an asset's columns and types; **one extracted table's actual header
 row**, read verbatim from its cells; a document's graph vocabulary (entity labels
@@ -312,11 +262,11 @@ lets a client use the words the document actually uses instead of guessing them.
 _Exit: each scope answers against the real fixture corpus; the table scope returns
 the header row's exact strings, not a normalised form._
 
-### 6. The remaining shard reads
+### 5. The remaining shard reads
 
 `list_runs`, `read_form_fields`, `read_money_spans`, `read_chunks` and
 `read_table_cells` over the asset-reader port, all paginated and document-scoped on
-the same terms as step 2.
+the same terms as step 1.
 
 Money spans carry a caveat the tool description must state, because getting it
 wrong corrupts amounts silently: `value` is exact and **already folds in sign and
@@ -326,7 +276,7 @@ redo.
 _Exit: every tool answers against the fixture corpus, ordering stable, paging
 honest._
 
-### 7. Retire the per-document read model
+### 6. Retire the per-document read model
 
 Once nothing calls it: `GET /extractions/...`, `records.py`'s DTOs,
 `shard_reader.py`'s mapping and `real_extractor.py`'s three-family read.
@@ -337,7 +287,7 @@ document's currency signal, when a tool needs one, belongs under a labelled
 
 _Exit: the route and its mapping are gone; the sidecar suite stays green._
 
-### 8. A second corpus
+### 7. A second corpus
 
 The fixture has **empty** `table_cells` and `money_columns`, two `money_spans` both
 narrative locus, one document and one run. So it cannot prove the table-cell or
@@ -364,7 +314,7 @@ affected; the cost is. Pushing the filter and the window down into the Parquet r
 is the fix, and it is a sidecar change, not a tool change.
 
 **A derived count puts breadth and body in one read.** `chunk_count` and
-`page_count` are cut from `list_documents` (§4 item 1) for this reason: `chunks` and
+`page_count` are absent from `list_documents` for this reason: `chunks` and
 `elements` both carry `text`, so counting rows or taking a max over `elements.page`
 pulls every document's body through the seam to produce one number. `read_shard(limit=0)`
 already returns `available` with no rows, so a per-document chunk count is one cheap

@@ -129,6 +129,7 @@ describe("an MCP client over streamable HTTP", () => {
     await client.close();
 
     expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
+      "list_documents",
       "read_extraction_chunks",
       "read_extraction_elements",
       "read_extraction_table_cells",
@@ -209,7 +210,7 @@ describe("an MCP client over streamable HTTP", () => {
 
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain("NOT_FOUND");
-    expect(stillWorks.tools).toHaveLength(3);
+    expect(stillWorks.tools).toHaveLength(4);
   });
 
   it("rejects a malformed call with a validation error, not a crash", async () => {
