@@ -84,6 +84,28 @@ So a payload is a thing to be **appended**, not a thing to be read whole. That i
 what dictates flat rows, a stable column order across pages, an anchor on every
 row, and a cursor durable enough to sit in a spreadsheet cell overnight.
 
+### A partial run is the normal case
+
+**A Womblex user does not always run every stage.** Enrichment may not have run;
+a corpus of scanned PDFs lands no table cells; money detection may be off. Redline
+must be at its most useful on the run it is given and honest about the rest, which
+means three things and rules out a fourth:
+
+- **Use everything present.** Where a stage ran, its columns are served verbatim
+  and preferred over anything Redline could compute. Counting rows to reproduce a
+  number the enrich stage already wrote is both derived where an extracted value
+  exists and wasted work.
+- **Fall back, and say that you did.** Where the extracted value is absent but the
+  underlying shard is present, Redline may derive the equivalent — under the
+  labelled `derived` key, never in an extracted column.
+- **Absent, empty and unavailable are three different answers.** A stage that did
+  not run, a stage that ran and found nothing, and a field this run's schema never
+  carried lead to different next actions, and collapsing them into `null` or `0`
+  tells a client to stop looking when it should look elsewhere.
+- **Never substitute.** A missing shard is reported, not inferred, not
+  approximated, and not filled from a neighbouring document. Rule 2 does not
+  soften because the answer would be more useful.
+
 ### One document at a time is enforced, not suggested
 
 **Document scope is mandatory on every retrieval tool**, even where the sidecar
@@ -218,6 +240,11 @@ The order is a dependency chain: 1 gives every later step a port, 2 gives every
 later tool its envelope, and 7 gives 8 and 9 rows that the current fixture cannot
 supply.
 
+Version bump intent is **MINOR** for every step below unless its entry says
+otherwise: each adds or reshapes a tool's response, and none is a fix to shipped
+behaviour. Step 1 and step 10 remove a port and a route respectively, but nothing
+outside this repo consumes either, so neither is MAJOR.
+
 ### 1. Move the adapter onto the generic seam
 
 `IProcurementExtractionReader` and `WomblexExtractionReader` still read the
@@ -251,6 +278,10 @@ it. It is the guardrail from §2 made mechanical rather than advisory:
 - `returned` / `available` / `truncated` — honest at every page.
 - `cursor` — an opaque encoding of run, asset, filter and offset, resolvable with
   no server-side state, `null` when the last page has been served.
+- `sources` — which shard families backed this payload and which were absent for
+  this run, so a client reads a thin answer as "that stage did not run" rather
+  than "there is nothing there". This is where §2's absent/empty distinction
+  becomes mechanical instead of each tool remembering it.
 - A request whose page size exceeds the cap returns a `LIMIT_EXCEEDED` error
   naming the cap. It does not clamp and it does not serve a partial page as
   though nothing were asked for.
@@ -265,7 +296,8 @@ tool below needs a large corpus to prove its paging.
 _Exit: a page of fabricated rows pages to exhaustion with a stable column order,
 `truncated` false only on the last page, and a `null` cursor there; a stored cursor
 from page one still resolves after the reader is reconstructed; an over-cap request
-errors and returns no rows._
+errors and returns no rows; a payload whose backing shard is absent is
+distinguishable in `sources` from one whose shard is present and empty._
 
 ### 3. `list_documents` — the navigation entry point
 
@@ -279,9 +311,16 @@ Per document, one flat row, from `manifest.parquet` unless noted:
 |---|---|
 | `source_hash`, `doc_id`, `filename`, `ext`, `status` | manifest, verbatim |
 | `elements_count`, `table_cells_count`, `form_fields_count` | manifest, verbatim |
-| `title`, `doc_type_enriched`, `jurisdiction` | `enrichment_meta`, verbatim — absent when the enrich stage did not run |
-| `entity_count` | count over `enrichment_entities` — the **names** come from step 5, per document |
+| `extraction_method`, `parser_version`, `extracted_at_iso`, `error` | manifest, verbatim — `error` is why a `status` is not success |
+| `title`, `doc_type_enriched`, `jurisdiction` | `enrichment_meta`, verbatim |
+| `segment_count`, `person_count`, `location_count`, `term_count`, `external_doc_count`, `date_count`, `heading_count`, `junk_span_count` | `enrichment_meta`, verbatim — **not** recounted from `enrichment_entities`, which would derive a number the enrich stage already extracted |
 | `chunk_count`, `page_count` | **derived** — a count over `chunks`, a max over `elements.page`. Returned under a labelled `derived` key, never among the manifest columns |
+| `entity_count` | **derived, fallback only** — a count over `enrichment_entities`, served under the `derived` key when `enrichment_meta` is absent but entities are present. Never served alongside the verbatim counts |
+
+Everything from `enrichment_meta` is absent when the enrich stage did not run, and
+the envelope's `sources` says which of the two happened. The counts are the point
+of this row: they are what lets a client rank a worklist — which documents are
+dense, which are near-empty, which failed — before opening any of them.
 
 Filtering is exact-match over the metadata columns only — never a text search over
 document bodies, which is a capability Redline does not have and must not fake.
@@ -290,9 +329,17 @@ without being returned here: a per-document list of names is the nested,
 unbounded value §2 rules out of a navigation row, and step 5 already serves it
 document-scoped.
 
+**Risk: two identity spellings.** This row joins `manifest` (`source_hash`) to
+`enrichment_meta` and `enrichment_entities` (`document_id`) — same value, different
+column name, per the contract's *Document identity*. `shards.py` already filters
+across both spellings; this step must join across both, and a silent inner join on
+the wrong one returns an empty worklist for a run that has documents.
+
 _Exit: a run's documents come back as flat rows carrying no document text, paging
-through the step 2 envelope; a metadata filter and an entity-name filter each
-narrow the set; derived fields sit under the labelled key and never among the
+through the step 2 envelope; `enrichment_meta`'s counts are served verbatim when
+that shard is present and the derived fallback appears only when it is absent; a
+metadata filter and an entity-name filter each narrow the set across the two
+identity spellings; derived fields sit under the labelled key and never among the
 manifest columns._
 
 ### 4. `get_document_elements` — paginated verbatim retrieval
@@ -333,7 +380,8 @@ missing one, and must survive to the caller rather than being filtered away.
 
 An absent graph and an empty one must be distinguishable: no enrichment stage ran
 is a different answer from the graph holding no such entity, and they lead to
-opposite next actions.
+opposite next actions. Step 2's `sources` is where that distinction is reported;
+this step is where it first has real consequences.
 
 _Exit: entities and edges answer from the real fixture (34 and 156 rows), each
 entity carrying its chunk anchor; a run with no enrichment shards says so rather
@@ -373,16 +421,24 @@ run ids returns different values under the same anchor._
 ### 8. `get_schema` — dynamic discovery
 
 Three scopes: an asset's columns and types; **one extracted table's actual header
-row**, read verbatim from its cells; a document's graph vocabulary (entity labels
-and relation names present).
+row**; a document's graph vocabulary (entity labels and relation names present).
 
 The table scope is the one that matters for defining a report column — it is what
 lets a client use the words the document actually uses instead of guessing them.
 It is also why this step follows the fixture: there is no header row to read until
 `table_cells` holds one.
 
+Two contract details decide this scope, and both have been guessed wrong before.
+`TABLE_CELLS_SCHEMA` spells its coordinates `row` and `col` — not `row_index` /
+`col_index` — and carries no `page`. And where a column has already been judged
+money-bearing, `MONEY_COLUMNS_SCHEMA.header_text` **is** that header, extracted:
+serve it verbatim rather than re-reading the cells to reproduce it, and fall back
+to the cells for columns `money_columns` does not cover or when that shard is
+absent.
+
 _Exit: each scope answers against the real fixture corpus; the table scope returns
-the header row's exact strings, not a normalised form._
+the header row's exact strings, not a normalised form, and prefers
+`money_columns.header_text` where that shard covers the column._
 
 ### 9. The remaining shard reads
 
@@ -391,10 +447,14 @@ the header row's exact strings, not a normalised form._
 `list_runs` is navigation and is run-wide; the four reads are retrieval and take a
 required document, on the same terms as step 4.
 
-Money spans carry a caveat the tool description must state, because getting it
-wrong corrupts amounts silently: `value` is exact and **already folds in sign and
-multiplier**. `multiplier` and `negative` are an audit trail, not arithmetic to
-redo.
+Money spans carry two caveats the tool description must state, because getting
+either wrong corrupts amounts silently. `value` is exact and **already folds in
+sign and multiplier** — `multiplier` and `negative` are an audit trail, not
+arithmetic to redo. And `range_group` links the two rows that are one amount's
+endpoints, with `range_role` naming which is which: a client that sums rows
+without reading those two columns counts a range twice. Both are verbatim
+passthrough here, but a tool that hands them over without saying what they mean
+has handed over a foot-gun.
 
 _Exit: every tool answers against the step 7 fixture, ordering stable, paging
 honest; each of the four reads errors without a document._
