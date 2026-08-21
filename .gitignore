@@ -14,6 +14,11 @@ coverage/
 
 # Podman validation scratch (created by scripts/podman-run.sh if SCRATCH_BASE is set here)
 .redline-scratch/
+
+# Wayfinder is consumed read-only and never committed. It is materialised locally
+# (or at build time) into this scratch copy carrying node_modules and build
+# artefacts, so keep it untracked.
+vendor/
 __pycache__/
 
 # Machine-local Claude Code tooling state: a permissions audit log carrying
