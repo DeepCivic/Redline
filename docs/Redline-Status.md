@@ -43,12 +43,12 @@ Four rules, non-negotiable, that everything below is measured against:
 ## 2. The constraint that shapes the tool surface
 
 **The context window is the binding constraint, and Redline is on the wrong side
-of it to solve alone.** A corpus is 500 documents. No model holds 500 documents at
-once, and Redline must never return 500 documents' worth of verbatim text in one
-response. A tool that *could* return the whole corpus is a tool that will, and the
-call that does it destroys the session it was meant to serve.
+of it to solve alone.** A corpus is hundreds of documents. No model holds hundreds
+of documents at once, and Redline must never return a corpus's worth of verbatim
+text in one response. A tool that *could* return the whole corpus is a tool that
+will, and the call that does it destroys the session it was meant to serve.
 
-The split that makes 500 documents tractable:
+The split that makes a corpus of that size tractable:
 
 | | Job | Owner |
 |---|---|---|
@@ -176,29 +176,63 @@ tests-first, with an explicit exit test.
 
 ### 1. `list_documents` — the navigation entry point
 
-Metadata for a run's documents, and **no document text at all**. This is what a
-client uses to narrow 500 documents to the handful worth opening.
+**One tool, one step.** Metadata for a run's documents, assembled from the three
+shards that carry no document text — `manifest`, `enrichment_meta` and `entities`.
+This is what a client uses to narrow a corpus to the handful of documents worth
+opening, and it is the only tool that reads a run without naming a document.
 
-Per document, from `manifest.parquet` unless noted:
+Per document:
 
 | Field | Source |
 |---|---|
-| `source_hash`, `doc_id`, `filename`, `ext`, `status` | manifest, verbatim |
-| `elements_count`, `table_cells_count`, `form_fields_count` | manifest, verbatim |
-| `title`, `doc_type_enriched`, `jurisdiction` | `enrichment_meta`, verbatim — absent when the enrich stage did not run |
-| `entity_names` | distinct `name` values from `enrichment_entities`, verbatim |
-| `chunk_count`, `page_count` | **derived** — a count over `chunks`, a max over `elements.page`. Returned under a labelled `derived` key, never among the manifest columns |
+| `source_hash`, `doc_id`, `filename`, `ext`, `status` | `manifest`, verbatim, at the top level |
+| `elements_count`, `table_cells_count`, `form_fields_count` | `manifest`, verbatim |
+| `enrichment.title`, `enrichment.doc_type_enriched`, `enrichment.jurisdiction` | `enrichment_meta`, verbatim, under a labelled key — `null` when the enrich stage did not run |
+| `entity_names.names` | distinct `name` values from `entities`, verbatim, under a labelled key carrying its own `returned` / `available` / `truncated` |
 
-Filtering is exact-match over the metadata columns only — never a text search over
-document bodies, which is a capability Redline does not have and must not fake.
+The top level is manifest columns and nothing else. Everything joined or assembled
+sits under its own labelled key, on the same terms the derived currency signal does
+(§4 item 7) — a client must never mistake an aggregation for a column Womblex wrote.
 
-`entity_names` is itself an unbounded list: 34 entities for one small document
-means a 500-document run could return tens of thousands of strings. It is capped
-per document, with its own count and truncation flag, and is filterable.
+`manifest` here is the seam's asset: the per-batch `._manifest.parquet` sidecars,
+**not** the run-root `manifest.parquet` that consolidates them. Both carry
+`MANIFEST_SCHEMA`; reading both serves every document twice, which is the failure
+run-scoping exists to prevent, one level down.
 
-_Exit: a 500-document run answers in one bounded payload carrying no document text;
-`entity_names` truncation is visible per document; derived fields sit under the
-labelled key._
+**Paging.** The document list takes `limit` / `offset` and reports `returned` /
+`available` / `truncated`, defaulting to 25 documents. `entity_names` is capped
+separately at 20 names per document, because it is an unbounded list in its own
+right — one small document in the fixture carries 34 entities.
+
+**Filtering** is exact match only, over `status`, `ext`, `doc_type_enriched`,
+`jurisdiction` and `entity_name` — never a text search over document bodies, which
+is a capability Redline does not have and must not fake. `entity_name` matches
+against a document's full distinct set, evaluated **before** the cap, so a capped
+list never hides a document that matched.
+
+**`chunk_count` and `page_count` are out of scope**, and the reason is the tool's
+defining constraint: a count over `chunks` and a max over `elements.page` can only
+come from shards that carry `text`, so computing them would make the metadata-only
+entry point read every byte of every document in the run. See §5.
+
+No new port and no domain change. The join, the caps and the filters live in
+`apps/redline-mcp/src/lib/report-tools.ts`; `redline-domain` holds ports only.
+Version bump: **MINOR** — one additive tool, no schema change, no existing tool
+altered.
+
+Two risks, both about what the fixture cannot prove. It holds one document and one
+run, so breadth and the per-document `entity_names` cap are exercised against the
+MCP suite's stub reader rather than real rows, and the two identity spellings carry
+the same value there — a join that reads only one still passes. §4 item 8 is what
+proves them. Separately, `shards.py` decodes a whole asset before paging it, so a
+wide run's `entities` read is materialised in full sidecar-side whatever the cap.
+
+_Exit: `list_documents` answers the throsby run reading only `manifest`,
+`enrichment_meta` and `entities` — no text-bearing shard — with manifest columns
+verbatim at the top level, `entity_names` capped and carrying its own
+`returned`/`available`/`truncated` against the fixture's 34 entities, and a run
+whose enrichment shards are absent reporting `enrichment: null` rather than empty
+fields._
 
 ### 2. `get_document_elements` — paginated verbatim retrieval
 
@@ -304,6 +338,15 @@ the table-cell read, `list_documents` at breadth, and run scoping together._
 
 **`_select_run` is now redundant but still live.** `real_extractor.py` narrows to
 one run inside the extractor, which was the partial fix for run scoping. The `/runs/...` routes do it properly. It goes with step 7.
+
+**A derived count costs a whole-corpus read.** `chunk_count` and `page_count` are
+cut from `list_documents` (§4 item 1) for this reason: `chunks` and `elements` both
+carry `text`, so counting rows or taking a max over `elements.page` pulls every
+document's body through the seam to produce one number. `read_shard(limit=0)`
+already returns `available` with no rows, so a per-document chunk count is one cheap
+call — but that is one round trip per document, and `page_count` has no equivalent,
+because a max needs the rows. Aggregating in the sidecar is the right answer and is
+a Python change, so it does not belong inside a tool step.
 
 **Nothing checks the Womblex version.** The contract records v0.4.0. A corpus
 written by an older engine fails at the first missing column rather than at a
