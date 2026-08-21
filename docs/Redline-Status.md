@@ -43,12 +43,14 @@ Four rules, non-negotiable, that everything below is measured against:
 ## 2. The constraint that shapes the tool surface
 
 **The context window is the binding constraint, and Redline is on the wrong side
-of it to solve alone.** A corpus is 500 documents. No model holds 500 documents at
-once, and Redline must never return 500 documents' worth of verbatim text in one
-response. A tool that *could* return the whole corpus is a tool that will, and the
-call that does it destroys the session it was meant to serve.
+of it to solve alone.** A corpus is however many documents it is — commonly
+hundreds, occasionally one. No number is designed for, because designing for a
+number is how a surface acquires a call that works at the size it was tested on
+and destroys the session at the size it meets. What holds at every size is the
+shape of the work: **one document at a time, with the client's memory kept outside
+its context window.**
 
-The split that makes 500 documents tractable:
+The split that makes any corpus tractable:
 
 | | Job | Owner |
 |---|---|---|
@@ -57,9 +59,46 @@ The split that makes 500 documents tractable:
 | **Accumulation** | Hold the facts gathered so far, across documents, so the model need not | **The client** |
 
 Redline is a paginated catalogue and retrieval system. It never summarises, and it
-never accumulates. Whatever the client does with a fact once it has it — a
-scratchpad, a table, a database — is the client's, and this repository has no
-opinion on it beyond refusing to do it.
+never accumulates.
+
+### The client's scratchpad is a CSV, and the tool surface is designed around it
+
+**Redline assumes its client can write and re-read a CSV between tool calls.** That
+is an assumption about the client, not a dependency on it: Redline never creates
+the file, never reads it, and cannot tell whether one exists — rule 3 is
+untouched. But it is the assumption that makes the surface coherent, because that
+file, not the context window, is where a client's findings live.
+
+The loop every tool is shaped to serve:
+
+1. `list_documents` returns one bounded page of document metadata. The client
+   appends those rows to its CSV as a worklist and pages until the worklist is
+   complete. No document body has been read yet.
+2. The client takes **one** document off the worklist and works it to completion
+   — elements, entities, the verbatim passages it needs — appending findings as
+   rows, each carrying the anchor it came from.
+3. It marks that document done and moves to the next. Its context never holds two
+   documents at once, and a context that is lost resumes from the CSV.
+
+So a payload is a thing to be **appended**, not a thing to be read whole. That is
+what dictates flat rows, a stable column order across pages, an anchor on every
+row, and a cursor durable enough to sit in a spreadsheet cell overnight.
+
+### One document at a time is enforced, not suggested
+
+**Document scope is mandatory on every retrieval tool**, even where the sidecar
+underneath would accept the filter as optional. There is no tool that returns
+element text, cells, fields or spans across documents. A client that *can* ask for
+a corpus will eventually ask for one, and no amount of guidance in a tool
+description outranks a parameter that permits it.
+
+Breadth exists only in navigation — `list_runs` and `list_documents` — which
+return metadata and never a byte of document body.
+
+**A request above the cap is refused, not quietly clamped.** A caller may raise a
+page size up to the cap; above it, the answer is an error naming the cap and the
+cursor to page with. A truncation flag tells a caller what it missed after the
+fact; an error stops it forming the habit.
 
 ### What that demands of every tool
 
@@ -67,9 +106,18 @@ opinion on it beyond refusing to do it.
   reading raw text. Counts, names, ids, statuses — enough to choose, and not one
   byte of document body.
 - **Small by default.** Retrieval tools default to a page of tens of rows, not
-  hundreds. A caller may ask for more; it may not get everything by accident.
+  hundreds. A caller may raise the page size to the cap; a request above the cap
+  is an error, never a silent clamp.
+- **Document-scoped.** Every retrieval tool takes a document and refuses without
+  one. Only navigation spans a run.
+- **Flat and appendable.** A row is scalar columns in a stable order, so a client
+  writes it to CSV without flattening anything first. A value that is itself a
+  list is a count in navigation and a separate document-scoped call for the
+  members.
 - **Every payload says what it withheld.** `returned`, `available`, `truncated`.
   A capped answer that looks complete is worse than an error.
+- **Resumable.** A cursor encodes run, asset, filter and offset and nothing else,
+  so Redline holds no handle for it and a stored cursor still works next week.
 - **Every row carries its anchor**, so the next call can be narrower than the last.
   Navigation output is only useful if it addresses something.
 
@@ -106,7 +154,7 @@ Three tools are exposed today, all whole-document reads:
 
 Each caps at 500 rows and reports `returned` / `available` / `truncated`. **None of
 them is navigable**: there is no filter, no offset, and no way to ask what a
-document contains without pulling its text. §4 item 2 is that gap.
+document contains without pulling its text. §4 items 2 and 3 are that gap.
 
 ### Services
 
@@ -166,6 +214,10 @@ Tests today: 33 TypeScript (1 domain, 8 adapters, 24 MCP) and 116 Python.
 Numbered locally; renumbered whenever the set changes. One commit each,
 tests-first, with an explicit exit test.
 
+The order is a dependency chain: 1 gives every later step a port, 2 gives every
+later tool its envelope, and 7 gives 8 and 9 rows that the current fixture cannot
+supply.
+
 ### 1. Move the adapter onto the generic seam
 
 `IProcurementExtractionReader` and `WomblexExtractionReader` still read the
@@ -180,40 +232,74 @@ asset, an optional document, and `limit`/`offset`. Derived signals move under a
 separately labelled key. Delete the DTO port, the wire validator and the
 per-document route with it.
 
+The port's first argument is `evaluationId` throughout, and the sidecar route
+spells it `{evaluation_id}` — vocabulary from before the restatement. It is a
+`corpusId`, and this is the step that renames it, because the port is being
+replaced anyway.
+
 _Exit: a conformance fake satisfies the port; the adapter round-trips real fixture
 rows with column names and values byte-identical to the shard, and a second page
 continues where the first stopped._
 
-### 2. `list_documents` — the navigation entry point
+### 2. The page envelope and the cap refusal
 
-Metadata for a run's documents, and **no document text at all**. This is what a
-client uses to narrow 500 documents to the handful worth opening.
+One shape, shared by every tool that follows, built before there is a tool to use
+it. It is the guardrail from §2 made mechanical rather than advisory:
 
-Per document, from `manifest.parquet` unless noted:
+- `rows` — flat records, scalar columns only, in a **stable column order across
+  pages**, so appending page two to a CSV lines up with page one.
+- `returned` / `available` / `truncated` — honest at every page.
+- `cursor` — an opaque encoding of run, asset, filter and offset, resolvable with
+  no server-side state, `null` when the last page has been served.
+- A request whose page size exceeds the cap returns a `LIMIT_EXCEEDED` error
+  naming the cap. It does not clamp and it does not serve a partial page as
+  though nothing were asked for.
+
+Version bump intent when built: **MINOR** — it changes the shape of every existing
+tool's response.
+
+Test it with fabricated rows, not the fixture: the envelope is a pure contract, and
+proving it needs an arbitrary row count rather than a realistic one. This is why no
+tool below needs a large corpus to prove its paging.
+
+_Exit: a page of fabricated rows pages to exhaustion with a stable column order,
+`truncated` false only on the last page, and a `null` cursor there; a stored cursor
+from page one still resolves after the reader is reconstructed; an over-cap request
+errors and returns no rows._
+
+### 3. `list_documents` — the navigation entry point
+
+Metadata for a run's documents, and **no document text at all**. This is the
+worklist: what a client pages through and writes to its CSV before it opens
+anything.
+
+Per document, one flat row, from `manifest.parquet` unless noted:
 
 | Field | Source |
 |---|---|
 | `source_hash`, `doc_id`, `filename`, `ext`, `status` | manifest, verbatim |
 | `elements_count`, `table_cells_count`, `form_fields_count` | manifest, verbatim |
 | `title`, `doc_type_enriched`, `jurisdiction` | `enrichment_meta`, verbatim — absent when the enrich stage did not run |
-| `entity_names` | distinct `name` values from `enrichment_entities`, verbatim |
+| `entity_count` | count over `enrichment_entities` — the **names** come from step 5, per document |
 | `chunk_count`, `page_count` | **derived** — a count over `chunks`, a max over `elements.page`. Returned under a labelled `derived` key, never among the manifest columns |
 
 Filtering is exact-match over the metadata columns only — never a text search over
 document bodies, which is a capability Redline does not have and must not fake.
+Entity **names** are filterable here (find the documents that mention a party)
+without being returned here: a per-document list of names is the nested,
+unbounded value §2 rules out of a navigation row, and step 5 already serves it
+document-scoped.
 
-`entity_names` is itself an unbounded list: 34 entities for one small document
-means a 500-document run could return tens of thousands of strings. It is capped
-per document, with its own count and truncation flag, and is filterable.
+_Exit: a run's documents come back as flat rows carrying no document text, paging
+through the step 2 envelope; a metadata filter and an entity-name filter each
+narrow the set; derived fields sit under the labelled key and never among the
+manifest columns._
 
-_Exit: a 500-document run answers in one bounded payload carrying no document text;
-`entity_names` truncation is visible per document; derived fields sit under the
-labelled key._
-
-### 3. `get_document_elements` — paginated verbatim retrieval
+### 4. `get_document_elements` — paginated verbatim retrieval
 
 One document's elements, verbatim, **strictly paginated** — default 20, never
-unbounded — filterable by element kind and by the document's printed page.
+unbounded — filterable by element kind and by the document's printed page. The
+document argument is required; there is no run-wide form of this call.
 
 Two parameters are deliberately distinct because Womblex's schema forces it:
 `ELEMENT_SCHEMA` has a real `page` column (the printed page the element appeared
@@ -230,13 +316,15 @@ is a real element, not a gap, and is never dropped, because dropping one breaks
 
 _Exit: a document's elements come back 20 at a time, in `elem_order`, with
 `returned`/`available`/`truncated` honest at every page; a kind filter and a page
-filter each narrow the set; the last page reports `truncated: false`._
+filter each narrow the set; the last page reports `truncated: false`; a call
+without a document is an error._
 
-### 4. `get_document_entities` — the graph, as navigation
+### 5. `get_document_entities` — the graph, as navigation
 
 One document's entities and graph edges, verbatim: `entity_id`, `entity_label`,
 `name`, `entity_type`, `role`, `mention_start`/`mention_end`, `chunk_index`, and
-the `source_id`/`target_id`/`relation` edges between them.
+the `source_id`/`target_id`/`relation` edges between them. This is also where the
+names behind step 3's `entity_count` are served.
 
 **The graph locates; it never sources.** Every entity carries the `chunk_index` it
 was found in, which is the anchor for the next call. `chunk_index` is `-1` when the
@@ -251,7 +339,7 @@ _Exit: entities and edges answer from the real fixture (34 and 156 rows), each
 entity carrying its chunk anchor; a run with no enrichment shards says so rather
 than returning empty._
 
-### 5. `get_verbatim_data` — exact bytes for one named thing
+### 6. `get_verbatim_data` — exact bytes for one named thing
 
 Exact bytes for a document plus an element, chunk or cell reference, echoing back
 the anchor it resolved. This is the end of every navigation path: the client has
@@ -260,7 +348,29 @@ narrowed to one passage and wants precisely it.
 _Exit: the returned text is byte-identical to the shard's value for each reference
 kind; an unresolvable reference is a `NOT_FOUND` error, never an empty string._
 
-### 6. `get_schema` — dynamic discovery
+### 7. A fixture that exercises what the current one cannot
+
+`run-throsby-demo` has **empty** `table_cells` and `money_columns`, two
+`money_spans` both narrative locus, one document and one run — and the run-scoping
+test stages its second run by copying the first, so two runs that must differ are
+byte-identical.
+
+What is missing is **kinds of row, not volume of row**. Paging and the cap are
+proved by step 2 against fabricated rows, so this fixture is not a breadth
+exercise and must not become one; a large corpus here would slow every suite to
+demonstrate a property already held by the envelope.
+
+What it needs: a **priced schedule** so `table_cells` and `money_columns` are
+populated and money spans exist at a non-narrative locus; enough documents that a
+page boundary and a metadata filter both fall somewhere real — a handful, not
+hundreds; and **two genuinely different runs** over the same documents, so a
+changed value under a stable anchor proves run scoping the way a copy cannot.
+
+_Exit: the table-cell path reads a real priced schedule; `list_documents` pages
+across a boundary and filters to a strict subset; the same document read under two
+run ids returns different values under the same anchor._
+
+### 8. `get_schema` — dynamic discovery
 
 Three scopes: an asset's columns and types; **one extracted table's actual header
 row**, read verbatim from its cells; a document's graph vocabulary (entity labels
@@ -268,25 +378,28 @@ and relation names present).
 
 The table scope is the one that matters for defining a report column — it is what
 lets a client use the words the document actually uses instead of guessing them.
+It is also why this step follows the fixture: there is no header row to read until
+`table_cells` holds one.
 
 _Exit: each scope answers against the real fixture corpus; the table scope returns
 the header row's exact strings, not a normalised form._
 
-### 7. The remaining shard reads
+### 9. The remaining shard reads
 
 `list_runs`, `read_form_fields`, `read_money_spans`, `read_chunks` and
-`read_table_cells` over the step 1 port, all paginated and document-scoped on the
-same terms as step 3.
+`read_table_cells` over the step 1 port, all paginated on the step 2 envelope.
+`list_runs` is navigation and is run-wide; the four reads are retrieval and take a
+required document, on the same terms as step 4.
 
 Money spans carry a caveat the tool description must state, because getting it
 wrong corrupts amounts silently: `value` is exact and **already folds in sign and
 multiplier**. `multiplier` and `negative` are an audit trail, not arithmetic to
 redo.
 
-_Exit: every tool answers against the fixture corpus, ordering stable, paging
-honest._
+_Exit: every tool answers against the step 7 fixture, ordering stable, paging
+honest; each of the four reads errors without a document._
 
-### 8. Retire the per-document read model
+### 10. Retire the per-document read model
 
 Once nothing calls it: `GET /extractions/...`, `records.py`'s DTOs,
 `shard_reader.py`'s mapping and `real_extractor.py`'s three-family read.
@@ -296,24 +409,13 @@ dies.
 
 _Exit: the route and its mapping are gone; the sidecar suite stays green._
 
-### 9. A second corpus
-
-The fixture has **empty** `table_cells` and `money_columns`, two `money_spans` both
-narrative locus, one document and one run. So it cannot prove the table-cell or
-sheet-cell paths, cannot exercise `list_documents` at any real breadth, and cannot
-regress run scoping for real (the current test stages two runs by copying one). A
-multi-document corpus with a priced schedule, run twice.
-
-_Exit: a corpus with two runs, many documents and a populated pricing table proves
-the table-cell read, `list_documents` at breadth, and run scoping together._
-
 ---
 
 ## 5. Known gaps and open questions
 
 **`_select_run` is now redundant but still live.** `real_extractor.py` narrows to
 one run inside the extractor, which was the partial fix for run scoping. The
-`/runs/...` routes do it properly. It goes with step 8.
+`/runs/...` routes do it properly. It goes with step 10.
 
 **Nothing checks the Womblex version.** The contract records v0.4.0. A corpus
 written by an older engine fails at the first missing column rather than at a
@@ -326,10 +428,10 @@ caller identity at all.
 **What is a `corpusId`, to a client?** Redline takes it on trust and has no way to
 validate it beyond "shards exist under that prefix".
 
-**Where does the row cap live?** The sidecar takes `limit`; the MCP tools hard-cap
-at 500. Whether a client may raise a retrieval cap, and how high, is unsettled —
-and it is the one setting that decides whether a careless call can exhaust a
-context window.
+**How high is the cap, in rows?** §2 settles the policy — a caller may raise a page
+size to the cap and is refused above it — and step 2 implements it, but the number
+itself is still a judgement call, and it is the number that decides whether a
+careless call can exhaust a context window.
 
 ---
 
@@ -339,6 +441,10 @@ Recorded so its absence is not mistaken for missing work and rebuilt. All of it
 belongs above Redline, in whatever calls it.
 
 - Report definitions, rows, values, and the state accumulated across documents
+- **The client's CSV scratchpad.** Redline's payloads are shaped to be appended to
+  one (§2) and its tool descriptions name the loop that does it, but Redline never
+  creates, reads, writes or validates that file, and holds no notion of which
+  documents a client has already worked
 - Any database, schema or migration — Redline stores nothing
 - Any LLM call, extraction loop, or decision about what a value means
 - Column constraints, money and date normalisation, value statuses
