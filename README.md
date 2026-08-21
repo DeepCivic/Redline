@@ -35,11 +35,11 @@ storage; Redline reaches its client through one MCP endpoint. **Neither neighbou
 is carried inside this repository** — there are no submodules, and nothing here
 imports their source.
 
-**The context window is what shapes the tool surface.** A corpus is hundreds of
-documents; no model holds them at once, and Redline must never return that much
-text in one response. So Redline does *navigation* (choose which documents and
-passages matter, from metadata alone) and *retrieval* (exact bytes for one narrow,
-named thing, in small pages). *Accumulation* — holding what has been found so far —
+**No payload carries more than one document's content**, and that is what shapes
+the tool surface. Redline does *navigation* (choose which documents and passages
+matter, from metadata alone, across a run) and *retrieval* (exact bytes for one
+narrow, named thing in one named document, in small pages) — breadth and body never
+appear in the same answer. *Accumulation* — holding what has been found so far —
 belongs to the client, because Redline is stateless and will not remember.
 
 What Redline depends on from Womblex is its output schema, and that is written

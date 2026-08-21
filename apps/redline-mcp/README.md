@@ -9,8 +9,9 @@ is all this package is.
 
 ## What this surface is for
 
-A client works a corpus of hundreds of documents against a context window that
-holds a handful. That constraint, not convenience, is what shapes every tool here.
+No payload here carries more than one document's content. That constraint, not
+convenience, is what shapes every tool: the context window belongs to the client,
+and this surface must never be the thing that exhausts it.
 
 The surface separates two jobs and refuses a third:
 
@@ -65,8 +66,8 @@ element / table-cell / form-field counts, plus `title`, `doc_type_enriched` and
 Womblex already extracted for each document.
 
 Entity names are what make this navigable rather than merely descriptive: a client
-narrows 500 documents to the relevant few by seeing which names appear where,
-without opening any of them. They are capped per document with their own count and
+narrows a run to the few documents worth opening by seeing which names appear
+where, without opening any of them. They are capped per document with their own count and
 truncation flag — 34 entities on one small document means a large run would
 otherwise return tens of thousands of strings.
 

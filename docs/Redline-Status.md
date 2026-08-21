@@ -42,13 +42,15 @@ Four rules, non-negotiable, that everything below is measured against:
 
 ## 2. The constraint that shapes the tool surface
 
-**The context window is the binding constraint, and Redline is on the wrong side
-of it to solve alone.** A corpus is hundreds of documents. No model holds hundreds
-of documents at once, and Redline must never return a corpus's worth of verbatim
-text in one response. A tool that *could* return the whole corpus is a tool that
-will, and the call that does it destroys the session it was meant to serve.
+**No payload carries more than one document's content.** That is the constraint,
+and it holds whatever a given corpus turns out to hold. A retrieval tool names
+exactly one document and returns that document's rows; the one run-wide tool
+returns metadata and no document body at all. There is no call that returns two
+documents' text, and no page size that turns one into such a call. The context
+window belongs to the client, and Redline's job is never to be the thing that
+exhausts it.
 
-The split that makes a corpus of that size tractable:
+The split that rests on it:
 
 | | Job | Owner |
 |---|---|---|
@@ -63,6 +65,8 @@ opinion on it beyond refusing to do it.
 
 ### What that demands of every tool
 
+- **One document's content per payload.** A tool that returns document body names
+  the one document it belongs to. Breadth and body never appear in the same answer.
 - **Metadata-first.** A client must be able to scan the whole landscape without
   reading raw text. Counts, names, ids, statuses — enough to choose, and not one
   byte of document body.
@@ -210,10 +214,10 @@ is a capability Redline does not have and must not fake. `entity_name` matches
 against a document's full distinct set, evaluated **before** the cap, so a capped
 list never hides a document that matched.
 
-**`chunk_count` and `page_count` are out of scope**, and the reason is the tool's
-defining constraint: a count over `chunks` and a max over `elements.page` can only
-come from shards that carry `text`, so computing them would make the metadata-only
-entry point read every byte of every document in the run. See §5.
+**`chunk_count` and `page_count` are out of scope**, and the reason is §2's rule: a
+count over `chunks` and a max over `elements.page` can only come from shards that
+carry `text`, so computing them would put every document's body into one read — the
+run-wide tool holding breadth and body at once. See §5.
 
 No new port and no domain change. The join, the caps and the filters live in
 `apps/redline-mcp/src/lib/report-tools.ts`; `redline-domain` holds ports only.
@@ -339,10 +343,10 @@ the table-cell read, `list_documents` at breadth, and run scoping together._
 **`_select_run` is now redundant but still live.** `real_extractor.py` narrows to
 one run inside the extractor, which was the partial fix for run scoping. The `/runs/...` routes do it properly. It goes with step 7.
 
-**A derived count costs a whole-corpus read.** `chunk_count` and `page_count` are
-cut from `list_documents` (§4 item 1) for this reason: `chunks` and `elements` both
-carry `text`, so counting rows or taking a max over `elements.page` pulls every
-document's body through the seam to produce one number. `read_shard(limit=0)`
+**A derived count puts breadth and body in one read.** `chunk_count` and
+`page_count` are cut from `list_documents` (§4 item 1) for this reason: `chunks` and
+`elements` both carry `text`, so counting rows or taking a max over `elements.page`
+pulls every document's body through the seam to produce one number. `read_shard(limit=0)`
 already returns `available` with no rows, so a per-document chunk count is one cheap
 call — but that is one round trip per document, and `page_count` has no equivalent,
 because a max needs the rows. Aggregating in the sidecar is the right answer and is

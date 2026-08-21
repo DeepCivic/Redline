@@ -60,11 +60,11 @@ submodules** — neither neighbour is carried in this tree, and nothing here imp
 their source. What redline depends on from Womblex is its output *schema*, recorded
 in [`docs/Womblex-Output-Contract.md`](../docs/Womblex-Output-Contract.md).
 
-**The context window shapes the tool surface.** A corpus is hundreds of documents
-and no model holds them at once. Redline does navigation (choose what matters, from
-metadata alone) and retrieval (exact bytes for one narrow thing, in small pages).
+**No payload carries more than one document's content.** This is what shapes the
+tool surface. Redline does navigation (choose what matters, from metadata alone,
+across a run) and retrieval (exact bytes for one narrow thing in one named
+document, in small pages). Breadth and body never appear in the same answer.
 Accumulating findings across documents is the client's — redline is stateless.
-A tool that could return a whole corpus is one that will.
 
 **Nothing here generates.** No LLM call, no summarisation, no inference, no report
 assembly. A tool returns bytes Womblex wrote, or it returns an error. Anything
