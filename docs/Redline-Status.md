@@ -42,15 +42,24 @@ Four rules, non-negotiable, that everything below is measured against:
 
 ## 2. The constraint that shapes the tool surface
 
-**No payload carries more than one document's content.** That is the constraint,
-and it holds whatever a given corpus turns out to hold. A retrieval tool names
-exactly one document and returns that document's rows; the one run-wide tool
-returns metadata and no document body at all. There is no call that returns two
-documents' text, and no page size that turns one into such a call. The context
-window belongs to the client, and Redline's job is never to be the thing that
-exhausts it.
+**Redline serves a whole corpus; a payload serves one document.** Both halves are
+requirements, and they are different in kind.
 
-The split that rests on it:
+*Redline must work across a large corpus.* A run holds however many documents it
+holds, and navigation has to stay usable across all of them — that is met with
+paging, filtering and metadata-only answers, never by refusing breadth. A tool that
+only works on a small run has not met the requirement.
+
+*No payload carries verbatim content from more than one document.* Retrieval names
+exactly one document and returns that document's rows. No page size, filter or
+convenience argument turns one call into a copy of two documents' text. Breadth and
+body never appear in the same answer.
+
+The second is what keeps the first from destroying the session it was meant to
+serve: the context window belongs to the client, and Redline's job is never to be
+the thing that exhausts it.
+
+The split that rests on both:
 
 | | Job | Owner |
 |---|---|---|
@@ -67,6 +76,9 @@ opinion on it beyond refusing to do it.
 
 - **One document's content per payload.** A tool that returns document body names
   the one document it belongs to. Breadth and body never appear in the same answer.
+- **Bounded at any run size.** A run-wide read stays paged and bounded however many
+  documents the run holds, and says what it withheld. Scale is answered with paging
+  and filters, not by narrowing what a client is allowed to see.
 - **Metadata-first.** A client must be able to scan the whole landscape without
   reading raw text. Counts, names, ids, statuses — enough to choose, and not one
   byte of document body.
@@ -224,12 +236,12 @@ No new port and no domain change. The join, the caps and the filters live in
 Version bump: **MINOR** — one additive tool, no schema change, no existing tool
 altered.
 
-Two risks, both about what the fixture cannot prove. It holds one document and one
-run, so breadth and the per-document `entity_names` cap are exercised against the
-MCP suite's stub reader rather than real rows, and the two identity spellings carry
-the same value there — a join that reads only one still passes. §4 item 8 is what
-proves them. Separately, `shards.py` decodes a whole asset before paging it, so a
-wide run's `entities` read is materialised in full sidecar-side whatever the cap.
+The risk is what the fixture cannot prove. It holds one document and one run, so
+breadth and the per-document `entity_names` cap are exercised against the MCP
+suite's stub reader rather than real rows, and the two identity spellings carry the
+same value there — a join that reads only one still passes. §4 item 8 is what proves
+them. The tool answering *correctly* at run size and answering *efficiently* at run
+size are separate; the second is bounded by the read seam, not by this tool (§5).
 
 _Exit: `list_documents` answers the throsby run reading only `manifest`,
 `enrichment_meta` and `entities` — no text-bearing shard — with manifest columns
@@ -342,6 +354,14 @@ the table-cell read, `list_documents` at breadth, and run scoping together._
 
 **`_select_run` is now redundant but still live.** `real_extractor.py` narrows to
 one run inside the extractor, which was the partial fix for run scoping. The `/runs/...` routes do it properly. It goes with step 7.
+
+**The read seam materialises a whole asset before paging it.** `shards.py::_decode`
+decodes every shard file for an asset and `read_shard` slices the window
+afterwards, so `limit`/`offset` bound the *payload* and not the work behind it. A
+run-wide read on a large corpus — `list_documents`' `entities` read is the first
+one — is held in full sidecar-side whatever the cap. Correctness at run size is not
+affected; the cost is. Pushing the filter and the window down into the Parquet read
+is the fix, and it is a sidecar change, not a tool change.
 
 **A derived count puts breadth and body in one read.** `chunk_count` and
 `page_count` are cut from `list_documents` (§4 item 1) for this reason: `chunks` and

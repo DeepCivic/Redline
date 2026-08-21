@@ -60,11 +60,14 @@ submodules** — neither neighbour is carried in this tree, and nothing here imp
 their source. What redline depends on from Womblex is its output *schema*, recorded
 in [`docs/Womblex-Output-Contract.md`](../docs/Womblex-Output-Contract.md).
 
-**No payload carries more than one document's content.** This is what shapes the
-tool surface. Redline does navigation (choose what matters, from metadata alone,
-across a run) and retrieval (exact bytes for one narrow thing in one named
-document, in small pages). Breadth and body never appear in the same answer.
-Accumulating findings across documents is the client's — redline is stateless.
+**Redline serves a whole corpus; a payload serves one document.** Redline must work
+across a large run — that is met with paging, filtering and metadata-only answers,
+never by refusing breadth. What it must never do is put verbatim content from more
+than one document into one payload. So it does navigation (choose what matters,
+from metadata alone, across a run) and retrieval (exact bytes for one narrow thing
+in one named document, in small pages); breadth and body never appear in the same
+answer. Accumulating findings across documents is the client's — redline is
+stateless.
 
 **Nothing here generates.** No LLM call, no summarisation, no inference, no report
 assembly. A tool returns bytes Womblex wrote, or it returns an error. Anything

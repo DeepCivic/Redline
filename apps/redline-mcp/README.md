@@ -9,9 +9,11 @@ is all this package is.
 
 ## What this surface is for
 
-No payload here carries more than one document's content. That constraint, not
-convenience, is what shapes every tool: the context window belongs to the client,
-and this surface must never be the thing that exhausts it.
+This surface has to work across a large run, and no payload here may carry verbatim
+content from more than one document. Those two together, not convenience, are what
+shape every tool: breadth is answered with paging and filters, and the context
+window belongs to the client, so this surface must never be the thing that
+exhausts it.
 
 The surface separates two jobs and refuses a third:
 
