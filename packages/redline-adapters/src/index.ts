@@ -5,8 +5,8 @@
 // was removed along with the schema it read — see docs/Redline-Status.md for what
 // replaces it.
 export {
-  WomblexExtractionReader,
+  WomblexAssetReader,
   type HttpClient,
   type HttpResponse,
-  type WomblexExtractionReaderOptions,
-} from "./womblex/womblex-extraction-reader";
+  type WomblexAssetReaderOptions,
+} from "./womblex/womblex-asset-reader";

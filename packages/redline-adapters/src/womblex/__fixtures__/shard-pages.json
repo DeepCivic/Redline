@@ -1,0 +1,909 @@
+{
+  "elements_page_1": {
+    "asset": "elements",
+    "runId": "run-throsby-demo",
+    "columns": [
+      {
+        "name": "source_hash",
+        "type": "string"
+      },
+      {
+        "name": "collection_id",
+        "type": "string"
+      },
+      {
+        "name": "elem_order",
+        "type": "int32"
+      },
+      {
+        "name": "kind",
+        "type": "string"
+      },
+      {
+        "name": "extractor",
+        "type": "string"
+      },
+      {
+        "name": "confidence",
+        "type": "float"
+      },
+      {
+        "name": "page",
+        "type": "int32"
+      },
+      {
+        "name": "bbox",
+        "type": "struct<x: float, y: float, width: float, height: float>"
+      },
+      {
+        "name": "text",
+        "type": "string"
+      },
+      {
+        "name": "alt_text",
+        "type": "string"
+      },
+      {
+        "name": "header_rows",
+        "type": "list<element: int32>"
+      },
+      {
+        "name": "sheet",
+        "type": "string"
+      },
+      {
+        "name": "row",
+        "type": "int32"
+      },
+      {
+        "name": "col",
+        "type": "int32"
+      },
+      {
+        "name": "value",
+        "type": "string"
+      },
+      {
+        "name": "value_type",
+        "type": "string"
+      },
+      {
+        "name": "formula",
+        "type": "string"
+      },
+      {
+        "name": "number_format",
+        "type": "string"
+      },
+      {
+        "name": "merge_range",
+        "type": "string"
+      },
+      {
+        "name": "meta",
+        "type": "map<string, string ('meta')>"
+      }
+    ],
+    "rows": [
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 0,
+        "kind": "image",
+        "extractor": "figure_image",
+        "confidence": 0.699999988079071,
+        "page": 0,
+        "bbox": {
+          "x": 0.11982230842113495,
+          "y": 0.03157927095890045,
+          "width": 0.19932101666927338,
+          "height": 0.06234603375196457
+        },
+        "text": null,
+        "alt_text": "",
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": [
+          [
+            "has_redaction",
+            "true"
+          ]
+        ]
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 1,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 0,
+        "bbox": {
+          "x": 0.14283984899520874,
+          "y": 0.10491187870502472,
+          "width": 0.5607452392578125,
+          "height": 0.15961234271526337
+        },
+        "text": "Person with Management or Control Community Services #1 Incorportaed RE: Throsby Out of School Hours Care   Email:       Dear",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": [
+          [
+            "has_redaction",
+            "true"
+          ]
+        ]
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 2,
+        "kind": "heading",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 0,
+        "bbox": {
+          "x": 0.30600374937057495,
+          "y": 0.2673744559288025,
+          "width": 0.4518875777721405,
+          "height": 0.013111008331179619
+        },
+        "text": "Decision to Issue Administrative Action RE: NOT-40822824",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": [
+          [
+            "has_redaction",
+            "true"
+          ]
+        ]
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 3,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 0,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.2831932008266449,
+          "width": 0.7542238235473633,
+          "height": 0.15751034021377563
+        },
+        "text": "1. As you are aware, Authorised Officers from the ACT Regulatory Authority (the Authority), also known as Children’s Education and Care Assurance, recently assessed a Notification of Incident (NOT-40822824) relating to Throsby Out of School Hours Care SE-40022307 (the Service) operated by Community Services #1 Incorporated PR-00005865 (the Provider).  2. The notified incident advised that, on 13 February 2023, a six-year-old child was booked into the Service but was missed from the role when educators went to collect the kindergarten children, subsequently leaving the child with the schoolteacher.",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": [
+          [
+            "has_redaction",
+            "true"
+          ]
+        ]
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 4,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 0,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.4459764063358307,
+          "width": 0.7542229294776917,
+          "height": 0.08652797341346741
+        },
+        "text": "3. The Authority is satisfied that the Provider has not complied with provisions of the Education and Care Services National Law Act (ACT) (the Law) in this instance. Web addresses for the Law and the Regulations are provided for your convenience at the end of this decision.",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": [
+          [
+            "has_redaction",
+            "true"
+          ]
+        ]
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 5,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 0,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.5376347899436951,
+          "width": 0.754228949546814,
+          "height": 0.21494224667549133
+        },
+        "text": "Facts  4. On 14 February 2023, the Authority received a Notification of Incident (NOT-40822824) from the Provider advising that, on 13 February 2023, a child, known to be  booked into the but missed from the roll and left with the teacher.   5. An educator noticed that  was absent from the Service and went to a teacher to locate him. He was not located in the school, family was called and on the way to the school, the mother located the child outside of the school premises as he had walked down the road towards his old childcare. Refer Attachment A.  6. Evidentiary documents provided with the notification included:",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": [
+          [
+            "has_redaction",
+            "true"
+          ]
+        ]
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 6,
+        "kind": "list_item",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 0,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.7552191615104675,
+          "width": 0.7542286515235901,
+          "height": 0.14613471925258636
+        },
+        "text": "• Records of conversation and educator statements; • Link to map of service and child attendance list; and • Information and actions. Refer Attachment B.  7. On 28 February 2023, the Provider submitted additional information via the NQAITS portal. This information consisted of records relevant to the Provider’s internal investigation of the incident, findings and outcomes – Please refer investigation reports submitted at Attachment C.",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": [
+          [
+            "has_redaction",
+            "true"
+          ]
+        ]
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 7,
+        "kind": "footer",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 0,
+        "bbox": {
+          "x": 0.3082224130630493,
+          "y": 0.9298203587532043,
+          "width": 0.6002033352851868,
+          "height": 0.02265935018658638
+        },
+        "text": "GPO Box 158 Canberra ACT 2601  |  phone: 132281  |  www.act.gov.au",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": [
+          [
+            "has_redaction",
+            "true"
+          ]
+        ]
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 8,
+        "kind": "form",
+        "extractor": "form",
+        "confidence": 0.699999988079071,
+        "page": 0,
+        "bbox": {
+          "x": 0.14283984899520874,
+          "y": 0.15279559791088104,
+          "width": 0.2860041558742523,
+          "height": 0.013111008331179619
+        },
+        "text": null,
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": [
+          [
+            "has_redaction",
+            "true"
+          ]
+        ]
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 9,
+        "kind": "page_break",
+        "extractor": "orchestrator",
+        "confidence": 0.0,
+        "page": 1,
+        "bbox": null,
+        "text": null,
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 10,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 1,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.10491187870502472,
+          "width": 0.5312979221343994,
+          "height": 0.04503349959850311
+        },
+        "text": "Law  8. Provisions of the Law relevant to the notification assessment are:",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 11,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 1,
+        "bbox": {
+          "x": 0.178734689950943,
+          "y": 0.1555033028125763,
+          "width": 0.678220808506012,
+          "height": 0.09762001037597656
+        },
+        "text": "Section 167(1) of the Law - Offence relating to protection of children from harm and hazards The approved provider of an education and care service must ensure that every reasonable precaution is taken to protect children being educated and care for by the service from harm and from any hazard likely to cause injury.",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 12,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 1,
+        "bbox": {
+          "x": 0.1658329963684082,
+          "y": 0.2561160922050476,
+          "width": 0.4276077449321747,
+          "height": 0.08297703415155411
+        },
+        "text": "Penalty: $10 000, in the case of an individual        $50 000, in any other case.    Reasons",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 13,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 1,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.34436607360839844,
+          "width": 0.7540618181228638,
+          "height": 0.14151343703269958
+        },
+        "text": "9. Upon considering all evidence for assessment, inclusive of Provider supplied information, the Authority is satisfied, on the balance of probabilities, that there is sufficient evidence to substantiate an offence under section s167(1) of the Law in this instance.   10. The very nature of the notification, admission of incident contributed to by errors in accountability of the roll, and actions taken by the Provider to address educator failings on the day support the non-compliances as identified.",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 14,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 1,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.491009920835495,
+          "width": 0.7541785836219788,
+          "height": 0.08410527557134628
+        },
+        "text": "11. Considering the evidence, the objectives and guiding principles of the Law, the compliance history of the Service, and the steps taken by the Provider to mitigate risk of a similar incident, the Authority has decided to issue this administrative action rather than statutory compliance actions.",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 15,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 1,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.5803881287574768,
+          "width": 0.7542058825492859,
+          "height": 0.10474559664726257
+        },
+        "text": "12. This Decision is intended to bring to your attention the need to ensure that the Provider meets its obligations under the Law, in particular the obligation that children are being appropriately accounted for at all stages of transition between the school and service, to ensure every reasonable precaution is taken to protect children from harm and any hazard likely to cause injury.",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 16,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 1,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.6904066205024719,
+          "width": 0.753716766834259,
+          "height": 0.06573319435119629
+        },
+        "text": "13. This Decision will be recorded on the Service’s file and may be considered in any future applications for approvals, amendments or waivers. It may also be considered in determining the action to be taken, should further breaches of the Law or associated Regulations be found.",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 17,
+        "kind": "heading",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 1,
+        "bbox": {
+          "x": 0.16684146225452423,
+          "y": 0.7614127397537231,
+          "width": 0.08647815138101578,
+          "height": 0.02907230332493782
+        },
+        "text": "Legislation",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 18,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 1,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.8055541515350342,
+          "width": 0.7542205452919006,
+          "height": 0.08924423903226852
+        },
+        "text": "14. The Law is applied in the ACT by the Education and Care Services National Law (ACT) Act 2011 http://www.legislation.act.gov.au/a/2011-42/default.asp.   15. The Law and Regulations can be viewed at:  • http://www.acecqa.gov.au/national-law, and",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 19,
+        "kind": "page_break",
+        "extractor": "orchestrator",
+        "confidence": 0.0,
+        "page": 2,
+        "bbox": null,
+        "text": null,
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      }
+    ],
+    "returned": 20,
+    "available": 24,
+    "truncated": true
+  },
+  "elements_page_2": {
+    "asset": "elements",
+    "runId": "run-throsby-demo",
+    "columns": [
+      {
+        "name": "source_hash",
+        "type": "string"
+      },
+      {
+        "name": "collection_id",
+        "type": "string"
+      },
+      {
+        "name": "elem_order",
+        "type": "int32"
+      },
+      {
+        "name": "kind",
+        "type": "string"
+      },
+      {
+        "name": "extractor",
+        "type": "string"
+      },
+      {
+        "name": "confidence",
+        "type": "float"
+      },
+      {
+        "name": "page",
+        "type": "int32"
+      },
+      {
+        "name": "bbox",
+        "type": "struct<x: float, y: float, width: float, height: float>"
+      },
+      {
+        "name": "text",
+        "type": "string"
+      },
+      {
+        "name": "alt_text",
+        "type": "string"
+      },
+      {
+        "name": "header_rows",
+        "type": "list<element: int32>"
+      },
+      {
+        "name": "sheet",
+        "type": "string"
+      },
+      {
+        "name": "row",
+        "type": "int32"
+      },
+      {
+        "name": "col",
+        "type": "int32"
+      },
+      {
+        "name": "value",
+        "type": "string"
+      },
+      {
+        "name": "value_type",
+        "type": "string"
+      },
+      {
+        "name": "formula",
+        "type": "string"
+      },
+      {
+        "name": "number_format",
+        "type": "string"
+      },
+      {
+        "name": "merge_range",
+        "type": "string"
+      },
+      {
+        "name": "meta",
+        "type": "map<string, string ('meta')>"
+      }
+    ],
+    "rows": [
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 20,
+        "kind": "list_item",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 2,
+        "bbox": {
+          "x": 0.19708888232707977,
+          "y": 0.10228109359741211,
+          "width": 0.527069091796875,
+          "height": 0.01645432785153389
+        },
+        "text": "• http://www.legislation.nsw.gov.au/#/view/regulation/2011/653",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 21,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 2,
+        "bbox": {
+          "x": 0.13093988597393036,
+          "y": 0.1338045448064804,
+          "width": 0.7541495561599731,
+          "height": 0.05176858231425285
+        },
+        "text": "16. If you have any questions in relation to this Decision, please contact me by email at janine.fairburn@act.gov.au.",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 22,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 2,
+        "bbox": {
+          "x": 0.16684146225452423,
+          "y": 0.18842336535453796,
+          "width": 0.11693397164344788,
+          "height": 0.029072249308228493
+        },
+        "text": "Yours sincerely",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      },
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "elem_order": 23,
+        "kind": "paragraph",
+        "extractor": "native_text",
+        "confidence": 0.8999999761581421,
+        "page": 2,
+        "bbox": {
+          "x": 0.16684146225452423,
+          "y": 0.29559165239334106,
+          "width": 0.3364276885986328,
+          "height": 0.09295281767845154
+        },
+        "text": "Janine Fairburn Assistant Director Children’s Education and Care Assurance Education and Care, Regulation and Support   16 March 2023",
+        "alt_text": null,
+        "header_rows": null,
+        "sheet": null,
+        "row": null,
+        "col": null,
+        "value": null,
+        "value_type": null,
+        "formula": null,
+        "number_format": null,
+        "merge_range": null,
+        "meta": []
+      }
+    ],
+    "returned": 4,
+    "available": 24,
+    "truncated": false
+  },
+  "table_cells_empty": {
+    "asset": "table_cells",
+    "runId": "run-throsby-demo",
+    "columns": [
+      {
+        "name": "source_hash",
+        "type": "string"
+      },
+      {
+        "name": "parent_elem_order",
+        "type": "int32"
+      },
+      {
+        "name": "row",
+        "type": "int32"
+      },
+      {
+        "name": "col",
+        "type": "int32"
+      },
+      {
+        "name": "value",
+        "type": "string"
+      },
+      {
+        "name": "rowspan",
+        "type": "int32"
+      },
+      {
+        "name": "colspan",
+        "type": "int32"
+      },
+      {
+        "name": "value_type",
+        "type": "string"
+      }
+    ],
+    "rows": [],
+    "returned": 0,
+    "available": 0,
+    "truncated": false
+  }
+}

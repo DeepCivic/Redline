@@ -84,11 +84,16 @@ relative imports only, enforced by `validate.sh` #4 and ESLint.
 
 - `result.ts` — the Result pattern (`{ data } | { error }`), `ok`/`err`/`isOk`/`isErr`
 - `errors/domain-error.ts` — the error taxonomy
-- `ports/procurement-extraction-reader.ts` — `IProcurementExtractionReader`, the
-  one port: `readElements` / `readChunks` / `readTableCells`
+- `ports/womblex-asset-reader.ts` — `IWomblexAssetReader`, the one port:
+  `readShard(request)`, returning a `ShardPage` of Womblex's own columns verbatim
+  (`ShardColumn`, `ShardRow`), scoped to one corpus + run + asset with an optional
+  document and `limit`/`offset`.
 
-**`packages/redline-adapters`** — one adapter, `WomblexExtractionReader`, over the
-sidecar's per-document JSON route, with a hand-rolled wire validator (`wire.ts`).
+**`packages/redline-adapters`** — one adapter, `WomblexAssetReader`, over the
+sidecar's run-scoped shard route (`GET /runs/{corpus}/{run}/shards/{asset}`), with
+a hand-rolled wire validator (`wire.ts`) that trusts row *contents* verbatim and
+checks only the page envelope. Its fixture (`__fixtures__/shard-pages.json`) is a
+real capture of that route against the throsby-demo run.
 
 ### Apps
 
@@ -96,17 +101,20 @@ sidecar's per-document JSON route, with a hand-rolled wire validator (`wire.ts`)
 per request. `main.ts` is the process entry; `lib/container.ts` the wiring;
 `lib/mcp-server.ts` the framing; `lib/report-tools.ts` the tools.
 
-Three tools are exposed today, all whole-document reads:
+Three tools are exposed today, all whole-document reads over the one port:
 
-| Tool | Backed by |
+| Tool | Reads |
 |---|---|
-| `read_extraction_elements` | `IProcurementExtractionReader.readElements` |
-| `read_extraction_chunks` | `.readChunks` |
-| `read_extraction_table_cells` | `.readTableCells` |
+| `read_extraction_elements` | the `elements` shard |
+| `read_extraction_chunks` | the `chunks` shard |
+| `read_extraction_table_cells` | the `table_cells` shard |
 
-Each caps at 500 rows and reports `returned` / `available` / `truncated`. **None of
-them is navigable**: there is no filter, no offset, and no way to ask what a
-document contains without pulling its text. §4 item 2 is that gap.
+Each takes `corpusId` + `runId` + `documentId`, serves Womblex's own columns
+verbatim, defaults to a page of `DEFAULT_TOOL_LIMIT` (500) rows with `limit`/`offset`
+pass-through, and reports `returned` / `available` / `truncated` straight from the
+sidecar page. **None of them is navigable**: there is no metadata-only entry point
+and no way to ask what a document contains without pulling its rows. §4 item 1 is
+that gap.
 
 ### Services
 
@@ -153,11 +161,11 @@ against assumptions the suite and the implementation share.
 
 ### The gate
 
-`./validate.sh` — 8 checks, currently **8 passed, 0 failed, 0 skipped**:
-workspace typecheck, lint and test; `redline-domain` purity; no focused tests;
-source file size; sidecar pytest; ruff. CI runs the same gate.
+`./validate.sh` — 8 checks: workspace typecheck, lint and test; `redline-domain`
+purity; no focused tests; source file size; sidecar pytest; ruff. CI runs the same
+gate.
 
-Tests today: 33 TypeScript (1 domain, 8 adapters, 24 MCP) and 116 Python.
+Tests today: 38 TypeScript (2 domain, 10 adapters, 26 MCP) and 116 Python.
 
 ---
 
@@ -166,25 +174,7 @@ Tests today: 33 TypeScript (1 domain, 8 adapters, 24 MCP) and 116 Python.
 Numbered locally; renumbered whenever the set changes. One commit each,
 tests-first, with an explicit exit test.
 
-### 1. Move the adapter onto the generic seam
-
-`IProcurementExtractionReader` and `WomblexExtractionReader` still read the
-per-document route and remap Womblex's columns into camelCase DTOs —
-`source_hash` becomes `documentId`, `parent_elem_order` becomes `elementOrder` —
-and serve a **derived** `isCurrency` beside extracted columns as though Womblex had
-written it. That breaks rule 1 in two ways: a client cannot join what it read back
-to source, and a guess is presented as an extraction.
-
-Replace with `IWomblexAssetReader` over the `/runs/...` routes, taking corpus, run,
-asset, an optional document, and `limit`/`offset`. Derived signals move under a
-separately labelled key. Delete the DTO port, the wire validator and the
-per-document route with it.
-
-_Exit: a conformance fake satisfies the port; the adapter round-trips real fixture
-rows with column names and values byte-identical to the shard, and a second page
-continues where the first stopped._
-
-### 2. `list_documents` — the navigation entry point
+### 1. `list_documents` — the navigation entry point
 
 Metadata for a run's documents, and **no document text at all**. This is what a
 client uses to narrow 500 documents to the handful worth opening.
@@ -210,7 +200,7 @@ _Exit: a 500-document run answers in one bounded payload carrying no document te
 `entity_names` truncation is visible per document; derived fields sit under the
 labelled key._
 
-### 3. `get_document_elements` — paginated verbatim retrieval
+### 2. `get_document_elements` — paginated verbatim retrieval
 
 One document's elements, verbatim, **strictly paginated** — default 20, never
 unbounded — filterable by element kind and by the document's printed page.
@@ -232,7 +222,7 @@ _Exit: a document's elements come back 20 at a time, in `elem_order`, with
 `returned`/`available`/`truncated` honest at every page; a kind filter and a page
 filter each narrow the set; the last page reports `truncated: false`._
 
-### 4. `get_document_entities` — the graph, as navigation
+### 3. `get_document_entities` — the graph, as navigation
 
 One document's entities and graph edges, verbatim: `entity_id`, `entity_label`,
 `name`, `entity_type`, `role`, `mention_start`/`mention_end`, `chunk_index`, and
@@ -251,7 +241,7 @@ _Exit: entities and edges answer from the real fixture (34 and 156 rows), each
 entity carrying its chunk anchor; a run with no enrichment shards says so rather
 than returning empty._
 
-### 5. `get_verbatim_data` — exact bytes for one named thing
+### 4. `get_verbatim_data` — exact bytes for one named thing
 
 Exact bytes for a document plus an element, chunk or cell reference, echoing back
 the anchor it resolved. This is the end of every navigation path: the client has
@@ -260,7 +250,7 @@ narrowed to one passage and wants precisely it.
 _Exit: the returned text is byte-identical to the shard's value for each reference
 kind; an unresolvable reference is a `NOT_FOUND` error, never an empty string._
 
-### 6. `get_schema` — dynamic discovery
+### 5. `get_schema` — dynamic discovery
 
 Three scopes: an asset's columns and types; **one extracted table's actual header
 row**, read verbatim from its cells; a document's graph vocabulary (entity labels
@@ -272,11 +262,11 @@ lets a client use the words the document actually uses instead of guessing them.
 _Exit: each scope answers against the real fixture corpus; the table scope returns
 the header row's exact strings, not a normalised form._
 
-### 7. The remaining shard reads
+### 6. The remaining shard reads
 
 `list_runs`, `read_form_fields`, `read_money_spans`, `read_chunks` and
-`read_table_cells` over the step 1 port, all paginated and document-scoped on the
-same terms as step 3.
+`read_table_cells` over the asset-reader port, all paginated and document-scoped on
+the same terms as step 2.
 
 Money spans carry a caveat the tool description must state, because getting it
 wrong corrupts amounts silently: `value` is exact and **already folds in sign and
@@ -286,17 +276,18 @@ redo.
 _Exit: every tool answers against the fixture corpus, ordering stable, paging
 honest._
 
-### 8. Retire the per-document read model
+### 7. Retire the per-document read model
 
 Once nothing calls it: `GET /extractions/...`, `records.py`'s DTOs,
 `shard_reader.py`'s mapping and `real_extractor.py`'s three-family read.
 `shards.py` supersedes all of it. Note that `derive_is_currency` lives in
-`shard_reader.py` and is the derived signal step 1 relabels — it moves rather than
-dies.
+`shard_reader.py` and is the derived signal the retired read model relabelled — a
+document's currency signal, when a tool needs one, belongs under a labelled
+`derived` key above the verbatim rows, never folded in among Womblex's columns.
 
 _Exit: the route and its mapping are gone; the sidecar suite stays green._
 
-### 9. A second corpus
+### 8. A second corpus
 
 The fixture has **empty** `table_cells` and `money_columns`, two `money_spans` both
 narrative locus, one document and one run. So it cannot prove the table-cell or
@@ -312,8 +303,7 @@ the table-cell read, `list_documents` at breadth, and run scoping together._
 ## 5. Known gaps and open questions
 
 **`_select_run` is now redundant but still live.** `real_extractor.py` narrows to
-one run inside the extractor, which was the partial fix for run scoping. The
-`/runs/...` routes do it properly. It goes with step 8.
+one run inside the extractor, which was the partial fix for run scoping. The `/runs/...` routes do it properly. It goes with step 7.
 
 **Nothing checks the Womblex version.** The contract records v0.4.0. A corpus
 written by an older engine fails at the first missing column rather than at a
@@ -326,10 +316,10 @@ caller identity at all.
 **What is a `corpusId`, to a client?** Redline takes it on trust and has no way to
 validate it beyond "shards exist under that prefix".
 
-**Where does the row cap live?** The sidecar takes `limit`; the MCP tools hard-cap
-at 500. Whether a client may raise a retrieval cap, and how high, is unsettled —
-and it is the one setting that decides whether a careless call can exhaust a
-context window.
+**Where does the row cap live?** The sidecar takes `limit`; the MCP tools default
+to `DEFAULT_TOOL_LIMIT` (500) and pass `limit`/`offset` through. Whether a client
+may raise a retrieval cap, and how high, is unsettled — and it is the one setting
+that decides whether a careless call can exhaust a context window.
 
 ---
 

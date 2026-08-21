@@ -1,41 +1,45 @@
-# womblex extraction-reader fixtures
+# womblex asset-reader fixtures
 
-`extraction-tender.pdf.json` is a **real capture** of the womblex-ingest sidecar's
-Parquet→JSON read seam — the body of
+`shard-pages.json` is a **real capture** of the womblex-ingest sidecar's
+run-scoped shard route — the body of
 
 ```
-GET /extractions/eval-9/{documentId}
+GET /runs/throsby/run-throsby-demo/shards/{asset}
 ```
 
-after `POST /ingest {evaluationId: "eval-9", documentNames: ["tender.pdf"]}` against
-the deterministic stub extractor (`WOMBLEX_MODE=stub`). It is the contract the
-`WomblexExtractionReader` maps into the domain's typed provenance
-(`ExtractionElement` / `ExtractionChunk` / `ExtractionTableCell`).
+served from the committed real run at
+`services/womblex-ingest/tests/fixtures/run-throsby-demo/`. It is the contract the
+`WomblexAssetReader` narrows into the domain's `ShardPage`, verbatim — womblex's
+own column names and values, unchanged.
 
-The `documentId` (`82f9355e…`) is a womblex-style `source_hash`; `chunkId` follows
-`{source_hash}:{chunk_index}`; the table cell is currency-typed (`isCurrency: true`).
+It holds three pages:
+
+- `elements_page_1` / `elements_page_2` — the run's 24 elements, `limit=20`, at
+  `offset` 0 and 20, so a first page truncates (`returned: 20`) and a second
+  continues where it stopped (`returned: 4`, `truncated: false`).
+- `table_cells_empty` — an asset that exists but holds no rows, with its columns
+  still reported, so "no rows" stays distinct from "no such asset".
 
 ## Regenerating
 
-From `services/womblex-ingest` (with the `[dev]` extras installed):
+From `services/womblex-ingest` (with `pyarrow` available):
 
 ```python
-import json
-from fastapi.testclient import TestClient
-from womblex_ingest.main import build_app
-from womblex_ingest.extraction import StubWomblexExtractor
-from womblex_ingest.storage import ObjectNotFound
+import json, sys
+from pathlib import Path
+sys.path.insert(0, "tests")
+from tests.conftest import FakeObjectStorage
+from tests.test_shards import load_fixture_run
+from womblex_ingest.shards import read_shard
 
-class Mem:
-    def __init__(self): self.o = {}
-    def put_object(self, k, b, c): self.o[k] = b
-    def get_object(self, k):
-        try: return self.o[k]
-        except KeyError as e: raise ObjectNotFound(k) from e
+storage = FakeObjectStorage()
+load_fixture_run(storage)
 
-store = Mem()
-client = TestClient(build_app(storage=store, extractor=StubWomblexExtractor(), bucket="redline"))
-client.post("/ingest", json={"evaluationId": "eval-9", "documentNames": ["tender.pdf"]})
-doc_id = next(k for k in store.o if k.endswith(".extraction.json")).split("/")[-1][: -len(".extraction.json")]
-print(json.dumps(client.get(f"/extractions/eval-9/{doc_id}").json(), indent=2))
+out = {
+    "elements_page_1": read_shard(storage, "throsby", "run-throsby-demo", "elements", limit=20, offset=0).to_json(),
+    "elements_page_2": read_shard(storage, "throsby", "run-throsby-demo", "elements", limit=20, offset=20).to_json(),
+    "table_cells_empty": read_shard(storage, "throsby", "run-throsby-demo", "table_cells").to_json(),
+}
+dest = Path("../../packages/redline-adapters/src/womblex/__fixtures__/shard-pages.json")
+dest.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
 ```

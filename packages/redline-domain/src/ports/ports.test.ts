@@ -1,50 +1,80 @@
 import { describe, it, expect } from "vitest";
-import { isOk } from "../result";
-import { ok, type Result } from "../result";
+import { isOk, ok, type Result } from "../result";
 import type {
-  IProcurementExtractionReader,
-  ExtractionChunk,
-  ExtractionElement,
-  ExtractionTableCell,
-} from "./procurement-extraction-reader";
+  IWomblexAssetReader,
+  ShardPage,
+  WomblexAssetRequest,
+} from "./womblex-asset-reader";
 
-// This fake exists to prove the extraction-reader port is implementable and
-// shaped as its adapter needs. It is the port's spec.
+// This fake proves the asset-reader port is implementable and shaped as its
+// adapter needs. It is the port's spec: verbatim womblex columns, honest paging.
 
-class StubExtractionReader implements IProcurementExtractionReader {
-  async readElements(): Promise<Result<readonly ExtractionElement[]>> {
-    return ok([{ documentId: "hashA", elementOrder: 0, page: 1, text: "Acme response" }]);
-  }
-  async readChunks(): Promise<Result<readonly ExtractionChunk[]>> {
-    return ok([{ chunkId: "hashA:0", documentId: "hashA", text: "chunk" }]);
-  }
-  async readTableCells(): Promise<Result<readonly ExtractionTableCell[]>> {
-    return ok([
-      {
-        documentId: "hashA",
-        elementOrder: 5,
-        page: 2,
-        rowIndex: 0,
-        columnIndex: 1,
-        rawValue: "80000",
-        isCurrency: true,
-      },
-    ]);
+class StubAssetReader implements IWomblexAssetReader {
+  async readShard(request: WomblexAssetRequest): Promise<Result<ShardPage>> {
+    const rows = [
+      { source_hash: "hashA", elem_order: 0, page: 1, text: "Acme response" },
+      { source_hash: "hashA", elem_order: 1, page: 1, text: "second element" },
+    ];
+    const offset = request.offset ?? 0;
+    const limit = request.limit ?? rows.length;
+    const window = rows.slice(offset, offset + limit);
+    return ok({
+      asset: request.asset,
+      runId: request.runId,
+      columns: [
+        { name: "source_hash", type: "string" },
+        { name: "elem_order", type: "int32" },
+        { name: "page", type: "int32" },
+        { name: "text", type: "string" },
+      ],
+      rows: window,
+      returned: window.length,
+      available: rows.length,
+      truncated: offset + window.length < rows.length,
+    });
   }
 }
 
-describe("port conformance (in-memory fakes)", () => {
-  it("reads elements, chunks and table cells for one corpus document", async () => {
-    const reader: IProcurementExtractionReader = new StubExtractionReader();
+describe("port conformance (in-memory fake)", () => {
+  it("reads a shard page with womblex's own column names, verbatim", async () => {
+    const reader: IWomblexAssetReader = new StubAssetReader();
 
-    const elements = await reader.readElements("c1", "hashA");
-    const chunks = await reader.readChunks("c1", "hashA");
-    const cells = await reader.readTableCells("c1", "hashA");
+    const page = await reader.readShard({
+      corpusId: "throsby",
+      runId: "run-throsby-demo",
+      asset: "elements",
+    });
 
-    expect(isOk(elements) && isOk(chunks) && isOk(cells)).toBe(true);
-    if (!isOk(elements) || !isOk(chunks) || !isOk(cells)) return;
-    expect(elements.data[0]?.documentId).toBe("hashA");
-    expect(chunks.data[0]?.chunkId).toBe("hashA:0");
-    expect(cells.data[0]?.isCurrency).toBe(true);
+    expect(isOk(page)).toBe(true);
+    if (!isOk(page)) return;
+    expect(page.data.rows[0]).toHaveProperty("source_hash", "hashA");
+    expect(page.data.rows[0]).toHaveProperty("elem_order", 0);
+    expect(page.data.rows[0]).not.toHaveProperty("documentId");
+    expect(page.data.columns.map((column) => column.name)).toContain("elem_order");
+  });
+
+  it("pages: a second page continues where the first stopped", async () => {
+    const reader: IWomblexAssetReader = new StubAssetReader();
+
+    const first = await reader.readShard({
+      corpusId: "throsby",
+      runId: "run-throsby-demo",
+      asset: "elements",
+      limit: 1,
+      offset: 0,
+    });
+    const second = await reader.readShard({
+      corpusId: "throsby",
+      runId: "run-throsby-demo",
+      asset: "elements",
+      limit: 1,
+      offset: 1,
+    });
+
+    expect(isOk(first) && isOk(second)).toBe(true);
+    if (!isOk(first) || !isOk(second)) return;
+    expect(first.data.truncated).toBe(true);
+    expect(second.data.truncated).toBe(false);
+    expect(first.data.rows[0]).not.toEqual(second.data.rows[0]);
   });
 });

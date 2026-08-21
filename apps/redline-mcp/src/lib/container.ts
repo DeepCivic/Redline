@@ -1,4 +1,4 @@
-import { WomblexExtractionReader } from "@redline/redline-adapters";
+import { WomblexAssetReader } from "@redline/redline-adapters";
 import { domainError, err, ok, type Result } from "@redline/redline-domain";
 import type { ReportToolDependencies } from "./report-tools";
 
@@ -64,13 +64,13 @@ export interface ReportToolContainer {
   readonly dependencies: ReportToolDependencies;
 }
 
-// The sidecar's JSON extraction seam. `fetch` is bound here rather than assumed
+// The sidecar's run-scoped shard seam. `fetch` is bound here rather than assumed
 // inside the adapter, which keeps the adapter testable without a global.
 export const buildReportToolContainer = (
   configuration: ServerConfiguration,
 ): ReportToolContainer => ({
   dependencies: {
-    extractionReader: new WomblexExtractionReader({
+    assetReader: new WomblexAssetReader({
       baseUrl: configuration.womblexIngestUrl,
       httpClient: (url) => fetch(url),
     }),

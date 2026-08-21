@@ -1,18 +1,18 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { WomblexExtractionReader, type HttpResponse } from "@redline/redline-adapters";
+import { WomblexAssetReader, type HttpResponse } from "@redline/redline-adapters";
 import { startReportMcpHttpServer, type RunningReportMcpHttpServer } from "./mcp-server";
 import type { ReportToolDependencies } from "./report-tools";
 
 // The item's exit test, end to end: a real MCP client lists the tools and calls
 // them over streamable HTTP against a fake sidecar, and gets back verbatim
 // chunk text and provenance — identical results across two consecutive calls.
-// The extraction reader is the real WomblexExtractionReader over its own
-// injected HTTP seam, so the sidecar's wire contract is exercised without a
-// sidecar process.
+// The asset reader is the real WomblexAssetReader over its own injected HTTP
+// seam, so the sidecar's wire contract is exercised without a sidecar process.
 
-const EVALUATION_ID = "eval-mcp-1";
+const CORPUS_ID = "throsby";
+const RUN_ID = "run-throsby-demo";
 const DOCUMENT_ID = "hashA";
 
 // Text chosen to fail a paraphrasing or trimming transfer: leading and trailing
@@ -22,34 +22,73 @@ const VERBATIM_TEXT = "  The Contractor shall provide\tsupport 24/7 — includin
 let dependencies: ReportToolDependencies;
 let server: RunningReportMcpHttpServer;
 
-const extractionPayload = {
-  documentId: DOCUMENT_ID,
-  elements: [
-    { documentId: DOCUMENT_ID, elementOrder: 4, page: 5, text: "Schedule 3 — Pricing" },
-    { documentId: DOCUMENT_ID, elementOrder: 5, page: 5, text: "Total contract value" },
-  ],
-  chunks: [{ chunkId: `${DOCUMENT_ID}:0`, documentId: DOCUMENT_ID, text: VERBATIM_TEXT }],
-  tableCells: [
-    {
-      documentId: DOCUMENT_ID,
-      elementOrder: 4,
-      page: 5,
-      rowIndex: 1,
-      columnIndex: 2,
-      rawValue: "$1,500.50",
-      isCurrency: true,
-    },
-  ],
+// The sidecar's run-scoped shard route serves one page per asset, in womblex's
+// own columns. A fake keyed on the asset in the URL stands in for it.
+const shardPages: Record<string, unknown> = {
+  elements: {
+    asset: "elements",
+    runId: RUN_ID,
+    columns: [
+      { name: "source_hash", type: "string" },
+      { name: "elem_order", type: "int32" },
+      { name: "page", type: "int32" },
+      { name: "text", type: "string" },
+    ],
+    rows: [
+      { source_hash: DOCUMENT_ID, elem_order: 4, page: 5, text: "Schedule 3 — Pricing" },
+      { source_hash: DOCUMENT_ID, elem_order: 5, page: 5, text: "Total contract value" },
+    ],
+    returned: 2,
+    available: 2,
+    truncated: false,
+  },
+  chunks: {
+    asset: "chunks",
+    runId: RUN_ID,
+    columns: [
+      { name: "source_hash", type: "string" },
+      { name: "chunk_index", type: "int32" },
+      { name: "text", type: "string" },
+    ],
+    rows: [{ source_hash: DOCUMENT_ID, chunk_index: 0, text: VERBATIM_TEXT }],
+    returned: 1,
+    available: 1,
+    truncated: false,
+  },
+  table_cells: {
+    asset: "table_cells",
+    runId: RUN_ID,
+    columns: [
+      { name: "source_hash", type: "string" },
+      { name: "parent_elem_order", type: "int32" },
+      { name: "row", type: "int32" },
+      { name: "col", type: "int32" },
+      { name: "value", type: "string" },
+    ],
+    rows: [
+      { source_hash: DOCUMENT_ID, parent_elem_order: 4, row: 1, col: 2, value: "$1,500.50" },
+    ],
+    returned: 1,
+    available: 1,
+    truncated: false,
+  },
 };
 
-const extractionHttpClient = async (url: string): Promise<HttpResponse> => ({
-  ok: url.includes(DOCUMENT_ID),
-  status: url.includes(DOCUMENT_ID) ? 200 : 404,
-  json: async () =>
-    url.includes(DOCUMENT_ID)
-      ? extractionPayload
-      : { error: { code: "NOT_FOUND", message: "no such document" } },
-});
+const assetFromUrl = (url: string): string | null => {
+  const match = url.match(/\/shards\/([^?]+)/);
+  return match ? decodeURIComponent(match[1]!) : null;
+};
+
+const shardHttpClient = async (url: string): Promise<HttpResponse> => {
+  const asset = assetFromUrl(url);
+  const found = asset !== null && url.includes(DOCUMENT_ID) ? shardPages[asset] : undefined;
+  return {
+    ok: found !== undefined,
+    status: found !== undefined ? 200 : 404,
+    json: async () =>
+      found ?? { error: { code: "NOT_FOUND", message: "no such document" } },
+  };
+};
 
 const connectClient = async (): Promise<Client> => {
   const client = new Client({ name: "redline-exit-test-client", version: "0.0.0" });
@@ -69,9 +108,9 @@ const payloadOf = (result: Awaited<ReturnType<Client["callTool"]>>): Record<stri
 
 beforeAll(async () => {
   dependencies = {
-    extractionReader: new WomblexExtractionReader({
+    assetReader: new WomblexAssetReader({
       baseUrl: "http://womblex-ingest.invalid",
-      httpClient: extractionHttpClient,
+      httpClient: shardHttpClient,
     }),
   };
 
@@ -103,26 +142,25 @@ describe("an MCP client over streamable HTTP", () => {
 
     const elements = await client.callTool({
       name: "read_extraction_elements",
-      arguments: { evaluationId: EVALUATION_ID, documentId: DOCUMENT_ID },
+      arguments: { corpusId: CORPUS_ID, runId: RUN_ID, documentId: DOCUMENT_ID },
     });
     const chunks = await client.callTool({
       name: "read_extraction_chunks",
-      arguments: { evaluationId: EVALUATION_ID, documentId: DOCUMENT_ID },
+      arguments: { corpusId: CORPUS_ID, runId: RUN_ID, documentId: DOCUMENT_ID },
     });
     const tableCells = await client.callTool({
       name: "read_extraction_table_cells",
-      arguments: { evaluationId: EVALUATION_ID, documentId: DOCUMENT_ID },
+      arguments: { corpusId: CORPUS_ID, runId: RUN_ID, documentId: DOCUMENT_ID },
     });
     await client.close();
 
     expect((payloadOf(elements).elements as unknown[]).length).toBe(2);
     expect((payloadOf(chunks).chunks as { text: string }[])[0]!.text).toBe(VERBATIM_TEXT);
     expect((payloadOf(tableCells).tableCells as Record<string, unknown>[])[0]).toMatchObject({
-      elementOrder: 4,
-      rowIndex: 1,
-      columnIndex: 2,
-      rawValue: "$1,500.50",
-      isCurrency: true,
+      parent_elem_order: 4,
+      row: 1,
+      col: 2,
+      value: "$1,500.50",
     });
   });
 
@@ -131,11 +169,11 @@ describe("an MCP client over streamable HTTP", () => {
 
     const first = await client.callTool({
       name: "read_extraction_chunks",
-      arguments: { evaluationId: EVALUATION_ID, documentId: DOCUMENT_ID },
+      arguments: { corpusId: CORPUS_ID, runId: RUN_ID, documentId: DOCUMENT_ID },
     });
     const second = await client.callTool({
       name: "read_extraction_chunks",
-      arguments: { evaluationId: EVALUATION_ID, documentId: DOCUMENT_ID },
+      arguments: { corpusId: CORPUS_ID, runId: RUN_ID, documentId: DOCUMENT_ID },
     });
     await client.close();
 
@@ -148,7 +186,7 @@ describe("an MCP client over streamable HTTP", () => {
 
     const result = await client.callTool({
       name: "read_extraction_chunks",
-      arguments: { evaluationId: EVALUATION_ID, documentId: DOCUMENT_ID },
+      arguments: { corpusId: CORPUS_ID, runId: RUN_ID, documentId: DOCUMENT_ID },
     });
     await client.close();
 
@@ -162,7 +200,7 @@ describe("an MCP client over streamable HTTP", () => {
 
     const result = await client.callTool({
       name: "read_extraction_elements",
-      arguments: { evaluationId: EVALUATION_ID, documentId: "no-such-document" },
+      arguments: { corpusId: CORPUS_ID, runId: RUN_ID, documentId: "no-such-document" },
     });
     // The same client stays usable — the failure was a tool result, not a transport
     // fault.
@@ -179,7 +217,7 @@ describe("an MCP client over streamable HTTP", () => {
 
     const result = await client.callTool({
       name: "read_extraction_chunks",
-      arguments: { evaluationId: EVALUATION_ID },
+      arguments: { corpusId: CORPUS_ID, runId: RUN_ID },
     });
     await client.close();
 

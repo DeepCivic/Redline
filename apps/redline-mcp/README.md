@@ -29,37 +29,31 @@ stacks. It is not the notebook.
 
 ## Tools today
 
-| Tool | Backed by |
+| Tool | Reads |
 | --- | --- |
-| `read_extraction_elements` | `IProcurementExtractionReader.readElements` |
-| `read_extraction_chunks` | `.readChunks` |
-| `read_extraction_table_cells` | `.readTableCells` |
+| `read_extraction_elements` | the `elements` shard |
+| `read_extraction_chunks` | the `chunks` shard |
+| `read_extraction_table_cells` | the `table_cells` shard |
 
-Each is a pure read of one document's JSON extraction (served by the
-`womblex-ingest` sidecar), scoped to one corpus + document, annotated
-`readOnlyHint` / `idempotentHint`, capped at `MAX_TOOL_ROWS` (500), and reporting
-`returned` / `available` / `truncated`.
+Each is a pure read of one shard family over the one port (`IWomblexAssetReader`,
+served by the `womblex-ingest` sidecar's run-scoped route), scoped to one
+`corpusId` + `runId` + `documentId`, annotated `readOnlyHint` / `idempotentHint`,
+defaulting to `DEFAULT_TOOL_LIMIT` (500) rows with `limit`/`offset` pass-through,
+and reporting `returned` / `available` / `truncated`. Rows come back in Womblex's
+own column names, verbatim.
 
-**They are retrieval without navigation.** There is no filter, no offset, and no
-way to ask what a document holds without pulling its text — so the only way to
-find something is to read everything, which is exactly what the context budget
+**They are retrieval without navigation.** There is no metadata-only entry point
+and no way to ask what a document holds without pulling its rows — so the only way
+to find something is to read everything, which is exactly what the context budget
 forbids. That is the gap the planned tools close.
-
-Two live defects, recorded because they are defects and not design:
-
-- These tools serve a **camelCase read model** (`documentId`, `elementOrder`), not
-  Womblex's own column names, so a caller cannot join what it read back to source.
-- `isCurrency` is **derived** from cell text, not read from a shard, and is served
-  beside extracted columns as though Womblex wrote it.
-
-Both breach the verbatim rule. `docs/Redline-Status.md` §4 item 1 is the fix.
 
 ## Tools planned
 
 The sidecar already serves every shard family generically, paginated and
-document-filterable (`GET /runs/{corpusId}/{runId}/shards/{asset}`). What is
-missing is the port, the adapter and these tools on top of it. Full specifications
-with exit tests are in `docs/Redline-Status.md` §4.
+document-filterable (`GET /runs/{corpusId}/{runId}/shards/{asset}`), and the port
+and adapter now read it. What is missing is the navigation and richer retrieval
+tools on top. Full specifications with exit tests are in `docs/Redline-Status.md`
+§4.
 
 ### Navigation
 

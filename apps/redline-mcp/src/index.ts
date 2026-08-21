@@ -1,14 +1,14 @@
 // @redline/redline-mcp — the report tool surface.
 //
-// IProcurementExtractionReader.readElements / readChunks / readTableCells,
-// exposed to a report-assembler LLM as an MCP server over streamable HTTP.
+// The run-scoped shard reads (IWomblexAssetReader.readShard), exposed to a
+// report-assembler LLM as an MCP server over streamable HTTP.
 //
 // The process entry is `src/main.ts`; this module is the importable surface, so a
 // test or an embedding host can start the same server in-process.
 
 export {
   buildReportTools,
-  MAX_TOOL_ROWS,
+  DEFAULT_TOOL_LIMIT,
   type ReportTool,
   type ReportToolDependencies,
   type ReportToolPayload,

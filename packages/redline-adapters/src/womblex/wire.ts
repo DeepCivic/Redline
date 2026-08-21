@@ -1,45 +1,22 @@
-// The wire shape served by the womblex-ingest sidecar's Parquet→JSON read seam
-// (`GET /extractions/{evaluationId}/{documentId}`). These interfaces mirror the
-// sidecar's `records.py` dataclasses exactly; `parseDocumentExtraction` is the one
-// place that trusts the wire and narrows `unknown` → typed provenance, so the reader
-// itself stays a thin mapping. Kept internal to the adapter (not re-exported).
+// The wire shape served by the womblex-ingest sidecar's run-scoped shard route
+// (`GET /runs/{corpus}/{run}/shards/{asset}`). This is the one place that trusts
+// the wire and narrows `unknown` into a typed `ShardPage`, so the reader itself
+// stays a thin fetch. Kept internal to the adapter (not re-exported).
+//
+// Rows are validated as *objects*, not against a fixed schema: the whole point of
+// this seam is that it serves whatever columns womblex wrote, verbatim. Asserting
+// a column set here would reintroduce the coupling the seam exists to remove.
 
-import { domainError, type DomainError, type Result, err, ok } from "@redline/redline-domain";
-
-export interface WireElement {
-  readonly documentId: string;
-  readonly elementOrder: number;
-  readonly page: number | null;
-  readonly text: string;
-}
-
-export interface WireChunk {
-  readonly chunkId: string;
-  readonly documentId: string;
-  readonly text: string;
-}
-
-export interface WireTableCell {
-  readonly documentId: string;
-  readonly elementOrder: number;
-  readonly page: number | null;
-  readonly rowIndex: number;
-  readonly columnIndex: number;
-  readonly rawValue: string;
-  readonly isCurrency: boolean;
-}
-
-export interface WireDocumentExtraction {
-  readonly documentId: string;
-  readonly elements: readonly WireElement[];
-  readonly chunks: readonly WireChunk[];
-  readonly tableCells: readonly WireTableCell[];
-}
-
-// Result-shaped error body the sidecar emits ({"error": {"code","message"}}).
-export interface WireErrorBody {
-  readonly error: { readonly code: string; readonly message: string };
-}
+import {
+  domainError,
+  type DomainError,
+  type Result,
+  type ShardColumn,
+  type ShardPage,
+  type ShardRow,
+  err,
+  ok,
+} from "@redline/redline-domain";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -47,57 +24,45 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
-const isPageValue = (value: unknown): value is number | null =>
-  value === null || isNumber(value);
+const isColumn = (value: unknown): value is ShardColumn =>
+  isRecord(value) && typeof value.name === "string" && typeof value.type === "string";
 
-const isElement = (value: unknown): value is WireElement =>
-  isRecord(value) &&
-  typeof value.documentId === "string" &&
-  isNumber(value.elementOrder) &&
-  isPageValue(value.page) &&
-  typeof value.text === "string";
-
-const isChunk = (value: unknown): value is WireChunk =>
-  isRecord(value) &&
-  typeof value.chunkId === "string" &&
-  typeof value.documentId === "string" &&
-  typeof value.text === "string";
-
-const isTableCell = (value: unknown): value is WireTableCell =>
-  isRecord(value) &&
-  typeof value.documentId === "string" &&
-  isNumber(value.elementOrder) &&
-  isPageValue(value.page) &&
-  isNumber(value.rowIndex) &&
-  isNumber(value.columnIndex) &&
-  typeof value.rawValue === "string" &&
-  typeof value.isCurrency === "boolean";
+const isRow = (value: unknown): value is ShardRow => isRecord(value);
 
 const everyIsArrayOf = <T>(value: unknown, guard: (v: unknown) => v is T): value is T[] =>
   Array.isArray(value) && value.every(guard);
 
-// Narrow an untrusted JSON body into a WireDocumentExtraction, or an
-// EXTRACTION_FAILED DomainError describing the first structural violation.
-export const parseDocumentExtraction = (
-  body: unknown,
-): Result<WireDocumentExtraction, DomainError> => {
-  if (!isRecord(body) || typeof body.documentId !== "string") {
-    return err(domainError("EXTRACTION_FAILED", "extraction payload missing documentId"));
+// Narrow an untrusted JSON body into a ShardPage, or an EXTRACTION_FAILED
+// DomainError describing the first structural violation. Row *contents* are trusted
+// verbatim; only the page envelope is checked.
+export const parseShardPage = (body: unknown): Result<ShardPage, DomainError> => {
+  if (!isRecord(body)) {
+    return err(domainError("EXTRACTION_FAILED", "shard page is not an object"));
   }
-  if (!everyIsArrayOf(body.elements, isElement)) {
-    return err(domainError("EXTRACTION_FAILED", "extraction payload has malformed elements"));
+  if (typeof body.asset !== "string" || typeof body.runId !== "string") {
+    return err(domainError("EXTRACTION_FAILED", "shard page missing asset/runId"));
   }
-  if (!everyIsArrayOf(body.chunks, isChunk)) {
-    return err(domainError("EXTRACTION_FAILED", "extraction payload has malformed chunks"));
+  if (!everyIsArrayOf(body.columns, isColumn)) {
+    return err(domainError("EXTRACTION_FAILED", "shard page has malformed columns"));
   }
-  if (!everyIsArrayOf(body.tableCells, isTableCell)) {
-    return err(domainError("EXTRACTION_FAILED", "extraction payload has malformed tableCells"));
+  if (!everyIsArrayOf(body.rows, isRow)) {
+    return err(domainError("EXTRACTION_FAILED", "shard page has malformed rows"));
+  }
+  if (
+    !isNumber(body.returned) ||
+    !isNumber(body.available) ||
+    typeof body.truncated !== "boolean"
+  ) {
+    return err(domainError("EXTRACTION_FAILED", "shard page has malformed paging counts"));
   }
   return ok({
-    documentId: body.documentId,
-    elements: body.elements,
-    chunks: body.chunks,
-    tableCells: body.tableCells,
+    asset: body.asset,
+    runId: body.runId,
+    columns: body.columns,
+    rows: body.rows,
+    returned: body.returned,
+    available: body.available,
+    truncated: body.truncated,
   });
 };
 
