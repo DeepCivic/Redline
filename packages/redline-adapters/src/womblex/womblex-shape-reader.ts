@@ -35,6 +35,15 @@ export class WomblexShapeReader implements IWomblexShapeReader {
   }
 
   async readShape(request: WomblexShapeRequest): Promise<Result<CorpusShape>> {
+    // A document is sized within the run that produced it. Dropping an
+    // unaddressable documentId would answer a document-scoped question with a
+    // whole-corpus shape, as an `ok` — the caller would have no way to tell.
+    if (request.documentId !== undefined && request.runId === undefined) {
+      return err(
+        domainError("VALIDATION_FAILED", "a documentId needs the runId that produced it"),
+      );
+    }
+
     let response: HttpResponse;
     try {
       response = await this.httpClient(this.shapeUrl(request));

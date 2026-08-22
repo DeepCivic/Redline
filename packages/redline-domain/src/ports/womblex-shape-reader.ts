@@ -63,11 +63,17 @@ export interface RunShape {
 // Runs are always reported separately, at every scope. Merging them would double
 // every count and leave the provenance keys identifying nothing — the failure
 // run-scoping exists to prevent.
+//
+// For the same reason `documents` is `null` at corpus scope, and deliberately. Runs of one corpus
+// normally hold the same documents — a re-run is the ordinary case — so summing
+// per-run counts would report a corpus of one document as two, and saying which
+// are the *same* means reading every run's identity column, the cost that makes
+// this call cheap enough to make first. The per-run counts are the answer.
 export interface CorpusShape {
   readonly corpusId: string;
   readonly runId: string | null;
   readonly documentId: string | null;
-  readonly documents: number;
+  readonly documents: number | null;
   readonly runs: readonly RunShape[];
 }
 

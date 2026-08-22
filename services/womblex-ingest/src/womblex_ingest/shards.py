@@ -151,14 +151,18 @@ def run_id_for_key(key: str) -> str:
 
 
 def list_runs(storage: ObjectStorage, corpus_id: str) -> List[RunSummary]:
-    """Every run under the corpus prefix, newest first.
+    return select_runs(storage.list_objects(corpus_prefix(corpus_id)))
+
+
+def select_runs(keys: Sequence[str]) -> List[RunSummary]:
+    """Every run in the given corpus keys, newest first.
 
     Run ids sort lexically by creation order (`run-YYYYMMDDTHHMMSSZ`), which is
     how womblex's own `most_recent_run` picks the latest. The unversioned bucket
     sorts last: it is a legacy layout, never the newest thing a caller wants.
     """
     counts: Dict[str, int] = {}
-    for key in storage.list_objects(corpus_prefix(corpus_id)):
+    for key in keys:
         if not key.endswith(".parquet"):
             continue
         counts[run_id_for_key(key)] = counts.get(run_id_for_key(key), 0) + 1
@@ -223,15 +227,24 @@ def identity_candidates(asset: Asset) -> Tuple[str, ...]:
     return asset.identity_columns + _SOURCE_HASH + _DOCUMENT_ID
 
 
+def select_shard_keys(keys: Sequence[str], run_id: str, asset: Asset) -> List[str]:
+    """One run's shard keys for one asset, sorted so concatenation is stable.
+
+    Takes the corpus's keys rather than the storage seam, so a caller reading
+    several assets across several runs lists the prefix once instead of once per
+    (run, asset) pair.
+    """
+    return sorted(
+        key
+        for key in keys
+        if key.endswith(asset.suffix) and run_id_for_key(key) == run_id
+    )
+
+
 def shard_keys(
     storage: ObjectStorage, corpus_id: str, run_id: str, asset: Asset
 ) -> List[str]:
-    """This run's shard keys for one asset, sorted so concatenation is stable."""
-    return sorted(
-        key
-        for key in storage.list_objects(corpus_prefix(corpus_id))
-        if key.endswith(asset.suffix) and run_id_for_key(key) == run_id
-    )
+    return select_shard_keys(storage.list_objects(corpus_prefix(corpus_id)), run_id, asset)
 
 
 def _decode(

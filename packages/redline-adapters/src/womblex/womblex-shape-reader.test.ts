@@ -118,6 +118,20 @@ describe("WomblexShapeReader", () => {
     ]);
   });
 
+  it("refuses a document it cannot address, rather than sizing the corpus", async () => {
+    const urls: string[] = [];
+
+    const shape = await urlsSeenBy(urls).readShape({
+      corpusId: "throsby",
+      documentId: DOCUMENT_ID,
+    });
+
+    expect(isErr(shape)).toBe(true);
+    if (!isErr(shape)) return;
+    expect(shape.error.code).toBe("VALIDATION_FAILED");
+    expect(urls).toEqual([]);
+  });
+
   it("returns INFRA_FAILURE when the sidecar is unreachable", async () => {
     const reader = readerOver(async () => {
       throw new Error("ECONNREFUSED");

@@ -3,7 +3,7 @@
     "corpusId": "throsby",
     "runId": null,
     "documentId": null,
-    "documents": 2,
+    "documents": null,
     "runs": [
       {
         "runId": "run-throsby-demo",

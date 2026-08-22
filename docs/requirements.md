@@ -136,8 +136,15 @@ Each section corresponds to an outstanding item in `Redline-Status.md` §4.
   tallies — `kind` counts and the `page` range on `elements`, and their equivalents
   per asset.
 - **Given** any shape read, **when** it runs, **then** no document-body column is
-  decoded: row counts come from the Parquet footer and tallies read only the
-  declared low-cardinality columns.
+  decoded *and* no whole shard is fetched: row counts come from the Parquet footer
+  via a ranged read, and tallies read only the declared low-cardinality columns.
+- **Given** a corpus with several runs, **when** its shape is read, **then** the
+  corpus prefix is listed once, not once per run per asset.
+- **Given** a run that landed no manifest, **when** its documents are counted,
+  **then** the count comes from an identity projection rather than reporting nought
+  beside a non-zero element count.
+- **Given** an unknown corpus or run id, **when** its shape is requested, **then**
+  the answer is `404`, not an empty corpus.
 - **Given** an entity name, **when** tallies are computed, **then** it is not
   tallied — it is unbounded, and it is content.
 
@@ -150,7 +157,8 @@ Each section corresponds to an outstanding item in `Redline-Status.md` §4.
   under their own labelled keys as derived values, while the tallied column values
   themselves are verbatim.
 - **Given** two runs of one corpus, **when** the corpus scope is requested, **then**
-  each run's counts are reported separately.
+  each run's counts are reported separately and the corpus-level `documents` is
+  `null` — summing them would report one document held by two runs as two.
 - **Given** a `documentId` without a `runId`, **when** the tool is called, **then**
   it is refused: a document is sized within the run that produced it.
 - **Given** a corpus scope, **when** it is returned, **then** it carries no column

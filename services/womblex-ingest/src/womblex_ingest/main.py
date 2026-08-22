@@ -185,21 +185,32 @@ def build_app(
         that produced it, and a cross-run document read is a question about
         provenance rather than about size.
         """
-        return JSONResponse(
-            status_code=200, content=read_shape(storage, corpus_id).to_json()
-        )
+        shape = read_shape(storage, corpus_id)
+        if not shape.runs:
+            return _error(
+                404,
+                "NOT_FOUND",
+                f"no womblex shards under proc/{corpus_id}/ — has the engine run "
+                "for this corpus?",
+            )
+        return JSONResponse(status_code=200, content=shape.to_json())
 
     @app.get("/runs/{corpus_id}/{run_id}/shape")
     def run_shape(
         corpus_id: str, run_id: str, documentId: Optional[str] = None
     ) -> JSONResponse:
         """One run's size — narrowed to one document, its shape as well."""
-        return JSONResponse(
-            status_code=200,
-            content=read_shape(
-                storage, corpus_id, run_id=run_id, document_id=documentId
-            ).to_json(),
-        )
+        shape = read_shape(storage, corpus_id, run_id=run_id, document_id=documentId)
+        # An empty answer and a mistyped id are indistinguishable to a caller, and
+        # they lead to opposite next actions: retry narrower, or fix the id. The
+        # sibling `/runs/{corpus_id}` route already draws this line.
+        if not shape.runs:
+            return _error(
+                404,
+                "NOT_FOUND",
+                f"no run {run_id!r} under proc/{corpus_id}/",
+            )
+        return JSONResponse(status_code=200, content=shape.to_json())
 
     @app.get("/runs/{corpus_id}/{run_id}/assets")
     def run_assets(corpus_id: str, run_id: str) -> JSONResponse:

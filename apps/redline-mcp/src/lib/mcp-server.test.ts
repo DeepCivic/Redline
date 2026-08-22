@@ -116,7 +116,9 @@ const shapeBodies: Record<string, unknown> = {
     corpusId: CORPUS_ID,
     runId: null,
     documentId: null,
-    documents: 2,
+    // Null at corpus scope: two runs may hold the same documents, and saying
+    // which are the same means reading every run's identity column.
+    documents: null,
     runs: [
       {
         runId: RUN_ID,

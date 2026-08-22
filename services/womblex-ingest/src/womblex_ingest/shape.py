@@ -5,9 +5,13 @@ elements this document holds, which kinds are in it, which printed pages it span
 That is only worth asking if asking is cheaper than reading, so this module is
 built around what Parquet lets you learn without decoding rows:
 
-**Counts come from the footer.** `pyarrow.parquet.read_metadata` reads a file's
-row count out of its footer, decoding no rows at all. A corpus-scope or run-scope
-shape therefore costs one footer read per shard file, whatever the run holds.
+**Counts come from the footer, and only the footer crosses the wire.** A Parquet
+file keeps its row count and schema in a footer at the end of the file, so sizing
+a shard fetches the file's tail (`get_object_tail`) rather than its body and parses
+that. Decoding the shard would be the obvious implementation and is the wrong one:
+it reads no rows but still transfers every byte, which is the cost this whole
+module exists to avoid. A corpus- or run-scope shape therefore costs one ranged
+read per shard file, whatever the run holds.
 
 **Tallies project one column.** A document-scoped count or a `kind` tally reads
 the identity column and the tallied labels through `read_table(columns=[...])` —
@@ -36,10 +40,11 @@ from womblex_ingest.shards import (
     ASSETS,
     Asset,
     Column,
+    corpus_prefix,
     identity_candidates,
     jsonable,
-    list_runs,
-    shard_keys,
+    select_runs,
+    select_shard_keys,
 )
 from womblex_ingest.storage import ObjectStorage
 
@@ -69,6 +74,11 @@ RANGE_COLUMNS: Dict[str, Tuple[str, ...]] = {
 # A tally that could grow without bound stops being metadata. Fifty distinct
 # values is far above any womblex vocabulary and still small enough to read.
 MAX_TALLY_VALUES = 50
+
+# How much of a shard's tail to fetch when sizing it. Big enough that one ranged
+# read almost always carries the whole footer, small enough that it stays a
+# rounding error against the shard itself.
+FOOTER_TAIL_BYTES = 65536
 
 
 @dataclass(frozen=True)
@@ -140,7 +150,7 @@ class CorpusShape:
     corpus_id: str
     run_id: Optional[str]
     document_id: Optional[str]
-    documents: int
+    documents: Optional[int]
     runs: List[RunShape]
 
     def to_json(self) -> dict:
@@ -166,13 +176,15 @@ def read_shape(
     count and leave the provenance keys identifying nothing, which is the failure
     run-scoping exists to prevent.
     """
-    wanted = [
-        run for run in list_runs(storage, corpus_id) if run_id in (None, run.run_id)
-    ]
+    # Listed once and threaded down. Selecting per (run, asset) instead would walk
+    # the whole corpus prefix twelve times per run, which on a large bucket costs
+    # more than every footer read put together.
+    keys = storage.list_objects(corpus_prefix(corpus_id))
+    wanted = [run for run in select_runs(keys) if run_id in (None, run.run_id)]
     runs = [
         _run_shape(
             storage,
-            corpus_id,
+            keys,
             run.run_id,
             run.versioned,
             document_id,
@@ -184,14 +196,29 @@ def read_shape(
         corpus_id=corpus_id,
         run_id=run_id,
         document_id=document_id,
-        documents=sum(run.documents for run in runs),
+        documents=_corpus_documents(runs, scoped_to_one_run=run_id is not None),
         runs=runs,
     )
 
 
+def _corpus_documents(runs: Sequence[RunShape], *, scoped_to_one_run: bool) -> Optional[int]:
+    """How many documents the whole answer covers, where that can be said.
+
+    `None` at corpus scope, deliberately. Runs of one corpus normally hold the
+    same documents — a re-run is the ordinary case — so summing per-run counts
+    reports a corpus of one document as two. Saying which documents are the *same*
+    across runs means reading every run's identity column, which is exactly the
+    cost that makes this call cheap enough to make first. The per-run counts below
+    are the honest answer, and they are already there.
+    """
+    if not scoped_to_one_run:
+        return None
+    return sum(run.documents for run in runs)
+
+
 def _run_shape(
     storage: ObjectStorage,
-    corpus_id: str,
+    keys: Sequence[str],
     run_id: str,
     versioned: bool,
     document_id: Optional[str],
@@ -200,14 +227,14 @@ def _run_shape(
     assets = [
         _asset_shape(
             storage,
-            corpus_id,
+            keys,
             run_id,
             asset,
             document_id,
             # A corpus scope asks which runs exist and how big each is, not what
             # shape their schemas are. Twelve assets' column lists are ~20KB of
             # payload that answers a question nobody asked at this scope, and the
-            # run scope below is one call away for a client that wants them.
+            # run scope is one call away for a client that wants them.
             include_columns=scoped_to_one_run,
         )
         for asset in ASSETS.values()
@@ -215,74 +242,123 @@ def _run_shape(
     return RunShape(
         run_id=run_id,
         versioned=versioned,
-        documents=_document_count(assets, document_id),
+        documents=_document_count(storage, keys, run_id, assets, document_id),
         assets=assets,
     )
 
 
-def _document_count(assets: Sequence[AssetShape], document_id: Optional[str]) -> int:
+def _document_count(
+    storage: ObjectStorage,
+    keys: Sequence[str],
+    run_id: str,
+    assets: Sequence[AssetShape],
+    document_id: Optional[str],
+) -> int:
     """How many documents this run's answer covers.
 
-    The manifest carries one row per document, so its row count *is* the run's
-    document count — no other shard can say this without decoding rows. A
-    document-scoped read asks a narrower question, "is this document in this
-    run", and answers it from any asset holding a row: a run whose elements hold
-    the document but whose manifest was never staged still holds the document,
-    and reporting nought beside a non-zero element count would be a contradiction
-    a client cannot act on.
+    Three ways, in order of cost. A document-scoped read asks the narrow question
+    — "is this document in this run" — and any asset holding a row answers it. A
+    run-scoped read reads the manifest's row count, because the manifest carries
+    one row per document and that count is already in hand from its footer. Only
+    when a run landed no manifest does this project an identity column, and then
+    from the smallest asset present: a run whose elements hold documents but whose
+    manifest was never written still holds them, and reporting nought beside a
+    non-zero element count would be a contradiction a client cannot act on.
     """
-    if document_id is None:
-        manifest = next(asset for asset in assets if asset.name == "manifest")
+    if document_id is not None:
+        return 1 if any(asset.rows for asset in assets) else 0
+
+    manifest = next(asset for asset in assets if asset.name == "manifest")
+    if manifest.present:
         return manifest.rows or 0
-    return 1 if any(asset.rows for asset in assets) else 0
+
+    return len(_identity_values(storage, keys, run_id, assets))
+
+
+def _identity_values(
+    storage: ObjectStorage,
+    keys: Sequence[str],
+    run_id: str,
+    assets: Sequence[AssetShape],
+) -> set:
+    """Distinct document ids in this run, projected from its smallest asset."""
+    countable = [
+        asset for asset in assets if asset.present and asset.readable and asset.rows
+    ]
+    if not countable:
+        return set()
+
+    smallest = min(countable, key=lambda asset: asset.rows or 0)
+    definition = ASSETS[smallest.name]
+    identity = [name for name in identity_candidates(definition) if name in _names(smallest)]
+    if not identity:
+        return set()
+
+    found = set()
+    for key in select_shard_keys(keys, run_id, definition):
+        for row in _project(storage, key, identity[:1]):
+            value = row.get(identity[0])
+            if value is not None:
+                found.add(value)
+    return found
+
+
+def _names(asset: AssetShape) -> set:
+    return {column.name for column in asset.columns}
 
 
 def _asset_shape(
     storage: ObjectStorage,
-    corpus_id: str,
+    keys: Sequence[str],
     run_id: str,
     asset: Asset,
     document_id: Optional[str],
     include_columns: bool,
 ) -> AssetShape:
-    keys = shard_keys(storage, corpus_id, run_id, asset)
-    if not keys:
+    shard_keys = select_shard_keys(keys, run_id, asset)
+    if not shard_keys:
         return _empty(asset, present=False)
     if not asset.readable:
         return _empty(asset, present=True)
 
-    columns = _schema_of(storage, keys[0]) if include_columns else []
+    # One ranged read carries both the count and the schema, so the schema is
+    # always known here even when it is not reported: a document scope needs it to
+    # find the identity column, and deriving it from `include_columns` would make
+    # an unreported schema silently mean "no columns" and every count nought.
+    rows, columns = _footer(storage, shard_keys)
+    reported = columns if include_columns else []
     if document_id is None:
         return AssetShape(
             name=asset.name,
             present=True,
             readable=True,
-            rows=sum(_row_count(storage, key) for key in keys),
-            columns=columns,
+            rows=rows,
+            columns=reported,
             values={},
             ranges={},
         )
-    return _document_shape(storage, keys, asset, columns, document_id)
+    return _document_shape(storage, shard_keys, asset, columns, reported, document_id)
 
 
 def _document_shape(
     storage: ObjectStorage,
-    keys: Sequence[str],
+    shard_keys: Sequence[str],
     asset: Asset,
     columns: List[Column],
+    reported: List[Column],
     document_id: str,
 ) -> AssetShape:
     present = {column.name for column in columns}
     identity = [name for name in identity_candidates(asset) if name in present]
     if not identity:
-        return AssetShape(asset.name, True, True, 0, columns, {}, {})
+        return AssetShape(asset.name, True, True, 0, reported, {}, {})
 
     tallied = [name for name in TALLY_COLUMNS.get(asset.name, ()) if name in present]
     ranged = [name for name in RANGE_COLUMNS.get(asset.name, ()) if name in present]
     projected = list(dict.fromkeys(identity + tallied + ranged))
 
     rows: List[Dict[str, Any]] = []
-    for key in keys:
+    for key in shard_keys:
         for row in _project(storage, key, projected):
             if any(row.get(column) == document_id for column in identity):
                 rows.append(row)
@@ -292,7 +368,7 @@ def _document_shape(
         present=True,
         readable=True,
         rows=len(rows),
-        columns=columns,
+        columns=reported,
         values={name: _tally(rows, name) for name in tallied},
         ranges=_ranges(rows, ranged),
     )
@@ -335,18 +411,43 @@ def _ranges(
     return ranges
 
 
-def _row_count(storage: ObjectStorage, key: str) -> int:
-    """One shard's row count, from its footer — no row is decoded."""
+def _footer(storage: ObjectStorage, shard_keys: Sequence[str]) -> Tuple[int, List[Column]]:
+    """One asset's row count and schema, from its shards' footers alone.
+
+    The schema comes from the first shard even when it holds no rows — an empty
+    asset must still report its columns, or a caller cannot tell "no rows" from
+    "no such asset", and those two lead to opposite next actions.
+    """
+    rows = 0
+    columns: List[Column] = []
+    for key in shard_keys:
+        metadata = _footer_metadata(storage, key)
+        rows += metadata.num_rows
+        if not columns:
+            columns = [
+                Column(name=field.name, type=str(field.type))
+                for field in metadata.schema.to_arrow_schema()
+            ]
+    return rows, columns
+
+
+def _footer_metadata(storage: ObjectStorage, key: str):
+    """Parse a Parquet footer without fetching the shard.
+
+    A Parquet file ends with its thrift-encoded metadata, then that block's length
+    as four little-endian bytes, then the magic `PAR1`. Prefixing the block with
+    the same magic makes a file pyarrow will parse: the row-group offsets inside
+    it point past the end of what we fetched, but a row count and a schema need
+    none of them. Reading the shard instead would decode no rows and still
+    transfer every byte, which is the whole cost this avoids.
+    """
     import pyarrow.parquet as pq  # type: ignore[import-not-found]
 
-    return pq.read_metadata(io.BytesIO(storage.get_object(key))).num_rows
-
-
-def _schema_of(storage: ObjectStorage, key: str) -> List[Column]:
-    import pyarrow.parquet as pq  # type: ignore[import-not-found]
-
-    schema = pq.read_schema(io.BytesIO(storage.get_object(key)))
-    return [Column(name=field.name, type=str(field.type)) for field in schema]
+    tail = storage.get_object_tail(key, FOOTER_TAIL_BYTES)
+    metadata_length = int.from_bytes(tail[-8:-4], "little")
+    needed = metadata_length + 8
+    footer = tail[-needed:] if needed <= len(tail) else storage.get_object_tail(key, needed)
+    return pq.read_metadata(io.BytesIO(b"PAR1" + footer))
 
 
 def _project(

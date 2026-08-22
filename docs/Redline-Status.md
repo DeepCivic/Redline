@@ -172,7 +172,11 @@ that document's counts, its `kind` tallies and its printed page range. It refuse
 `documentId` without a `runId` — a document is sized within the run that produced
 it. Every payload carries a `derived` notice saying its numbers are redline's
 arithmetic over row metadata and are to size a read, never to cite. Runs are never
-merged, and no scope returns a row of document body.
+merged, and no scope returns a row of document body. At corpus scope the top-level
+`documents` is `null`: runs of one corpus normally hold the same documents, so a
+sum would report a one-document corpus as two, and deduplicating means reading
+every run's identity column — the cost that makes this call cheap enough to make
+first. The per-run counts carry it instead.
 
 **`list_documents`** is the navigation entry point above the reads, and the only tool
 called against a whole run rather than one document. It reads `manifest`,
@@ -211,14 +215,17 @@ is catalogued and deliberately refused — Womblex ships no index, so nothing ca
 rank those vectors.
 
 `shape.py` answers how big a thing is without reading it. Counts come from the
-Parquet footer (`read_metadata`), so a corpus- or run-scope answer decodes no rows
-at all; a document-scoped count or tally projects the identity column and the
-declared low-cardinality labels (`read_table(columns=[...])`) and never a column
-carrying text. Tallies are document-scope only — a tally over a whole run scales
-with the run, and the sizing question is always asked of one document. Two tests
+Parquet footer, fetched as a **ranged read** (`get_object_tail`) and parsed by
+prefixing the magic — so a corpus- or run-scope answer neither decodes rows nor
+transfers them. Decoding the shard would be the obvious implementation and is the
+wrong one: it reads no rows and still moves every byte, which is the cost the
+module exists to avoid. A document-scoped count or tally projects the identity
+column and the declared low-cardinality labels (`read_table(columns=[...])`) and
+never a column carrying text. Tallies are document-scope only — a tally over a whole run scales
+with the run, and the sizing question is always asked of one document. Three tests
 guard the cost, not just the answer: a run scope must call `read_table` zero
-times, and a document scope must project on every call and never name a body
-column. Everything it returns is derived, and is labelled as such.
+times *and* fetch no whole object, and a document scope must project on every call
+and never name a body column. Everything it returns is derived, and is labelled as such.
 
 **The paging the tool surface needs already exists here.** The sidecar takes
 `limit`, `offset` and `documentId` on every asset. What is missing is above it.

@@ -101,7 +101,7 @@ export const parseCorpusShape = (body: unknown): Result<CorpusShape, DomainError
   ) {
     return err(domainError("EXTRACTION_FAILED", "corpus shape has a malformed scope"));
   }
-  if (!isCount(body.documents) || !Array.isArray(body.runs)) {
+  if ((body.documents !== null && !isCount(body.documents)) || !Array.isArray(body.runs)) {
     return err(domainError("EXTRACTION_FAILED", "corpus shape has malformed run counts"));
   }
 

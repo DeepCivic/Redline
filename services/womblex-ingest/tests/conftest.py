@@ -33,6 +33,12 @@ class FakeObjectStorage(ObjectStorage):
         except KeyError as error:
             raise ObjectNotFound(key) from error
 
+    def get_object_tail(self, key: str, length: int) -> bytes:
+        try:
+            return self.objects[key][-length:]
+        except KeyError as error:
+            raise ObjectNotFound(key) from error
+
     def keys_under(self, prefix: str) -> List[str]:
         return sorted(key for key in self.objects if key.startswith(prefix))
 

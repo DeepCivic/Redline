@@ -505,7 +505,10 @@ def test_the_corpus_shape_route_keeps_runs_apart(
         "run-20260201T000000Z",
         "run-20260101T000000Z",
     ]
-    assert body["documents"] == 2
+    # One document, staged twice. A corpus-scope total would have to say whether
+    # those are the same document, which needs every run's identity column read.
+    assert body["documents"] is None
+    assert [run["documents"] for run in body["runs"]] == [1, 1]
     assert all(
         next(asset for asset in run["assets"] if asset["name"] == "elements")["rows"]
         == 24
@@ -529,3 +532,109 @@ def test_a_corpus_scope_carries_no_column_schemas() -> None:
     assert corpus.columns == []
     assert corpus.rows == 24
     assert [column.name for column in run.columns][:2] == ["source_hash", "collection_id"]
+
+
+# ── what sizing is allowed to cost ───────────────────────────────────────────
+
+
+class TailOnlyStorage(FakeObjectStorage):
+    """Refuses a whole-object read, and records what was fetched instead.
+
+    Sizing that decodes nothing but still transfers everything is the failure this
+    guards: it passes a `read_table` spy while gigabytes cross the wire.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tail_bytes = 0
+        self.listings = 0
+        self.whole_reads: List[str] = []
+
+    def get_object(self, key: str) -> bytes:
+        self.whole_reads.append(key)
+        return super().get_object(key)
+
+    def get_object_tail(self, key: str, length: int) -> bytes:
+        tail = super().get_object_tail(key, length)
+        self.tail_bytes += len(tail)
+        return tail
+
+    def list_objects(self, prefix: str) -> List[str]:
+        self.listings += 1
+        return super().list_objects(prefix)
+
+
+def test_sizing_a_run_never_fetches_a_whole_shard() -> None:
+    storage = TailOnlyStorage()
+    load_fixture_run(storage)
+    total = sum(len(body) for body in storage.objects.values())
+
+    read_shape(storage, "throsby", run_id="run-throsby-demo")
+
+    assert storage.whole_reads == []
+    assert storage.tail_bytes < total
+
+
+def test_sizing_a_run_lists_the_corpus_prefix_once() -> None:
+    """Selecting per (run, asset) walks the whole prefix twelve times per run."""
+    storage = TailOnlyStorage()
+    load_fixture_run(storage)
+
+    read_shape(storage, "throsby", run_id="run-throsby-demo")
+
+    assert storage.listings == 1
+
+
+def test_a_run_without_a_manifest_still_counts_its_documents() -> None:
+    """Nought documents beside 3 elements is a contradiction, not an answer."""
+    storage = FakeObjectStorage()
+    stage(
+        storage,
+        "proc/corpus-1/run-20260101T000000Z/documents/batch-0001.elements.parquet",
+        element_shard(
+            [
+                element("doc-a", 0, "paragraph", 1),
+                element("doc-b", 0, "paragraph", 1),
+                element("doc-b", 1, "heading", 1),
+            ]
+        ),
+    )
+
+    shape = read_shape(storage, "corpus-1", run_id="run-20260101T000000Z")
+
+    assert asset_named(shape, "run-20260101T000000Z", "elements").rows == 3
+    assert shape.runs[0].documents == 2
+
+
+def test_a_document_is_counted_even_when_columns_are_not_reported() -> None:
+    """Column *reporting* is a payload choice; the schema is still needed to find
+    the identity column, and tying the two together made every count nought."""
+    storage = FakeObjectStorage()
+    stage(
+        storage,
+        "proc/corpus-1/run-20260101T000000Z/documents/batch-0001.elements.parquet",
+        element_shard([element("doc-a", 0, "paragraph", 1), element("doc-b", 0, "heading", 1)]),
+    )
+
+    shape = read_shape(storage, "corpus-1", document_id="doc-a")
+
+    elements = asset_named(shape, "run-20260101T000000Z", "elements")
+    assert elements.rows == 1
+    assert elements.columns == []
+
+
+def test_an_unknown_corpus_is_not_an_empty_one(client) -> None:
+    """A typo and an empty corpus lead to opposite next actions."""
+    response = client.get("/runs/no-such-corpus/shape")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_an_unknown_run_is_not_an_empty_one(client, storage: FakeObjectStorage) -> None:
+    load_fixture_run(storage)
+
+    response = client.get("/runs/throsby/run-does-not-exist/shape")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"

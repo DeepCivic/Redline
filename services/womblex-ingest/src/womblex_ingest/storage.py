@@ -1,6 +1,7 @@
 """Object-storage seam (MinIO/S3).
 
-Kept deliberately thin: `put_object` / `get_object` / `list_objects`.
+Kept deliberately thin: `put_object` / `get_object` / `get_object_tail` /
+`list_objects`.
 `S3ObjectStorage` wraps boto3 and is only constructed at process start (see
 `main.build_app` callers), so tests use `FakeObjectStorage` and never touch boto3
 or a live bucket. `get_object` backs the Parquet→JSON read seam: the JSON read
@@ -27,6 +28,16 @@ class ObjectStorage(Protocol):
 
     def get_object(self, key: str) -> bytes:
         """Return the object body, or raise `ObjectNotFound` if the key is absent."""
+        ...
+
+    def get_object_tail(self, key: str, length: int) -> bytes:
+        """Return the object's last `length` bytes, or all of it if it is smaller.
+
+        A Parquet file's row count and schema live in its footer, so sizing a
+        shard needs its tail and not its body. Without this, "counts come from
+        the footer" would describe only the *decode* while the whole object still
+        crossed the wire.
+        """
         ...
 
     def list_objects(self, prefix: str) -> List[str]:
@@ -84,6 +95,22 @@ class S3ObjectStorage:
 
         try:
             response = self._client.get_object(Bucket=self._bucket, Key=key)
+        except ClientError as error:
+            code = error.response.get("Error", {}).get("Code")
+            if code in ("NoSuchKey", "404", "NotFound"):
+                raise ObjectNotFound(key) from error
+            raise
+        return response["Body"].read()
+
+    def get_object_tail(self, key: str, length: int) -> bytes:
+        from botocore.exceptions import ClientError
+
+        try:
+            # A suffix range needs no prior HEAD for the object's size, and S3
+            # clamps it to the object when the object is smaller.
+            response = self._client.get_object(
+                Bucket=self._bucket, Key=key, Range=f"bytes=-{length}"
+            )
         except ClientError as error:
             code = error.response.get("Error", {}).get("Code")
             if code in ("NoSuchKey", "404", "NotFound"):
