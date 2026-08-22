@@ -197,7 +197,7 @@ against assumptions the suite and the implementation share.
 purity; no focused tests; source file size; sidecar pytest; ruff. CI runs the same
 gate.
 
-Tests today: 59 TypeScript (2 domain, 10 adapters, 47 MCP) and 116 Python.
+Tests today: 61 TypeScript (2 domain, 10 adapters, 49 MCP) and 116 Python.
 
 ---
 

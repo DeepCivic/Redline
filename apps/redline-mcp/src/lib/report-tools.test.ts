@@ -515,3 +515,43 @@ describe("list_documents — navigation", () => {
     expect(result.error.code).toBe("NOT_FOUND");
   });
 });
+
+describe("list_documents — the joins", () => {
+  it("joins a document to nothing when its manifest row carries neither identity spelling", async () => {
+    const reader = new InMemoryAssetReader({
+      manifest: [{ doc_id: "DOC-1", filename: "a.pdf" }, { doc_id: "DOC-2", filename: "b.pdf" }],
+      entities: [{ document_id: "hashA", entity_id: "e1", name: "Someone" }],
+    });
+    const tool = toolNamed("list_documents", { assetReader: reader });
+
+    const result = await tool.call(listArgs());
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const documents = documentsIn(result.data);
+    expect(documents).toHaveLength(2);
+    for (const document of documents) {
+      expect(document.enrichment).toBeNull();
+      expect((document.entity_names as Record<string, unknown>).names).toEqual([]);
+    }
+  });
+
+  it("keeps every entity row for a document that mentions many", async () => {
+    const entities = Array.from({ length: 200 }, (_unused, index) => ({
+      document_id: "hashA",
+      entity_id: `e${index}`,
+      name: `Entity ${index}`,
+    }));
+    const tool = toolNamed("list_documents", {
+      assetReader: new InMemoryAssetReader({ manifest: [manifestRow()], entities }),
+    });
+
+    const result = await tool.call(listArgs());
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const names = documentsIn(result.data)[0]!.entity_names as Record<string, unknown>;
+    expect(names.available).toBe(200);
+    expect(names.returned).toBe(DEFAULT_ENTITY_NAME_LIMIT);
+  });
+});

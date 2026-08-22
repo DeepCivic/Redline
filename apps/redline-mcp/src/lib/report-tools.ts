@@ -182,7 +182,9 @@ const groupByDocument = (rows: readonly ShardRow[]): Map<string, ShardRow[]> => 
   for (const row of rows) {
     const identity = identityOf(row);
     if (identity === undefined) continue;
-    grouped.set(identity, [...(grouped.get(identity) ?? []), row]);
+    const existing = grouped.get(identity);
+    if (existing) existing.push(row);
+    else grouped.set(identity, [row]);
   }
   return grouped;
 };
@@ -270,11 +272,17 @@ const listDocuments = async (
 
   const enrichmentByDocument = groupByDocument(enrichment.data.rows);
   const entitiesByDocument = groupByDocument(entities.data.rows);
-  const summaries = manifest.data.rows.map((row) => ({
-    manifest: row,
-    enrichment: enrichmentOf(enrichmentByDocument.get(identityOf(row) ?? "")?.[0]),
-    entityNames: distinctNames(entitiesByDocument.get(identityOf(row) ?? "") ?? []),
-  }));
+  // A manifest row carrying neither identity spelling joins to nothing rather than
+  // to every other such row: an empty key would pool them together.
+  const summaries = manifest.data.rows.map((row) => {
+    const identity = identityOf(row);
+    if (identity === undefined) return { manifest: row, enrichment: null, entityNames: [] };
+    return {
+      manifest: row,
+      enrichment: enrichmentOf(enrichmentByDocument.get(identity)?.[0]),
+      entityNames: distinctNames(entitiesByDocument.get(identity) ?? []),
+    };
+  });
 
   const matching = summaries.filter((summary) => matchesFilters(summary, args));
   const offset = args.offset ?? 0;
@@ -284,6 +292,9 @@ const listDocuments = async (
     runId: manifest.data.runId,
     asset: "manifest",
     returned: window.length,
+    // enrichment_meta and entities are joined onto the manifest, never appended to
+    // it: the document count is the manifest's, whatever the other two hold.
+
     available: matching.length,
     truncated: offset + window.length < matching.length,
     documents: window.map(asPayloadDocument),
