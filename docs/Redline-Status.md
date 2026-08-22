@@ -179,6 +179,12 @@ run profile Redline's reads assume, handed to that externally-run engine.
 
 ### Test fixtures
 
+`apps/redline-mcp/src/lib/__fixtures__/throsby-navigation-shards.json` is a capture
+of the sidecar's shard route over that run's `manifest`, `enrichment_meta` and
+`entities`, so `list_documents` is tested against real rows without a live sidecar.
+It records something the row counts hide: those 34 entity rows carry **12 distinct
+names**, so the real run sits under the name cap and cannot exercise truncation.
+
 `services/womblex-ingest/tests/fixtures/run-throsby-demo/` is a **real** Womblex
 run's shards — one document, an ACT FOI 213A notice. 24 elements, 4 chunks, 2 form
 fields, 156 graph edges, 34 entities, 2 money spans. The shard-seam tests read it
@@ -191,7 +197,7 @@ against assumptions the suite and the implementation share.
 purity; no focused tests; source file size; sidecar pytest; ruff. CI runs the same
 gate.
 
-Tests today: 53 TypeScript (2 domain, 10 adapters, 41 MCP) and 116 Python.
+Tests today: 59 TypeScript (2 domain, 10 adapters, 47 MCP) and 116 Python.
 
 ---
 

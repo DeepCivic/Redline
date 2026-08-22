@@ -56,8 +56,10 @@ export const DEFAULT_TOOL_LIMIT = 500;
 export const DEFAULT_DOCUMENT_LIMIT = 25;
 
 // Entity names are an unbounded list in their own right — one small document in the
-// throsby fixture carries 34 — so they are capped per document, separately from the
-// document page, and carry their own counts.
+// throsby fixture carries 34 entity rows — so they are capped per document,
+// separately from the document page, and carry their own counts. Distinct names run
+// well below the row count (12 for that document), so the cap is sized against a
+// wide run, not against what one document happens to mention.
 export const DEFAULT_ENTITY_NAME_LIMIT = 20;
 
 // The seam serves every matching row under a negative limit. list_documents filters
