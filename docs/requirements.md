@@ -141,7 +141,7 @@ Each section corresponds to an outstanding item in `Redline-Status.md` §4.
 - **Given** an entity name, **when** tallies are computed, **then** it is not
   tallied — it is unbounded, and it is content.
 
-### `discover_corpus_shape` `[NOT BUILT]`
+### `discover_corpus_shape` `[BUILT]`
 
 - **Given** a corpus, a run or a document, **when** `discover_corpus_shape` is
   called, **then** the matching scope's counts are returned and no payload carries a
@@ -151,6 +151,10 @@ Each section corresponds to an outstanding item in `Redline-Status.md` §4.
   themselves are verbatim.
 - **Given** two runs of one corpus, **when** the corpus scope is requested, **then**
   each run's counts are reported separately.
+- **Given** a `documentId` without a `runId`, **when** the tool is called, **then**
+  it is refused: a document is sized within the run that produced it.
+- **Given** a corpus scope, **when** it is returned, **then** it carries no column
+  schemas — twelve assets' worth answer a question that scope is not asking.
 
 ### Column filters and a count mode on the read seam `[NOT BUILT]`
 

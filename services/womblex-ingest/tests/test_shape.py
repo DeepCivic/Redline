@@ -511,3 +511,21 @@ def test_the_corpus_shape_route_keeps_runs_apart(
         == 24
         for run in body["runs"]
     )
+
+
+def test_a_corpus_scope_carries_no_column_schemas() -> None:
+    """Twelve assets' column lists are ~20KB answering a question this scope is
+    not asking. The run scope, one call away, is where a schema is wanted."""
+    storage = FakeObjectStorage()
+    load_fixture_run(storage)
+
+    corpus = asset_named(read_shape(storage, "throsby"), "run-throsby-demo", "elements")
+    run = asset_named(
+        read_shape(storage, "throsby", run_id="run-throsby-demo"),
+        "run-throsby-demo",
+        "elements",
+    )
+
+    assert corpus.columns == []
+    assert corpus.rows == 24
+    assert [column.name for column in run.columns][:2] == ["source_hash", "collection_id"]

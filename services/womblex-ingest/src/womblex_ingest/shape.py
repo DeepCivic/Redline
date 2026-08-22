@@ -170,7 +170,14 @@ def read_shape(
         run for run in list_runs(storage, corpus_id) if run_id in (None, run.run_id)
     ]
     runs = [
-        _run_shape(storage, corpus_id, run.run_id, run.versioned, document_id)
+        _run_shape(
+            storage,
+            corpus_id,
+            run.run_id,
+            run.versioned,
+            document_id,
+            scoped_to_one_run=run_id is not None,
+        )
         for run in wanted
     ]
     return CorpusShape(
@@ -188,9 +195,21 @@ def _run_shape(
     run_id: str,
     versioned: bool,
     document_id: Optional[str],
+    scoped_to_one_run: bool,
 ) -> RunShape:
     assets = [
-        _asset_shape(storage, corpus_id, run_id, asset, document_id)
+        _asset_shape(
+            storage,
+            corpus_id,
+            run_id,
+            asset,
+            document_id,
+            # A corpus scope asks which runs exist and how big each is, not what
+            # shape their schemas are. Twelve assets' column lists are ~20KB of
+            # payload that answers a question nobody asked at this scope, and the
+            # run scope below is one call away for a client that wants them.
+            include_columns=scoped_to_one_run,
+        )
         for asset in ASSETS.values()
     ]
     return RunShape(
@@ -224,6 +243,7 @@ def _asset_shape(
     run_id: str,
     asset: Asset,
     document_id: Optional[str],
+    include_columns: bool,
 ) -> AssetShape:
     keys = shard_keys(storage, corpus_id, run_id, asset)
     if not keys:
@@ -231,7 +251,7 @@ def _asset_shape(
     if not asset.readable:
         return _empty(asset, present=True)
 
-    columns = _schema_of(storage, keys[0])
+    columns = _schema_of(storage, keys[0]) if include_columns else []
     if document_id is None:
         return AssetShape(
             name=asset.name,

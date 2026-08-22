@@ -1,0 +1,1859 @@
+{
+  "corpus": {
+    "corpusId": "throsby",
+    "runId": null,
+    "documentId": null,
+    "documents": 2,
+    "runs": [
+      {
+        "runId": "run-throsby-demo",
+        "versioned": true,
+        "documents": 1,
+        "assets": [
+          {
+            "name": "elements",
+            "present": true,
+            "readable": true,
+            "rows": 24,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "table_cells",
+            "present": true,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "form_fields",
+            "present": true,
+            "readable": true,
+            "rows": 2,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "manifest",
+            "present": true,
+            "readable": true,
+            "rows": 1,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "chunks",
+            "present": true,
+            "readable": true,
+            "rows": 4,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "chunk_quality",
+            "present": true,
+            "readable": true,
+            "rows": 4,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "money_spans",
+            "present": true,
+            "readable": true,
+            "rows": 2,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "money_columns",
+            "present": true,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "entities",
+            "present": true,
+            "readable": true,
+            "rows": 34,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "graph_edges",
+            "present": true,
+            "readable": true,
+            "rows": 156,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "enrichment_meta",
+            "present": true,
+            "readable": true,
+            "rows": 1,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "embeddings",
+            "present": true,
+            "readable": false,
+            "rows": null,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          }
+        ]
+      },
+      {
+        "runId": "run-20260101T000000Z",
+        "versioned": true,
+        "documents": 1,
+        "assets": [
+          {
+            "name": "elements",
+            "present": true,
+            "readable": true,
+            "rows": 24,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "table_cells",
+            "present": false,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "form_fields",
+            "present": false,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "manifest",
+            "present": true,
+            "readable": true,
+            "rows": 1,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "chunks",
+            "present": false,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "chunk_quality",
+            "present": false,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "money_spans",
+            "present": false,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "money_columns",
+            "present": false,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "entities",
+            "present": false,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "graph_edges",
+            "present": false,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "enrichment_meta",
+            "present": false,
+            "readable": true,
+            "rows": 0,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "embeddings",
+            "present": false,
+            "readable": false,
+            "rows": null,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          }
+        ]
+      }
+    ]
+  },
+  "run": {
+    "corpusId": "throsby",
+    "runId": "run-throsby-demo",
+    "documentId": null,
+    "documents": 1,
+    "runs": [
+      {
+        "runId": "run-throsby-demo",
+        "versioned": true,
+        "documents": 1,
+        "assets": [
+          {
+            "name": "elements",
+            "present": true,
+            "readable": true,
+            "rows": 24,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "collection_id",
+                "type": "string"
+              },
+              {
+                "name": "elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "kind",
+                "type": "string"
+              },
+              {
+                "name": "extractor",
+                "type": "string"
+              },
+              {
+                "name": "confidence",
+                "type": "float"
+              },
+              {
+                "name": "page",
+                "type": "int32"
+              },
+              {
+                "name": "bbox",
+                "type": "struct<x: float, y: float, width: float, height: float>"
+              },
+              {
+                "name": "text",
+                "type": "string"
+              },
+              {
+                "name": "alt_text",
+                "type": "string"
+              },
+              {
+                "name": "header_rows",
+                "type": "list<element: int32>"
+              },
+              {
+                "name": "sheet",
+                "type": "string"
+              },
+              {
+                "name": "row",
+                "type": "int32"
+              },
+              {
+                "name": "col",
+                "type": "int32"
+              },
+              {
+                "name": "value",
+                "type": "string"
+              },
+              {
+                "name": "value_type",
+                "type": "string"
+              },
+              {
+                "name": "formula",
+                "type": "string"
+              },
+              {
+                "name": "number_format",
+                "type": "string"
+              },
+              {
+                "name": "merge_range",
+                "type": "string"
+              },
+              {
+                "name": "meta",
+                "type": "map<string, string ('meta')>"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "table_cells",
+            "present": true,
+            "readable": true,
+            "rows": 0,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "parent_elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "row",
+                "type": "int32"
+              },
+              {
+                "name": "col",
+                "type": "int32"
+              },
+              {
+                "name": "value",
+                "type": "string"
+              },
+              {
+                "name": "rowspan",
+                "type": "int32"
+              },
+              {
+                "name": "colspan",
+                "type": "int32"
+              },
+              {
+                "name": "value_type",
+                "type": "string"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "form_fields",
+            "present": true,
+            "readable": true,
+            "rows": 2,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "parent_elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "field_index",
+                "type": "int32"
+              },
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "value",
+                "type": "string"
+              },
+              {
+                "name": "field_type",
+                "type": "string"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "manifest",
+            "present": true,
+            "readable": true,
+            "rows": 1,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "collection_id",
+                "type": "string"
+              },
+              {
+                "name": "doc_id",
+                "type": "string"
+              },
+              {
+                "name": "filename",
+                "type": "string"
+              },
+              {
+                "name": "ext",
+                "type": "string"
+              },
+              {
+                "name": "extraction_method",
+                "type": "string"
+              },
+              {
+                "name": "elements_count",
+                "type": "int64"
+              },
+              {
+                "name": "table_cells_count",
+                "type": "int64"
+              },
+              {
+                "name": "form_fields_count",
+                "type": "int64"
+              },
+              {
+                "name": "status",
+                "type": "string"
+              },
+              {
+                "name": "error",
+                "type": "string"
+              },
+              {
+                "name": "extracted_at_iso",
+                "type": "string"
+              },
+              {
+                "name": "parser_version",
+                "type": "string"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "chunks",
+            "present": true,
+            "readable": true,
+            "rows": 4,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "chunk_index",
+                "type": "int32"
+              },
+              {
+                "name": "text",
+                "type": "string"
+              },
+              {
+                "name": "start_char",
+                "type": "int32"
+              },
+              {
+                "name": "end_char",
+                "type": "int32"
+              },
+              {
+                "name": "content_type",
+                "type": "string"
+              },
+              {
+                "name": "has_redaction",
+                "type": "bool"
+              },
+              {
+                "name": "page_start",
+                "type": "int32"
+              },
+              {
+                "name": "page_end",
+                "type": "int32"
+              },
+              {
+                "name": "elem_order",
+                "type": "int32"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "chunk_quality",
+            "present": true,
+            "readable": true,
+            "rows": 4,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "chunk_index",
+                "type": "int32"
+              },
+              {
+                "name": "content_type",
+                "type": "string"
+              },
+              {
+                "name": "char_len",
+                "type": "int32"
+              },
+              {
+                "name": "alpha_frac",
+                "type": "double"
+              },
+              {
+                "name": "is_short",
+                "type": "bool"
+              },
+              {
+                "name": "boilerplate_flag",
+                "type": "bool"
+              },
+              {
+                "name": "exact_dup_id",
+                "type": "int32"
+              },
+              {
+                "name": "near_dup_id",
+                "type": "int32"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "money_spans",
+            "present": true,
+            "readable": true,
+            "rows": 2,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "locus",
+                "type": "string"
+              },
+              {
+                "name": "text_source",
+                "type": "string"
+              },
+              {
+                "name": "start_char",
+                "type": "int32"
+              },
+              {
+                "name": "end_char",
+                "type": "int32"
+              },
+              {
+                "name": "page",
+                "type": "int32"
+              },
+              {
+                "name": "elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "parent_elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "sheet",
+                "type": "string"
+              },
+              {
+                "name": "row",
+                "type": "int32"
+              },
+              {
+                "name": "col",
+                "type": "int32"
+              },
+              {
+                "name": "text",
+                "type": "string"
+              },
+              {
+                "name": "value",
+                "type": "decimal128(38, 4)"
+              },
+              {
+                "name": "currency",
+                "type": "string"
+              },
+              {
+                "name": "currency_source",
+                "type": "string"
+              },
+              {
+                "name": "evidence",
+                "type": "string"
+              },
+              {
+                "name": "modifier",
+                "type": "string"
+              },
+              {
+                "name": "multiplier",
+                "type": "string"
+              },
+              {
+                "name": "negative",
+                "type": "bool"
+              },
+              {
+                "name": "confidence",
+                "type": "float"
+              },
+              {
+                "name": "range_group",
+                "type": "int32"
+              },
+              {
+                "name": "range_role",
+                "type": "string"
+              },
+              {
+                "name": "column_id",
+                "type": "string"
+              },
+              {
+                "name": "context",
+                "type": "string"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "money_columns",
+            "present": true,
+            "readable": true,
+            "rows": 0,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "column_id",
+                "type": "string"
+              },
+              {
+                "name": "locus",
+                "type": "string"
+              },
+              {
+                "name": "parent_elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "sheet",
+                "type": "string"
+              },
+              {
+                "name": "col",
+                "type": "int32"
+              },
+              {
+                "name": "header_text",
+                "type": "string"
+              },
+              {
+                "name": "number_format",
+                "type": "string"
+              },
+              {
+                "name": "verdict",
+                "type": "string"
+              },
+              {
+                "name": "evidence",
+                "type": "string"
+              },
+              {
+                "name": "veto_term",
+                "type": "string"
+              },
+              {
+                "name": "currency",
+                "type": "string"
+              },
+              {
+                "name": "scale",
+                "type": "string"
+              },
+              {
+                "name": "numeric_fraction",
+                "type": "float"
+              },
+              {
+                "name": "null_fraction",
+                "type": "float"
+              },
+              {
+                "name": "confidence",
+                "type": "float"
+              },
+              {
+                "name": "cells_total",
+                "type": "int32"
+              },
+              {
+                "name": "cells_extracted",
+                "type": "int32"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "entities",
+            "present": true,
+            "readable": true,
+            "rows": 34,
+            "columns": [
+              {
+                "name": "document_id",
+                "type": "string"
+              },
+              {
+                "name": "entity_id",
+                "type": "string"
+              },
+              {
+                "name": "entity_label",
+                "type": "string"
+              },
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "entity_type",
+                "type": "string"
+              },
+              {
+                "name": "role",
+                "type": "string"
+              },
+              {
+                "name": "mention_start",
+                "type": "int32"
+              },
+              {
+                "name": "mention_end",
+                "type": "int32"
+              },
+              {
+                "name": "chunk_index",
+                "type": "int32"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "graph_edges",
+            "present": true,
+            "readable": true,
+            "rows": 156,
+            "columns": [
+              {
+                "name": "document_id",
+                "type": "string"
+              },
+              {
+                "name": "source_id",
+                "type": "string"
+              },
+              {
+                "name": "target_id",
+                "type": "string"
+              },
+              {
+                "name": "relation",
+                "type": "string"
+              },
+              {
+                "name": "prop_key",
+                "type": "string"
+              },
+              {
+                "name": "prop_value",
+                "type": "string"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "enrichment_meta",
+            "present": true,
+            "readable": true,
+            "rows": 1,
+            "columns": [
+              {
+                "name": "document_id",
+                "type": "string"
+              },
+              {
+                "name": "doc_type_enriched",
+                "type": "string"
+              },
+              {
+                "name": "jurisdiction",
+                "type": "string"
+              },
+              {
+                "name": "title",
+                "type": "string"
+              },
+              {
+                "name": "segment_count",
+                "type": "int32"
+              },
+              {
+                "name": "person_count",
+                "type": "int32"
+              },
+              {
+                "name": "location_count",
+                "type": "int32"
+              },
+              {
+                "name": "term_count",
+                "type": "int32"
+              },
+              {
+                "name": "external_doc_count",
+                "type": "int32"
+              },
+              {
+                "name": "date_count",
+                "type": "int32"
+              },
+              {
+                "name": "heading_count",
+                "type": "int32"
+              },
+              {
+                "name": "junk_span_count",
+                "type": "int32"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "embeddings",
+            "present": true,
+            "readable": false,
+            "rows": null,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          }
+        ]
+      }
+    ]
+  },
+  "document": {
+    "corpusId": "throsby",
+    "runId": "run-throsby-demo",
+    "documentId": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+    "documents": 1,
+    "runs": [
+      {
+        "runId": "run-throsby-demo",
+        "versioned": true,
+        "documents": 1,
+        "assets": [
+          {
+            "name": "elements",
+            "present": true,
+            "readable": true,
+            "rows": 24,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "collection_id",
+                "type": "string"
+              },
+              {
+                "name": "elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "kind",
+                "type": "string"
+              },
+              {
+                "name": "extractor",
+                "type": "string"
+              },
+              {
+                "name": "confidence",
+                "type": "float"
+              },
+              {
+                "name": "page",
+                "type": "int32"
+              },
+              {
+                "name": "bbox",
+                "type": "struct<x: float, y: float, width: float, height: float>"
+              },
+              {
+                "name": "text",
+                "type": "string"
+              },
+              {
+                "name": "alt_text",
+                "type": "string"
+              },
+              {
+                "name": "header_rows",
+                "type": "list<element: int32>"
+              },
+              {
+                "name": "sheet",
+                "type": "string"
+              },
+              {
+                "name": "row",
+                "type": "int32"
+              },
+              {
+                "name": "col",
+                "type": "int32"
+              },
+              {
+                "name": "value",
+                "type": "string"
+              },
+              {
+                "name": "value_type",
+                "type": "string"
+              },
+              {
+                "name": "formula",
+                "type": "string"
+              },
+              {
+                "name": "number_format",
+                "type": "string"
+              },
+              {
+                "name": "merge_range",
+                "type": "string"
+              },
+              {
+                "name": "meta",
+                "type": "map<string, string ('meta')>"
+              }
+            ],
+            "values": {
+              "kind": {
+                "counts": [
+                  {
+                    "value": "paragraph",
+                    "rows": 15
+                  },
+                  {
+                    "value": "heading",
+                    "rows": 2
+                  },
+                  {
+                    "value": "list_item",
+                    "rows": 2
+                  },
+                  {
+                    "value": "page_break",
+                    "rows": 2
+                  },
+                  {
+                    "value": "footer",
+                    "rows": 1
+                  },
+                  {
+                    "value": "form",
+                    "rows": 1
+                  },
+                  {
+                    "value": "image",
+                    "rows": 1
+                  }
+                ],
+                "distinct": 7,
+                "truncated": false
+              },
+              "extractor": {
+                "counts": [
+                  {
+                    "value": "native_text",
+                    "rows": 20
+                  },
+                  {
+                    "value": "orchestrator",
+                    "rows": 2
+                  },
+                  {
+                    "value": "figure_image",
+                    "rows": 1
+                  },
+                  {
+                    "value": "form",
+                    "rows": 1
+                  }
+                ],
+                "distinct": 4,
+                "truncated": false
+              }
+            },
+            "ranges": {
+              "page": {
+                "min": 0,
+                "max": 2
+              }
+            }
+          },
+          {
+            "name": "table_cells",
+            "present": true,
+            "readable": true,
+            "rows": 0,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "parent_elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "row",
+                "type": "int32"
+              },
+              {
+                "name": "col",
+                "type": "int32"
+              },
+              {
+                "name": "value",
+                "type": "string"
+              },
+              {
+                "name": "rowspan",
+                "type": "int32"
+              },
+              {
+                "name": "colspan",
+                "type": "int32"
+              },
+              {
+                "name": "value_type",
+                "type": "string"
+              }
+            ],
+            "values": {
+              "parent_elem_order": {
+                "counts": [],
+                "distinct": 0,
+                "truncated": false
+              }
+            },
+            "ranges": {}
+          },
+          {
+            "name": "form_fields",
+            "present": true,
+            "readable": true,
+            "rows": 2,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "parent_elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "field_index",
+                "type": "int32"
+              },
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "value",
+                "type": "string"
+              },
+              {
+                "name": "field_type",
+                "type": "string"
+              }
+            ],
+            "values": {
+              "field_type": {
+                "counts": [
+                  {
+                    "value": "text",
+                    "rows": 2
+                  }
+                ],
+                "distinct": 1,
+                "truncated": false
+              }
+            },
+            "ranges": {}
+          },
+          {
+            "name": "manifest",
+            "present": true,
+            "readable": true,
+            "rows": 1,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "collection_id",
+                "type": "string"
+              },
+              {
+                "name": "doc_id",
+                "type": "string"
+              },
+              {
+                "name": "filename",
+                "type": "string"
+              },
+              {
+                "name": "ext",
+                "type": "string"
+              },
+              {
+                "name": "extraction_method",
+                "type": "string"
+              },
+              {
+                "name": "elements_count",
+                "type": "int64"
+              },
+              {
+                "name": "table_cells_count",
+                "type": "int64"
+              },
+              {
+                "name": "form_fields_count",
+                "type": "int64"
+              },
+              {
+                "name": "status",
+                "type": "string"
+              },
+              {
+                "name": "error",
+                "type": "string"
+              },
+              {
+                "name": "extracted_at_iso",
+                "type": "string"
+              },
+              {
+                "name": "parser_version",
+                "type": "string"
+              }
+            ],
+            "values": {
+              "status": {
+                "counts": [
+                  {
+                    "value": "completed",
+                    "rows": 1
+                  }
+                ],
+                "distinct": 1,
+                "truncated": false
+              },
+              "ext": {
+                "counts": [
+                  {
+                    "value": ".pdf",
+                    "rows": 1
+                  }
+                ],
+                "distinct": 1,
+                "truncated": false
+              },
+              "extraction_method": {
+                "counts": [
+                  {
+                    "value": "native_with_structured",
+                    "rows": 1
+                  }
+                ],
+                "distinct": 1,
+                "truncated": false
+              }
+            },
+            "ranges": {}
+          },
+          {
+            "name": "chunks",
+            "present": true,
+            "readable": true,
+            "rows": 4,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "chunk_index",
+                "type": "int32"
+              },
+              {
+                "name": "text",
+                "type": "string"
+              },
+              {
+                "name": "start_char",
+                "type": "int32"
+              },
+              {
+                "name": "end_char",
+                "type": "int32"
+              },
+              {
+                "name": "content_type",
+                "type": "string"
+              },
+              {
+                "name": "has_redaction",
+                "type": "bool"
+              },
+              {
+                "name": "page_start",
+                "type": "int32"
+              },
+              {
+                "name": "page_end",
+                "type": "int32"
+              },
+              {
+                "name": "elem_order",
+                "type": "int32"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "chunk_quality",
+            "present": true,
+            "readable": true,
+            "rows": 4,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "chunk_index",
+                "type": "int32"
+              },
+              {
+                "name": "content_type",
+                "type": "string"
+              },
+              {
+                "name": "char_len",
+                "type": "int32"
+              },
+              {
+                "name": "alpha_frac",
+                "type": "double"
+              },
+              {
+                "name": "is_short",
+                "type": "bool"
+              },
+              {
+                "name": "boilerplate_flag",
+                "type": "bool"
+              },
+              {
+                "name": "exact_dup_id",
+                "type": "int32"
+              },
+              {
+                "name": "near_dup_id",
+                "type": "int32"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "money_spans",
+            "present": true,
+            "readable": true,
+            "rows": 2,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "locus",
+                "type": "string"
+              },
+              {
+                "name": "text_source",
+                "type": "string"
+              },
+              {
+                "name": "start_char",
+                "type": "int32"
+              },
+              {
+                "name": "end_char",
+                "type": "int32"
+              },
+              {
+                "name": "page",
+                "type": "int32"
+              },
+              {
+                "name": "elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "parent_elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "sheet",
+                "type": "string"
+              },
+              {
+                "name": "row",
+                "type": "int32"
+              },
+              {
+                "name": "col",
+                "type": "int32"
+              },
+              {
+                "name": "text",
+                "type": "string"
+              },
+              {
+                "name": "value",
+                "type": "decimal128(38, 4)"
+              },
+              {
+                "name": "currency",
+                "type": "string"
+              },
+              {
+                "name": "currency_source",
+                "type": "string"
+              },
+              {
+                "name": "evidence",
+                "type": "string"
+              },
+              {
+                "name": "modifier",
+                "type": "string"
+              },
+              {
+                "name": "multiplier",
+                "type": "string"
+              },
+              {
+                "name": "negative",
+                "type": "bool"
+              },
+              {
+                "name": "confidence",
+                "type": "float"
+              },
+              {
+                "name": "range_group",
+                "type": "int32"
+              },
+              {
+                "name": "range_role",
+                "type": "string"
+              },
+              {
+                "name": "column_id",
+                "type": "string"
+              },
+              {
+                "name": "context",
+                "type": "string"
+              }
+            ],
+            "values": {
+              "locus": {
+                "counts": [
+                  {
+                    "value": "narrative",
+                    "rows": 2
+                  }
+                ],
+                "distinct": 1,
+                "truncated": false
+              },
+              "currency": {
+                "counts": [
+                  {
+                    "value": "AUD",
+                    "rows": 2
+                  }
+                ],
+                "distinct": 1,
+                "truncated": false
+              },
+              "evidence": {
+                "counts": [
+                  {
+                    "value": "p1",
+                    "rows": 2
+                  }
+                ],
+                "distinct": 1,
+                "truncated": false
+              }
+            },
+            "ranges": {
+              "page": {
+                "min": 1,
+                "max": 1
+              }
+            }
+          },
+          {
+            "name": "money_columns",
+            "present": true,
+            "readable": true,
+            "rows": 0,
+            "columns": [
+              {
+                "name": "source_hash",
+                "type": "string"
+              },
+              {
+                "name": "column_id",
+                "type": "string"
+              },
+              {
+                "name": "locus",
+                "type": "string"
+              },
+              {
+                "name": "parent_elem_order",
+                "type": "int32"
+              },
+              {
+                "name": "sheet",
+                "type": "string"
+              },
+              {
+                "name": "col",
+                "type": "int32"
+              },
+              {
+                "name": "header_text",
+                "type": "string"
+              },
+              {
+                "name": "number_format",
+                "type": "string"
+              },
+              {
+                "name": "verdict",
+                "type": "string"
+              },
+              {
+                "name": "evidence",
+                "type": "string"
+              },
+              {
+                "name": "veto_term",
+                "type": "string"
+              },
+              {
+                "name": "currency",
+                "type": "string"
+              },
+              {
+                "name": "scale",
+                "type": "string"
+              },
+              {
+                "name": "numeric_fraction",
+                "type": "float"
+              },
+              {
+                "name": "null_fraction",
+                "type": "float"
+              },
+              {
+                "name": "confidence",
+                "type": "float"
+              },
+              {
+                "name": "cells_total",
+                "type": "int32"
+              },
+              {
+                "name": "cells_extracted",
+                "type": "int32"
+              }
+            ],
+            "values": {},
+            "ranges": {}
+          },
+          {
+            "name": "entities",
+            "present": true,
+            "readable": true,
+            "rows": 34,
+            "columns": [
+              {
+                "name": "document_id",
+                "type": "string"
+              },
+              {
+                "name": "entity_id",
+                "type": "string"
+              },
+              {
+                "name": "entity_label",
+                "type": "string"
+              },
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "entity_type",
+                "type": "string"
+              },
+              {
+                "name": "role",
+                "type": "string"
+              },
+              {
+                "name": "mention_start",
+                "type": "int32"
+              },
+              {
+                "name": "mention_end",
+                "type": "int32"
+              },
+              {
+                "name": "chunk_index",
+                "type": "int32"
+              }
+            ],
+            "values": {
+              "entity_label": {
+                "counts": [
+                  {
+                    "value": "term",
+                    "rows": 23
+                  },
+                  {
+                    "value": "person",
+                    "rows": 6
+                  },
+                  {
+                    "value": "external_document",
+                    "rows": 3
+                  },
+                  {
+                    "value": "location",
+                    "rows": 2
+                  }
+                ],
+                "distinct": 4,
+                "truncated": false
+              },
+              "entity_type": {
+                "counts": [
+                  {
+                    "value": "",
+                    "rows": 23
+                  },
+                  {
+                    "value": "politic",
+                    "rows": 3
+                  },
+                  {
+                    "value": "corporate",
+                    "rows": 2
+                  },
+                  {
+                    "value": "statute",
+                    "rows": 2
+                  },
+                  {
+                    "value": "address",
+                    "rows": 1
+                  },
+                  {
+                    "value": "natural",
+                    "rows": 1
+                  },
+                  {
+                    "value": "regulation",
+                    "rows": 1
+                  },
+                  {
+                    "value": "state",
+                    "rows": 1
+                  }
+                ],
+                "distinct": 8,
+                "truncated": false
+              }
+            },
+            "ranges": {}
+          },
+          {
+            "name": "graph_edges",
+            "present": true,
+            "readable": true,
+            "rows": 156,
+            "columns": [
+              {
+                "name": "document_id",
+                "type": "string"
+              },
+              {
+                "name": "source_id",
+                "type": "string"
+              },
+              {
+                "name": "target_id",
+                "type": "string"
+              },
+              {
+                "name": "relation",
+                "type": "string"
+              },
+              {
+                "name": "prop_key",
+                "type": "string"
+              },
+              {
+                "name": "prop_value",
+                "type": "string"
+              }
+            ],
+            "values": {
+              "relation": {
+                "counts": [
+                  {
+                    "value": "mentioned_in",
+                    "rows": 74
+                  },
+                  {
+                    "value": "spans_chunk",
+                    "rows": 34
+                  },
+                  {
+                    "value": "parent_of",
+                    "rows": 28
+                  },
+                  {
+                    "value": "contains",
+                    "rows": 10
+                  },
+                  {
+                    "value": "cites",
+                    "rows": 3
+                  },
+                  {
+                    "value": "has_website",
+                    "rows": 3
+                  },
+                  {
+                    "value": "resides_at",
+                    "rows": 2
+                  },
+                  {
+                    "value": "date_creation",
+                    "rows": 1
+                  },
+                  {
+                    "value": "has_email",
+                    "rows": 1
+                  }
+                ],
+                "distinct": 9,
+                "truncated": false
+              }
+            },
+            "ranges": {}
+          },
+          {
+            "name": "enrichment_meta",
+            "present": true,
+            "readable": true,
+            "rows": 1,
+            "columns": [
+              {
+                "name": "document_id",
+                "type": "string"
+              },
+              {
+                "name": "doc_type_enriched",
+                "type": "string"
+              },
+              {
+                "name": "jurisdiction",
+                "type": "string"
+              },
+              {
+                "name": "title",
+                "type": "string"
+              },
+              {
+                "name": "segment_count",
+                "type": "int32"
+              },
+              {
+                "name": "person_count",
+                "type": "int32"
+              },
+              {
+                "name": "location_count",
+                "type": "int32"
+              },
+              {
+                "name": "term_count",
+                "type": "int32"
+              },
+              {
+                "name": "external_doc_count",
+                "type": "int32"
+              },
+              {
+                "name": "date_count",
+                "type": "int32"
+              },
+              {
+                "name": "heading_count",
+                "type": "int32"
+              },
+              {
+                "name": "junk_span_count",
+                "type": "int32"
+              }
+            ],
+            "values": {
+              "doc_type_enriched": {
+                "counts": [
+                  {
+                    "value": "other",
+                    "rows": 1
+                  }
+                ],
+                "distinct": 1,
+                "truncated": false
+              },
+              "jurisdiction": {
+                "counts": [
+                  {
+                    "value": "AU-VIC",
+                    "rows": 1
+                  }
+                ],
+                "distinct": 1,
+                "truncated": false
+              }
+            },
+            "ranges": {}
+          },
+          {
+            "name": "embeddings",
+            "present": true,
+            "readable": false,
+            "rows": null,
+            "columns": [],
+            "values": {},
+            "ranges": {}
+          }
+        ]
+      }
+    ]
+  }
+}

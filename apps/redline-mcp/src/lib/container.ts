@@ -1,4 +1,4 @@
-import { WomblexAssetReader } from "@redline/redline-adapters";
+import { WomblexAssetReader, WomblexShapeReader } from "@redline/redline-adapters";
 import { domainError, err, ok, type Result } from "@redline/redline-domain";
 import type { ReportToolDependencies } from "./report-tools";
 
@@ -64,13 +64,18 @@ export interface ReportToolContainer {
   readonly dependencies: ReportToolDependencies;
 }
 
-// The sidecar's run-scoped shard seam. `fetch` is bound here rather than assumed
-// inside the adapter, which keeps the adapter testable without a global.
+// The sidecar's two read seams: the run-scoped shard route, verbatim, and the
+// shape routes that size it. `fetch` is bound here rather than assumed inside the
+// adapters, which keeps them testable without a global.
 export const buildReportToolContainer = (
   configuration: ServerConfiguration,
 ): ReportToolContainer => ({
   dependencies: {
     assetReader: new WomblexAssetReader({
+      baseUrl: configuration.womblexIngestUrl,
+      httpClient: (url) => fetch(url),
+    }),
+    shapeReader: new WomblexShapeReader({
       baseUrl: configuration.womblexIngestUrl,
       httpClient: (url) => fetch(url),
     }),

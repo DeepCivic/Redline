@@ -126,16 +126,25 @@ relative imports only, enforced by `validate.sh` #4 and ESLint.
 
 - `result.ts` — the Result pattern (`{ data } | { error }`), `ok`/`err`/`isOk`/`isErr`
 - `errors/domain-error.ts` — the error taxonomy
-- `ports/womblex-asset-reader.ts` — `IWomblexAssetReader`, the one port:
+- `ports/womblex-shape-reader.ts` — `IWomblexShapeReader`, the derived read:
+  `readShape(request)` returning a `CorpusShape` of counts, tallies and bounds for
+  a corpus, a run or one document. The one port whose values redline computes
+  rather than carries, kept separate so a derived number is never mistaken for a
+  column womblex wrote.
+- `ports/womblex-asset-reader.ts` — `IWomblexAssetReader`, the verbatim port:
   `readShard(request)`, returning a `ShardPage` of Womblex's own columns verbatim
   (`ShardColumn`, `ShardRow`), scoped to one corpus + run + asset with an optional
   document and `limit`/`offset`.
 
-**`packages/redline-adapters`** — one adapter, `WomblexAssetReader`, over the
-sidecar's run-scoped shard route (`GET /runs/{corpus}/{run}/shards/{asset}`), with
+**`packages/redline-adapters`** — two adapters over the sidecar. `WomblexAssetReader`
+serves the run-scoped shard route (`GET /runs/{corpus}/{run}/shards/{asset}`), with
 a hand-rolled wire validator (`wire.ts`) that trusts row *contents* verbatim and
-checks only the page envelope. Its fixture (`__fixtures__/shard-pages.json`) is a
-real capture of that route against the throsby-demo run.
+checks only the page envelope. `WomblexShapeReader` serves the shape routes, with
+`shape-wire.ts` validating the body **in full** — every field there is derived, so
+there is no verbatim payload to leave untouched and a malformed count is a wrong
+answer rather than an unrecognised one. Both fixtures
+(`__fixtures__/shard-pages.json`, `__fixtures__/corpus-shape.json`) are real
+captures of those routes against the throsby-demo run.
 
 ### Apps
 
@@ -156,7 +165,16 @@ verbatim, defaults to a page of `DEFAULT_TOOL_LIMIT` (500) rows with `limit`/`of
 pass-through, and reports `returned` / `available` / `truncated` straight from the
 sidecar page.
 
-**`list_documents`** is the navigation entry point above them, and the only tool
+**`discover_corpus_shape`** is the call a client makes first, and the only tool
+that returns derived values. Three scopes by narrowing: `corpusId` alone lists the
+runs and their per-asset row counts; `+ runId` adds columns; `+ documentId` adds
+that document's counts, its `kind` tallies and its printed page range. It refuses a
+`documentId` without a `runId` — a document is sized within the run that produced
+it. Every payload carries a `derived` notice saying its numbers are redline's
+arithmetic over row metadata and are to size a read, never to cite. Runs are never
+merged, and no scope returns a row of document body.
+
+**`list_documents`** is the navigation entry point above the reads, and the only tool
 called against a whole run rather than one document. It reads `manifest`,
 `enrichment_meta` and `entities` — the three shards carrying no document body —
 and returns each document's manifest columns verbatim at the top level, with
@@ -235,7 +253,7 @@ against assumptions the suite and the implementation share.
 purity; no focused tests; source file size; sidecar pytest; ruff. CI runs the same
 gate.
 
-Tests today: 61 TypeScript (2 domain, 10 adapters, 49 MCP) and 135 Python.
+Tests today: 84 TypeScript (4 domain, 20 adapters, 58 MCP + 2 container) and 136 Python.
 
 ---
 
@@ -247,26 +265,7 @@ tests-first, with an explicit exit test.
 The order below is deliberate: shape discovery comes first because every read
 after it is smaller and safer once a client can size a call before making it.
 
-### 1. `discover_corpus_shape` — the tool over it
-
-The MCP surface for the sidecar's shape read, and the call a client is told to make first. Three
-levels of narrowing: corpus (which runs exist, how big each is), run (per-asset
-row counts and columns), document (per-asset row counts plus the filter-value
-tallies that make the next retrieval single-shot).
-
-Counts are derived, so they sit under their own labelled keys and are never
-presented as extracted columns; the tallied *values* are verbatim column values.
-Runs are never merged — a corpus-scope answer reports each run separately, or its
-provenance keys stop identifying anything.
-
-This absorbs `get_schema`'s asset-columns scope: "what columns does this asset
-have" and "how big is it" are one question.
-
-_Exit: a protocol-level call answers all three scopes against the fixture corpus;
-the corpus scope lists two staged runs separately; no payload carries a row of
-document body._
-
-### 2. Column filters and a count mode on the read seam
+### 1. Column filters and a count mode on the read seam
 
 `read_shard` gains exact-match filters on declared columns and a count mode
 (`limit: 0` already returns `available` with no rows — this makes it addressable).
@@ -276,11 +275,11 @@ applied above the seam makes `available` count the wrong set.
 _Exit: a filtered read reports `available` against the filtered set, not the
 whole asset; a count mode returns counts with zero rows._
 
-### 3. `get_document_elements` — paginated verbatim retrieval
+### 2. `get_document_elements` — paginated verbatim retrieval
 
 One document's elements, verbatim, **strictly paginated** — default 20 rows /
 20,000 characters, ceiling 200 / 80,000 — filterable by element kind and by the
-document's printed page, over the seam filters from step 2.
+document's printed page, over the seam filters from step 1.
 
 Two parameters are deliberately distinct because Womblex's schema forces it:
 `ELEMENT_SCHEMA` has a real `page` column (the printed page the element appeared
@@ -305,7 +304,7 @@ _Exit: a document's elements come back 20 at a time, in `elem_order`, with
 filter each narrow the set; the last page reports `truncated: false`; a
 `text: null` element survives to the caller._
 
-### 4. `get_document_entities` — the graph, as navigation
+### 3. `get_document_entities` — the graph, as navigation
 
 One document's entities and graph edges, verbatim: `entity_id`, `entity_label`,
 `name`, `entity_type`, `role`, `mention_start`/`mention_end`, `chunk_index`, and
@@ -324,7 +323,7 @@ _Exit: entities and edges answer from the real fixture (34 and 156 rows), each
 entity carrying its chunk anchor; a run with no enrichment shards says so rather
 than returning empty._
 
-### 5. `get_verbatim_data` — exact bytes for one named thing
+### 4. `get_verbatim_data` — exact bytes for one named thing
 
 Exact bytes for a document plus an element, chunk or cell reference, echoing back
 the anchor it resolved. This is the end of every navigation path: the client has
@@ -333,7 +332,7 @@ narrowed to one passage and wants precisely it.
 _Exit: the returned text is byte-identical to the shard's value for each reference
 kind; an unresolvable reference is a `NOT_FOUND` error, never an empty string._
 
-### 6. `get_schema` — the two scopes that read values
+### 5. `get_schema` — the two scopes that read values
 
 **One extracted table's actual header row**, read verbatim from its cells, and a
 document's graph vocabulary (entity labels and relation names present). The
@@ -345,11 +344,11 @@ lets a client use the words the document actually uses instead of guessing them.
 _Exit: both scopes answer against the real fixture corpus; the table scope returns
 the header row's exact strings, not a normalised form._
 
-### 7. The remaining shard reads
+### 6. The remaining shard reads
 
 `list_runs`, `read_form_fields`, `read_money_spans`, `read_chunks` and
 `read_table_cells` over the asset-reader port, all paginated and document-scoped on
-the same terms as step 3, and all carrying §2's payload-shape rules. The
+the same terms as step 2, and all carrying §2's payload-shape rules. The
 `read_extraction_chunks` and `read_extraction_table_cells` tools, which still
 default to 500 rows, are deleted here.
 
@@ -361,7 +360,7 @@ redo.
 _Exit: every tool answers against the fixture corpus, ordering stable, paging
 honest._
 
-### 8. Retire the per-document read model
+### 7. Retire the per-document read model
 
 Once nothing calls it: `GET /extractions/...`, `records.py`'s DTOs,
 `shard_reader.py`'s mapping and `real_extractor.py`'s three-family read.
@@ -372,7 +371,7 @@ document's currency signal, when a tool needs one, belongs under a labelled
 
 _Exit: the route and its mapping are gone; the sidecar suite stays green._
 
-### 9. A second corpus
+### 8. A second corpus
 
 The fixture has **empty** `table_cells` and `money_columns`, two `money_spans` both
 narrative locus, one document and one run. So it cannot prove the table-cell or
@@ -405,7 +404,7 @@ and `elements` both carry `text`, so counting rows or taking a max over
 number. Aggregating in the sidecar is the answer, and it is cheaper than the note
 above assumed: Parquet keeps row counts in the footer and supports column
 projection, so a count needs no row decode and a page range reads one int column.
-That is done: `shape.py` is where these counts land, and `list_documents` can carry them once step 1 serves them.
+That is done: `shape.py` is where these counts land, and `discover_corpus_shape` serves them today.
 
 **Nothing checks the Womblex version.** The contract records v0.4.0. A corpus
 written by an older engine fails at the first missing column rather than at a
@@ -425,12 +424,12 @@ own `DEFAULT_LIMIT` of 500 as a transport guard below the boundary. The tools'
 current `DEFAULT_TOOL_LIMIT` of 500 is inherited from that transport default
 rather than chosen — measured against the real elements capture (mean 711 bytes a
 row) it is ~90k tokens in one call, and on a document with real paragraphs several
-times that. It is replaced tool by tool in steps 3 and 7; until then two reads
+times that. It is replaced tool by tool in steps 2 and 6; until then two reads
 still carry it.
 
 **How large a corpus has this been proven against?** One run, one document. Every
 cost claim above is measured, but measured small — the byte-per-row figures come
-from a 24-element FOI notice. Step 9 is what turns them into evidence.
+from a 24-element FOI notice. Step 8 is what turns them into evidence.
 
 ---
 

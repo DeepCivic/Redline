@@ -13,3 +13,9 @@ export * from "./errors/domain-error";
 // womblex-run-trigger ports were removed with their implementations — see
 // docs/Redline-Status.md for what replaces them.
 export * from "./ports/womblex-asset-reader";
+
+// The derived read beside it: how big a corpus, run or document is, so a client
+// can size a retrieval before making one. Aggregate metadata about rows, never
+// rows — kept on its own port so a derived value is never mistaken for a column
+// womblex wrote.
+export * from "./ports/womblex-shape-reader";

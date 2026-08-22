@@ -10,3 +10,7 @@ export {
   type HttpResponse,
   type WomblexAssetReaderOptions,
 } from "./womblex/womblex-asset-reader";
+export {
+  WomblexShapeReader,
+  type WomblexShapeReaderOptions,
+} from "./womblex/womblex-shape-reader";

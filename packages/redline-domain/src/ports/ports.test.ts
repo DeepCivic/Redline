@@ -5,6 +5,12 @@ import type {
   ShardPage,
   WomblexAssetRequest,
 } from "./womblex-asset-reader";
+import type {
+  AssetShape,
+  CorpusShape,
+  IWomblexShapeReader,
+  WomblexShapeRequest,
+} from "./womblex-shape-reader";
 
 // This fake proves the asset-reader port is implementable and shaped as its
 // adapter needs. It is the port's spec: verbatim womblex columns, honest paging.
@@ -76,5 +82,78 @@ describe("port conformance (in-memory fake)", () => {
     expect(first.data.truncated).toBe(true);
     expect(second.data.truncated).toBe(false);
     expect(first.data.rows[0]).not.toEqual(second.data.rows[0]);
+  });
+});
+
+// The shape port's spec: aggregate metadata about rows, never rows. A client
+// sizes a read through this before making one, so what it must carry is counts
+// per run, kept apart per run, and — at document scope — the tallies that let a
+// retrieval be narrowed instead of paged.
+
+class StubShapeReader implements IWomblexShapeReader {
+  async readShape(request: WomblexShapeRequest): Promise<Result<CorpusShape>> {
+    const elements: AssetShape = {
+      name: "elements",
+      present: true,
+      readable: true,
+      rows: 24,
+      columns: [{ name: "kind", type: "string" }],
+      values:
+        request.documentId === undefined
+          ? {}
+          : {
+              kind: {
+                counts: [
+                  { value: "paragraph", rows: 15 },
+                  { value: "heading", rows: 2 },
+                ],
+                distinct: 2,
+                truncated: false,
+              },
+            },
+      ranges: request.documentId === undefined ? {} : { page: { min: 0, max: 2 } },
+    };
+    return ok({
+      corpusId: request.corpusId,
+      runId: request.runId ?? null,
+      documentId: request.documentId ?? null,
+      documents: 1,
+      runs: [
+        { runId: "run-throsby-demo", versioned: true, documents: 1, assets: [elements] },
+      ],
+    });
+  }
+}
+
+describe("the womblex shape port", () => {
+  it("carries no row of document body — only counts and labels", async () => {
+    const reader: IWomblexShapeReader = new StubShapeReader();
+
+    const shape = await reader.readShape({ corpusId: "throsby" });
+
+    expect(isOk(shape)).toBe(true);
+    if (!isOk(shape)) return;
+    expect(JSON.stringify(shape.data)).not.toContain("text");
+    expect(shape.data.runs[0]!.assets[0]!.rows).toBe(24);
+  });
+
+  it("tallies only at document scope, where the sizing question is asked", async () => {
+    const reader: IWomblexShapeReader = new StubShapeReader();
+
+    const run = await reader.readShape({ corpusId: "throsby", runId: "run-throsby-demo" });
+    const document = await reader.readShape({
+      corpusId: "throsby",
+      runId: "run-throsby-demo",
+      documentId: "hashA",
+    });
+
+    expect(isOk(run) && isOk(document)).toBe(true);
+    if (!isOk(run) || !isOk(document)) return;
+    expect(run.data.runs[0]!.assets[0]!.values).toEqual({});
+    expect(document.data.runs[0]!.assets[0]!.values.kind!.counts[0]).toEqual({
+      value: "paragraph",
+      rows: 15,
+    });
+    expect(document.data.runs[0]!.assets[0]!.ranges.page).toEqual({ min: 0, max: 2 });
   });
 });

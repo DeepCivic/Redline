@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { WomblexAssetReader, type HttpResponse } from "@redline/redline-adapters";
+import {
+  WomblexAssetReader,
+  WomblexShapeReader,
+  type HttpResponse,
+} from "@redline/redline-adapters";
 import { startReportMcpHttpServer, type RunningReportMcpHttpServer } from "./mcp-server";
 import type { ReportToolDependencies } from "./report-tools";
 
@@ -74,6 +78,101 @@ const shardPages: Record<string, unknown> = {
   },
 };
 
+// The sidecar's shape routes. Two runs under one corpus, the older one holding
+// extraction only, so the corpus scope has runs of different shape to keep apart.
+const elementsShape = (rows: number, tallied: boolean) => ({
+  name: "elements",
+  present: true,
+  readable: true,
+  rows,
+  columns: [{ name: "kind", type: "string" }],
+  values: tallied
+    ? {
+        kind: {
+          counts: [
+            { value: "paragraph", rows: 15 },
+            { value: "heading", rows: 2 },
+          ],
+          distinct: 7,
+          truncated: false,
+        },
+      }
+    : {},
+  ranges: tallied ? { page: { min: 0, max: 2 } } : {},
+});
+
+const entitiesShape = (present: boolean) => ({
+  name: "entities",
+  present,
+  readable: true,
+  rows: present ? 34 : 0,
+  columns: [],
+  values: {},
+  ranges: {},
+});
+
+const shapeBodies: Record<string, unknown> = {
+  corpus: {
+    corpusId: CORPUS_ID,
+    runId: null,
+    documentId: null,
+    documents: 2,
+    runs: [
+      {
+        runId: RUN_ID,
+        versioned: true,
+        documents: 1,
+        assets: [elementsShape(24, false), entitiesShape(true)],
+      },
+      {
+        runId: "run-20260101T000000Z",
+        versioned: true,
+        documents: 1,
+        assets: [elementsShape(24, false), entitiesShape(false)],
+      },
+    ],
+  },
+  run: {
+    corpusId: CORPUS_ID,
+    runId: RUN_ID,
+    documentId: null,
+    documents: 1,
+    runs: [
+      {
+        runId: RUN_ID,
+        versioned: true,
+        documents: 1,
+        assets: [elementsShape(24, false), entitiesShape(true)],
+      },
+    ],
+  },
+  document: {
+    corpusId: CORPUS_ID,
+    runId: RUN_ID,
+    documentId: DOCUMENT_ID,
+    documents: 1,
+    runs: [
+      {
+        runId: RUN_ID,
+        versioned: true,
+        documents: 1,
+        assets: [elementsShape(24, true), entitiesShape(true)],
+      },
+    ],
+  },
+};
+
+const shapeScopeFromUrl = (url: string): string => {
+  if (url.includes("documentId=")) return "document";
+  return /\/runs\/[^/]+\/[^/]+\/shape/.test(url) ? "run" : "corpus";
+};
+
+const shapeHttpClient = async (url: string): Promise<HttpResponse> => ({
+  ok: true,
+  status: 200,
+  json: async () => shapeBodies[shapeScopeFromUrl(url)],
+});
+
 const assetFromUrl = (url: string): string | null => {
   const match = url.match(/\/shards\/([^?]+)/);
   return match ? decodeURIComponent(match[1]!) : null;
@@ -112,6 +211,10 @@ beforeAll(async () => {
       baseUrl: "http://womblex-ingest.invalid",
       httpClient: shardHttpClient,
     }),
+    shapeReader: new WomblexShapeReader({
+      baseUrl: "http://womblex-ingest.invalid",
+      httpClient: shapeHttpClient,
+    }),
   };
 
   server = await startReportMcpHttpServer({ port: 0, host: "127.0.0.1", dependencies });
@@ -129,6 +232,7 @@ describe("an MCP client over streamable HTTP", () => {
     await client.close();
 
     expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
+      "discover_corpus_shape",
       "list_documents",
       "read_extraction_chunks",
       "read_extraction_elements",
@@ -210,7 +314,64 @@ describe("an MCP client over streamable HTTP", () => {
 
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain("NOT_FOUND");
-    expect(stillWorks.tools).toHaveLength(4);
+    expect(stillWorks.tools).toHaveLength(5);
+  });
+
+  // The shape tool's exit test, over the protocol: three scopes by narrowing, runs
+  // kept apart, and not a row of document body in any of them.
+  it("sizes a corpus, a run and a document, and keeps the runs apart", async () => {
+    const client = await connectClient();
+
+    const corpus = await client.callTool({
+      name: "discover_corpus_shape",
+      arguments: { corpusId: CORPUS_ID },
+    });
+    const run = await client.callTool({
+      name: "discover_corpus_shape",
+      arguments: { corpusId: CORPUS_ID, runId: RUN_ID },
+    });
+    const document = await client.callTool({
+      name: "discover_corpus_shape",
+      arguments: { corpusId: CORPUS_ID, runId: RUN_ID, documentId: DOCUMENT_ID },
+    });
+    await client.close();
+
+    const runsOf = (result: Awaited<ReturnType<Client["callTool"]>>) =>
+      payloadOf(result).runs as { runId: string; assets: Record<string, unknown>[] }[];
+
+    expect(runsOf(corpus).map((entry) => entry.runId)).toEqual([
+      RUN_ID,
+      "run-20260101T000000Z",
+    ]);
+    expect(runsOf(run)).toHaveLength(1);
+    expect(runsOf(run)[0]!.assets[0]!.rows).toBe(24);
+
+    const elements = runsOf(document)[0]!.assets[0] as {
+      values: Record<string, { counts: { value: unknown; rows: number }[] }>;
+      ranges: Record<string, unknown>;
+    };
+    expect(elements.values.kind!.counts[0]).toEqual({ value: "paragraph", rows: 15 });
+    expect(elements.ranges.page).toEqual({ min: 0, max: 2 });
+
+    // The one property that makes this tool safe to call first: it is metadata,
+    // whatever the scope. The fixture's own element text must appear in none of it.
+    for (const result of [corpus, run, document]) {
+      expect(textOf(result)).not.toContain("Schedule 3");
+      expect(textOf(result)).not.toContain(VERBATIM_TEXT.trim());
+    }
+  });
+
+  it("refuses to size a document without the run that produced it", async () => {
+    const client = await connectClient();
+
+    const result = await client.callTool({
+      name: "discover_corpus_shape",
+      arguments: { corpusId: CORPUS_ID, documentId: DOCUMENT_ID },
+    });
+    await client.close();
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("runId");
   });
 
   it("rejects a malformed call with a validation error, not a crash", async () => {
