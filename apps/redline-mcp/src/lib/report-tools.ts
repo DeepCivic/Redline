@@ -6,6 +6,7 @@ import {
   type IWomblexAssetReader,
   type Result,
   type ShardPage,
+  type ShardRow,
 } from "@redline/redline-domain";
 import { z } from "zod";
 
@@ -50,6 +51,23 @@ export interface ReportTool {
 // mistake to make silently.
 export const DEFAULT_TOOL_LIMIT = 500;
 
+// The document list is navigation, so it pages in documents rather than rows. A
+// client scans, narrows, then retrieves; it does not need the whole run at once.
+export const DEFAULT_DOCUMENT_LIMIT = 25;
+
+// Entity names are an unbounded list in their own right — one small document in the
+// throsby fixture carries 34 entity rows — so they are capped per document,
+// separately from the document page, and carry their own counts. Distinct names run
+// well below the row count (12 for that document), so the cap is sized against a
+// wide run, not against what one document happens to mention.
+export const DEFAULT_ENTITY_NAME_LIMIT = 20;
+
+// The seam serves every matching row under a negative limit. list_documents filters
+// and pages above the seam, so it has to see the run's whole metadata set before it
+// can say honestly what it withheld. Only the metadata shards are read this way —
+// none of them carries document body.
+const WHOLE_ASSET = -1;
+
 const CORPUS_ID = z
   .string()
   .min(1)
@@ -75,6 +93,9 @@ const OFFSET = z
   .min(0)
   .optional()
   .describe("Rows to skip — the page cursor, distinct from any page column a shard carries.");
+
+const EXACT_MATCH = (column: string) =>
+  z.string().min(1).optional().describe(`Exact match on \`${column}\`. Not a text search.`);
 
 const describeIssues = (error: z.ZodError): string =>
   error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
@@ -147,6 +168,168 @@ const defineTool = <Shape extends z.ZodRawShape>(spec: ToolSpec<Shape>): ReportT
   },
 });
 
+
+// The two identity spellings carry the same value: the enrichment and graph shards
+// key on `document_id`, every other family on `source_hash`. Read both, so a join
+// does not silently return nothing on a corpus that uses the other spelling.
+const identityOf = (row: ShardRow): string | undefined => {
+  const identity = row.document_id ?? row.source_hash;
+  return typeof identity === "string" ? identity : undefined;
+};
+
+const groupByDocument = (rows: readonly ShardRow[]): Map<string, ShardRow[]> => {
+  const grouped = new Map<string, ShardRow[]>();
+  for (const row of rows) {
+    const identity = identityOf(row);
+    if (identity === undefined) continue;
+    const existing = grouped.get(identity);
+    if (existing) existing.push(row);
+    else grouped.set(identity, [row]);
+  }
+  return grouped;
+};
+
+const distinctNames = (rows: readonly ShardRow[]): string[] => {
+  const names = rows.map((row) => row.name).filter((name): name is string => typeof name === "string");
+  return [...new Set(names)];
+};
+
+// Only the three enrichment columns this tool serves, verbatim. The rest of
+// ENRICHMENT_META_SCHEMA (the per-label counts) is not part of the document list.
+const enrichmentOf = (row: ShardRow | undefined): Record<string, unknown> | null => {
+  if (row === undefined) return null;
+  return {
+    title: row.title,
+    doc_type_enriched: row.doc_type_enriched,
+    jurisdiction: row.jurisdiction,
+  };
+};
+
+interface DocumentSummary {
+  readonly manifest: ShardRow;
+  readonly enrichment: Record<string, unknown> | null;
+  readonly entityNames: readonly string[];
+}
+
+interface ListDocumentsArgs {
+  readonly corpusId: string;
+  readonly runId: string;
+  readonly limit?: number;
+  readonly offset?: number;
+  readonly status?: string;
+  readonly ext?: string;
+  readonly docTypeEnriched?: string;
+  readonly jurisdiction?: string;
+  readonly entityName?: string;
+}
+
+const matchesFilters = (summary: DocumentSummary, args: ListDocumentsArgs): boolean => {
+  if (args.status !== undefined && summary.manifest.status !== args.status) return false;
+  if (args.ext !== undefined && summary.manifest.ext !== args.ext) return false;
+  if (args.jurisdiction !== undefined && summary.enrichment?.jurisdiction !== args.jurisdiction) {
+    return false;
+  }
+  if (
+    args.docTypeEnriched !== undefined &&
+    summary.enrichment?.doc_type_enriched !== args.docTypeEnriched
+  ) {
+    return false;
+  }
+  // Matched against the document's full distinct set, before the cap below, so a
+  // capped list can never hide a document that actually matched.
+  return args.entityName === undefined || summary.entityNames.includes(args.entityName);
+};
+
+const asPayloadDocument = (summary: DocumentSummary): Record<string, unknown> => {
+  const names = summary.entityNames.slice(0, DEFAULT_ENTITY_NAME_LIMIT);
+  return {
+    ...summary.manifest,
+    enrichment: summary.enrichment,
+    entity_names: {
+      names,
+      returned: names.length,
+      available: summary.entityNames.length,
+      truncated: names.length < summary.entityNames.length,
+    },
+  };
+};
+
+const listDocuments = async (
+  reader: IWomblexAssetReader,
+  args: ListDocumentsArgs,
+): Promise<Result<ReportToolPayload>> => {
+  const wholeAsset = (asset: string) =>
+    reader.readShard({ corpusId: args.corpusId, runId: args.runId, asset, limit: WHOLE_ASSET });
+
+  const [manifest, enrichment, entities] = await Promise.all([
+    wholeAsset("manifest"),
+    wholeAsset("enrichment_meta"),
+    wholeAsset("entities"),
+  ]);
+  if (isErr(manifest)) return manifest;
+  if (isErr(enrichment)) return enrichment;
+  if (isErr(entities)) return entities;
+
+  const enrichmentByDocument = groupByDocument(enrichment.data.rows);
+  const entitiesByDocument = groupByDocument(entities.data.rows);
+  // A manifest row carrying neither identity spelling joins to nothing rather than
+  // to every other such row: an empty key would pool them together.
+  const summaries = manifest.data.rows.map((row) => {
+    const identity = identityOf(row);
+    if (identity === undefined) return { manifest: row, enrichment: null, entityNames: [] };
+    return {
+      manifest: row,
+      enrichment: enrichmentOf(enrichmentByDocument.get(identity)?.[0]),
+      entityNames: distinctNames(entitiesByDocument.get(identity) ?? []),
+    };
+  });
+
+  const matching = summaries.filter((summary) => matchesFilters(summary, args));
+  const offset = args.offset ?? 0;
+  const window = matching.slice(offset, offset + (args.limit ?? DEFAULT_DOCUMENT_LIMIT));
+  return ok({
+    corpusId: args.corpusId,
+    runId: manifest.data.runId,
+    asset: "manifest",
+    returned: window.length,
+    // enrichment_meta and entities are joined onto the manifest, never appended to
+    // it: the document count is the manifest's, whatever the other two hold.
+
+    available: matching.length,
+    truncated: offset + window.length < matching.length,
+    documents: window.map(asPayloadDocument),
+  });
+};
+
+const navigationTools = (dependencies: ReportToolDependencies): readonly ReportTool[] => [
+  defineTool({
+    name: "list_documents",
+    title: "List a run's documents",
+    description:
+      "Every document in one womblex run, as metadata only — no document text at all. This is " +
+      "the entry point: it is how a client decides which documents are worth opening, without " +
+      "opening any of them. Each document carries the manifest's own columns verbatim " +
+      "(source_hash, doc_id, filename, ext, status and the element / table-cell / form-field " +
+      "counts), plus `enrichment` (title, doc_type_enriched, jurisdiction — null where the " +
+      "enrich stage did not run) and `entity_names`, the distinct entity names womblex " +
+      "extracted, capped with their own returned/available/truncated. Filtering is exact match " +
+      "on a metadata value; there is no text search over document bodies. Paginated in " +
+      `documents, defaulting to ${DEFAULT_DOCUMENT_LIMIT}.`,
+    inputShape: {
+      corpusId: CORPUS_ID,
+      runId: RUN_ID,
+      limit: LIMIT,
+      offset: OFFSET,
+      status: EXACT_MATCH("status"),
+      ext: EXACT_MATCH("ext"),
+      docTypeEnriched: EXACT_MATCH("doc_type_enriched"),
+      jurisdiction: EXACT_MATCH("jurisdiction"),
+      entityName: EXACT_MATCH("name"),
+    },
+    run: (args) => listDocuments(dependencies.assetReader, args),
+  }),
+];
+
 const extractionTools = (dependencies: ReportToolDependencies): readonly ReportTool[] => [
   defineTool({
     name: "read_extraction_elements",
@@ -184,5 +367,6 @@ const extractionTools = (dependencies: ReportToolDependencies): readonly ReportT
 ];
 
 export const buildReportTools = (dependencies: ReportToolDependencies): readonly ReportTool[] => [
+  ...navigationTools(dependencies),
   ...extractionTools(dependencies),
 ];

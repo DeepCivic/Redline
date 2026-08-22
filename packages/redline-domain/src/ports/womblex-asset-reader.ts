@@ -40,7 +40,10 @@ export interface ShardPage {
 // Addresses one page. `documentId` filters to one document across either identity
 // spelling (`source_hash` or `document_id`); omitting it reads the whole run.
 // `limit`/`offset` page the window and are the adapter's cursor — deliberately
-// distinct from any `page` column a shard happens to carry.
+// distinct from any `page` column a shard happens to carry. A negative `limit`
+// serves every matching row: a caller that filters or aggregates above this port
+// cannot page honestly until it has seen the whole set, and only the shards
+// carrying no document body are ever read that way.
 export interface WomblexAssetRequest {
   readonly corpusId: string;
   readonly runId: string;

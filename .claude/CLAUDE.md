@@ -31,7 +31,7 @@ run `./validate.sh` and fix all failures before declaring done.
 | Anything else                                                    | Answer directly |
 
 Planning new work is not its own skill: add or refine the item directly in
-`docs/Redline-Status.md` §3 against the build-step contract there — one build
+`docs/Redline-Status.md` §4 against the build-step contract there — one build
 step including its test, one commit, one package where possible, an explicit
 `_Exit: …_` test — then route to `/doc-review`. Split the item if its exit test
 joins two independently-testable behaviours, spans two languages, or introduces a
@@ -60,11 +60,14 @@ submodules** — neither neighbour is carried in this tree, and nothing here imp
 their source. What redline depends on from Womblex is its output *schema*, recorded
 in [`docs/Womblex-Output-Contract.md`](../docs/Womblex-Output-Contract.md).
 
-**The context window shapes the tool surface.** A corpus is hundreds of documents
-and no model holds them at once. Redline does navigation (choose what matters, from
-metadata alone) and retrieval (exact bytes for one narrow thing, in small pages).
-Accumulating findings across documents is the client's — redline is stateless.
-A tool that could return a whole corpus is one that will.
+**Redline serves a whole corpus; a payload serves one document.** Redline must work
+across a large run — that is met with paging, filtering and metadata-only answers,
+never by refusing breadth. What it must never do is put verbatim content from more
+than one document into one payload. So it does navigation (choose what matters,
+from metadata alone, across a run) and retrieval (exact bytes for one narrow thing
+in one named document, in small pages); breadth and body never appear in the same
+answer. Accumulating findings across documents is the client's — redline is
+stateless.
 
 **Nothing here generates.** No LLM call, no summarisation, no inference, no report
 assembly. A tool returns bytes Womblex wrote, or it returns an error. Anything
@@ -76,7 +79,7 @@ stateless; two identical calls return identical bytes.
 
 Our own packages live under `@redline/*` in `packages/`. One document governs:
 [`docs/Redline-Status.md`](../docs/Redline-Status.md) records what is present and
-what is outstanding. Outstanding work is tracked in its §3 only; a completed step
+what is outstanding. Outstanding work is tracked in its §4 only; a completed step
 is removed from it, its reasoning left in git history, and its item numbers are
 local to that section and renumbered whenever the outstanding set changes.
 
@@ -141,8 +144,8 @@ omissions:
 
 | Area | Convention | redline | Why |
 |---|---|---|---|
-| Planning artefact | PRD + ADR + phase doc per feature | `docs/Redline-Status.md` (what is present + what is outstanding, in §3, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the doc; documents never gate a build |
-| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed step is **removed** from `Redline-Status.md` §3 and reflected in its §2; its reasoning lives in git history. **No per-item docs** | Keeps the doc to what is true now plus what is outstanding |
+| Planning artefact | PRD + ADR + phase doc per feature | `docs/Redline-Status.md` (what is present + what is outstanding, in §4, locally numbered). **No ADRs** — decisions are made and recorded in the commit that acts on them | One-repo delivery, sequenced directly in the doc; documents never gate a build |
+| Doc lifecycle | `to-be-implemented/` → `implemented/vX/` | A completed step is **removed** from `Redline-Status.md` §4 and reflected in its §3; its reasoning lives in git history. **No per-item docs** | Keeps the doc to what is true now plus what is outstanding |
 | Validation | `validate.sh` assuming local Node + services | `validate.sh` detects its runner — local Node when present, **Podman** otherwise | Written for a host with no local Node; both lanes are supported, so check the `runner:` line it prints rather than assuming |
 | Upstreams | monorepo packages | **Separate repos, no submodules.** Womblex is reached through object storage, the client through the MCP endpoint | A gateway couples to its neighbours' interfaces, not their trees |
 | UI | Next.js app in-repo | **None.** redline is headless; every surface belongs to the client that calls it | A stateless read gateway has no UI to own |

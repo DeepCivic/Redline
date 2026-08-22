@@ -1,0 +1,562 @@
+{
+  "manifest": {
+    "columns": [
+      {
+        "name": "source_hash",
+        "type": "string"
+      },
+      {
+        "name": "collection_id",
+        "type": "string"
+      },
+      {
+        "name": "doc_id",
+        "type": "string"
+      },
+      {
+        "name": "filename",
+        "type": "string"
+      },
+      {
+        "name": "ext",
+        "type": "string"
+      },
+      {
+        "name": "extraction_method",
+        "type": "string"
+      },
+      {
+        "name": "elements_count",
+        "type": "int64"
+      },
+      {
+        "name": "table_cells_count",
+        "type": "int64"
+      },
+      {
+        "name": "form_fields_count",
+        "type": "int64"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "error",
+        "type": "string"
+      },
+      {
+        "name": "extracted_at_iso",
+        "type": "string"
+      },
+      {
+        "name": "parser_version",
+        "type": "string"
+      }
+    ],
+    "rows": [
+      {
+        "source_hash": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "collection_id": "",
+        "doc_id": "throsby-oosc",
+        "filename": "throsby-oosc.pdf",
+        "ext": ".pdf",
+        "extraction_method": "native_with_structured",
+        "elements_count": 24,
+        "table_cells_count": 0,
+        "form_fields_count": 2,
+        "status": "completed",
+        "error": "",
+        "extracted_at_iso": "2026-08-17T02:15:31Z",
+        "parser_version": "2.0"
+      }
+    ],
+    "available": 1
+  },
+  "enrichment_meta": {
+    "columns": [
+      {
+        "name": "document_id",
+        "type": "string"
+      },
+      {
+        "name": "doc_type_enriched",
+        "type": "string"
+      },
+      {
+        "name": "jurisdiction",
+        "type": "string"
+      },
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "segment_count",
+        "type": "int32"
+      },
+      {
+        "name": "person_count",
+        "type": "int32"
+      },
+      {
+        "name": "location_count",
+        "type": "int32"
+      },
+      {
+        "name": "term_count",
+        "type": "int32"
+      },
+      {
+        "name": "external_doc_count",
+        "type": "int32"
+      },
+      {
+        "name": "date_count",
+        "type": "int32"
+      },
+      {
+        "name": "heading_count",
+        "type": "int32"
+      },
+      {
+        "name": "junk_span_count",
+        "type": "int32"
+      }
+    ],
+    "rows": [
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "doc_type_enriched": "other",
+        "jurisdiction": "AU-VIC",
+        "title": "Decision to Issue Administrative Action RE: NOT-40822824",
+        "segment_count": 33,
+        "person_count": 3,
+        "location_count": 2,
+        "term_count": 4,
+        "external_doc_count": 3,
+        "date_count": 1,
+        "heading_count": 6,
+        "junk_span_count": 1
+      }
+    ],
+    "available": 1
+  },
+  "entities": {
+    "columns": [
+      {
+        "name": "document_id",
+        "type": "string"
+      },
+      {
+        "name": "entity_id",
+        "type": "string"
+      },
+      {
+        "name": "entity_label",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "entity_type",
+        "type": "string"
+      },
+      {
+        "name": "role",
+        "type": "string"
+      },
+      {
+        "name": "mention_start",
+        "type": "int32"
+      },
+      {
+        "name": "mention_end",
+        "type": "int32"
+      },
+      {
+        "name": "chunk_index",
+        "type": "int32"
+      }
+    ],
+    "rows": [
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "per:0",
+        "entity_label": "person",
+        "name": "Community Services #1 Incorporated",
+        "entity_type": "corporate",
+        "role": "other",
+        "mention_start": 34,
+        "mention_end": 68,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "per:0",
+        "entity_label": "person",
+        "name": "Community Services #1 Incorporated",
+        "entity_type": "corporate",
+        "role": "other",
+        "mention_start": 475,
+        "mention_end": 509,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "per:1",
+        "entity_label": "person",
+        "name": "ACT Regulatory Authority",
+        "entity_type": "politic",
+        "role": "enacting_authority",
+        "mention_start": 235,
+        "mention_end": 259,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "per:1",
+        "entity_label": "person",
+        "name": "ACT Regulatory Authority",
+        "entity_type": "politic",
+        "role": "enacting_authority",
+        "mention_start": 291,
+        "mention_end": 330,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "per:1",
+        "entity_label": "person",
+        "name": "ACT Regulatory Authority",
+        "entity_type": "politic",
+        "role": "enacting_authority",
+        "mention_start": 4662,
+        "mention_end": 4701,
+        "chunk_index": 3
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "per:2",
+        "entity_label": "person",
+        "name": "Janine Fairburn",
+        "entity_type": "natural",
+        "role": "enacting_authority",
+        "mention_start": 4627,
+        "mention_end": 4642,
+        "chunk_index": 3
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "loc:0",
+        "entity_label": "location",
+        "name": "GPO Box 158 Canberra ACT 2601",
+        "entity_type": "address",
+        "role": "",
+        "mention_start": 2132,
+        "mention_end": 2161,
+        "chunk_index": 1
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "loc:1",
+        "entity_label": "location",
+        "name": "ACT",
+        "entity_type": "state",
+        "role": "",
+        "mention_start": 4208,
+        "mention_end": 4211,
+        "chunk_index": 3
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:0",
+        "entity_label": "term",
+        "name": "Authority",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 798,
+        "mention_end": 807,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:0",
+        "entity_label": "term",
+        "name": "Authority",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 1103,
+        "mention_end": 1112,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:0",
+        "entity_label": "term",
+        "name": "Authority",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 2787,
+        "mention_end": 2796,
+        "chunk_index": 2
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:0",
+        "entity_label": "term",
+        "name": "Authority",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 3394,
+        "mention_end": 3403,
+        "chunk_index": 2
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:1",
+        "entity_label": "term",
+        "name": "the Service",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 640,
+        "mention_end": 647,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:1",
+        "entity_label": "term",
+        "name": "the Service",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 1359,
+        "mention_end": 1366,
+        "chunk_index": 1
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:1",
+        "entity_label": "term",
+        "name": "the Service",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 3305,
+        "mention_end": 3312,
+        "chunk_index": 2
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:1",
+        "entity_label": "term",
+        "name": "the Service",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 3926,
+        "mention_end": 3933,
+        "chunk_index": 3
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:2",
+        "entity_label": "term",
+        "name": "Provider",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 830,
+        "mention_end": 838,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:2",
+        "entity_label": "term",
+        "name": "Provider",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 1173,
+        "mention_end": 1181,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:2",
+        "entity_label": "term",
+        "name": "Provider",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 1875,
+        "mention_end": 1883,
+        "chunk_index": 1
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:2",
+        "entity_label": "term",
+        "name": "Provider",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 1994,
+        "mention_end": 2002,
+        "chunk_index": 1
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:2",
+        "entity_label": "term",
+        "name": "Provider",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 2752,
+        "mention_end": 2760,
+        "chunk_index": 2
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:2",
+        "entity_label": "term",
+        "name": "Provider",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 3102,
+        "mention_end": 3110,
+        "chunk_index": 2
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:2",
+        "entity_label": "term",
+        "name": "Provider",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 3341,
+        "mention_end": 3349,
+        "chunk_index": 2
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:2",
+        "entity_label": "term",
+        "name": "Provider",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 3580,
+        "mention_end": 3588,
+        "chunk_index": 2
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:3",
+        "entity_label": "term",
+        "name": "the Law",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 980,
+        "mention_end": 983,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:3",
+        "entity_label": "term",
+        "name": "the Law",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 2226,
+        "mention_end": 2229,
+        "chunk_index": 1
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:3",
+        "entity_label": "term",
+        "name": "the Law",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 3270,
+        "mention_end": 3273,
+        "chunk_index": 2
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:3",
+        "entity_label": "term",
+        "name": "the Law",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 3621,
+        "mention_end": 3624,
+        "chunk_index": 2
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:3",
+        "entity_label": "term",
+        "name": "the Law",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 4124,
+        "mention_end": 4127,
+        "chunk_index": 3
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:3",
+        "entity_label": "term",
+        "name": "the Law",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 4186,
+        "mention_end": 4189,
+        "chunk_index": 3
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "term:3",
+        "entity_label": "term",
+        "name": "the Law",
+        "entity_type": "",
+        "role": "",
+        "mention_start": 4342,
+        "mention_end": 4345,
+        "chunk_index": 3
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "exd:0",
+        "entity_label": "external_document",
+        "name": "Education and Care Services National Law Act (ACT)",
+        "entity_type": "statute",
+        "role": "",
+        "mention_start": 879,
+        "mention_end": 929,
+        "chunk_index": 0
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "exd:1",
+        "entity_label": "external_document",
+        "name": "Education and Care Services National Law (ACT) Act 2011",
+        "entity_type": "statute",
+        "role": "",
+        "mention_start": 4219,
+        "mention_end": 4274,
+        "chunk_index": 3
+      },
+      {
+        "document_id": "c5c98a362f5f91931e96c128ce00adb875f4a084cd6cc1edd0738b7fb00cef54",
+        "entity_id": "exd:2",
+        "entity_label": "external_document",
+        "name": "http://www.legislation.nsw.gov.au/#/view/regulation/2011/653",
+        "entity_type": "regulation",
+        "role": "",
+        "mention_start": 4429,
+        "mention_end": 4489,
+        "chunk_index": 3
+      }
+    ],
+    "available": 34
+  }
+}
