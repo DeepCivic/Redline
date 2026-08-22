@@ -6,6 +6,9 @@ The read seam redline serves everything through:
 - `GET /runs/{corpus_id}/{run_id}/assets` — which shard families the run holds
 - `GET /runs/{corpus_id}/{run_id}/shards/{asset}` — one run's rows for one shard
   family, with the schema they conform to, in womblex's own column names
+- `GET /runs/{corpus_id}/shape` — every run's size, from Parquet footers alone
+- `GET /runs/{corpus_id}/{run_id}/shape` — one run's size, or one document's
+  size and shape within it (`?documentId=`)
 
 Plus the ingest lifecycle (`POST /ingest`, `GET /status/{run_id}`), the earlier
 per-document read model (`GET /extractions/{evaluation_id}/{document_id}`) and
@@ -27,6 +30,7 @@ from pydantic import BaseModel
 
 from womblex_ingest.extraction import Extractor
 from womblex_ingest.runs import Run, RunRegistry
+from womblex_ingest.shape import read_shape
 from womblex_ingest.shards import (
     ASSETS,
     DEFAULT_LIMIT,
@@ -171,6 +175,30 @@ def build_app(
                     for run in runs
                 ],
             },
+        )
+
+    @app.get("/runs/{corpus_id}/shape")
+    def corpus_shape(corpus_id: str) -> JSONResponse:
+        """Every run under the corpus, with per-asset row counts.
+
+        Deliberately takes no `documentId`: a document is sized within the run
+        that produced it, and a cross-run document read is a question about
+        provenance rather than about size.
+        """
+        return JSONResponse(
+            status_code=200, content=read_shape(storage, corpus_id).to_json()
+        )
+
+    @app.get("/runs/{corpus_id}/{run_id}/shape")
+    def run_shape(
+        corpus_id: str, run_id: str, documentId: Optional[str] = None
+    ) -> JSONResponse:
+        """One run's size — narrowed to one document, its shape as well."""
+        return JSONResponse(
+            status_code=200,
+            content=read_shape(
+                storage, corpus_id, run_id=run_id, document_id=documentId
+            ).to_json(),
         )
 
     @app.get("/runs/{corpus_id}/{run_id}/assets")

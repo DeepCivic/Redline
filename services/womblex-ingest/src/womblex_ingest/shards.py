@@ -11,7 +11,7 @@ model gave up:
 not a camelCase read model of redline's invention. A client that reads redline's
 names cannot join what it read back to the source, and cannot be pointed at
 womblex's own documentation. Values are passed through untouched; the only
-conversion is the one JSON forces (see `_jsonable`), and it is exact.
+conversion is the one JSON forces (see `jsonable`), and it is exact.
 
 **Run-scoped.** Several runs co-exist under one corpus prefix by design —
 retention keeps the current run plus the previous. A read that spans them serves
@@ -197,7 +197,7 @@ def read_shard(
             "over these vectors, so nothing here can rank them"
         )
 
-    keys = _shard_keys(storage, corpus_id, run_id, definition)
+    keys = shard_keys(storage, corpus_id, run_id, definition)
     columns, rows = _decode(storage, keys)
     matching = _filter_by_document(rows, definition, document_id)
 
@@ -213,7 +213,17 @@ def read_shard(
     )
 
 
-def _shard_keys(
+def identity_candidates(asset: Asset) -> Tuple[str, ...]:
+    """Every column a document id may be matched against on this asset.
+
+    Both identity spellings are accepted on every asset, not just the ones that
+    declare them: they carry the same value, and a caller holding one id should
+    not need to know which family it is reading.
+    """
+    return asset.identity_columns + _SOURCE_HASH + _DOCUMENT_ID
+
+
+def shard_keys(
     storage: ObjectStorage, corpus_id: str, run_id: str, asset: Asset
 ) -> List[str]:
     """This run's shard keys for one asset, sorted so concatenation is stable."""
@@ -239,7 +249,7 @@ def _decode(
         table = _read_parquet(storage.get_object(key))
         if not columns:
             columns = [Column(name=f.name, type=str(f.type)) for f in table.schema]
-        rows.extend(_jsonable(row) for row in table.to_pylist())
+        rows.extend(jsonable(row) for row in table.to_pylist())
     return columns, rows
 
 
@@ -248,10 +258,7 @@ def _filter_by_document(
 ) -> List[Dict[str, Any]]:
     if document_id is None:
         return list(rows)
-    # Both identity spellings are accepted on every asset, not just the ones that
-    # declare them: they carry the same value, and a caller holding one id should
-    # not need to know which family it is reading.
-    candidates = asset.identity_columns + _SOURCE_HASH + _DOCUMENT_ID
+    candidates = identity_candidates(asset)
     return [
         row
         for row in rows
@@ -270,7 +277,7 @@ def _read_parquet(body: bytes):
     return pq.read_table(io.BytesIO(body))
 
 
-def _jsonable(value: Any) -> Any:
+def jsonable(value: Any) -> Any:
     """Narrow an Arrow-decoded value to something JSON can carry, exactly.
 
     The one conversion that matters: a `decimal128(38, 4)` becomes its **digit
@@ -285,9 +292,9 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, bytes):
         return base64.b64encode(value).decode("ascii")
     if isinstance(value, dict):
-        return {key: _jsonable(item) for key, item in value.items()}
+        return {key: jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
+        return [jsonable(item) for item in value]
     # NaN and the infinities have no JSON spelling, and emitting them produces a
     # body a strict parser rejects — losing the whole read over one cell.
     if isinstance(value, float) and not math.isfinite(value):

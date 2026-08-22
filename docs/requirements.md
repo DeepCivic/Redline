@@ -124,7 +124,7 @@ These hold over every statement below.
 
 Each section corresponds to an outstanding item in `Redline-Status.md` §4.
 
-### Shape aggregation in the sidecar `[NOT BUILT]`
+### Shape aggregation in the sidecar `[BUILT]`
 
 - **Given** a corpus, **when** its shape is requested, **then** each run is reported
   separately with its document count and per-asset row counts, and runs are never

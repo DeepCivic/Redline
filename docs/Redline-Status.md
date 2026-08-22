@@ -182,6 +182,8 @@ Parquet reader.
 | `GET /runs/{corpusId}` | the corpus's runs, newest first |
 | `GET /runs/{corpusId}/{runId}/assets` | which shard families the run holds |
 | `GET /runs/{corpusId}/{runId}/shards/{asset}` | one run's rows + schema, verbatim |
+| `GET /runs/{corpusId}/shape` | every run's size, from Parquet footers alone |
+| `GET /runs/{corpusId}/{runId}/shape` | one run's size, or one document's shape (`?documentId=`) |
 | `GET /extractions/{corpusId}/{documentId}` | the older per-document read model |
 
 `shards.py` is the generic seam: a catalogue of twelve shard families, run
@@ -189,6 +191,16 @@ discovery across both directory spellings, document filtering across both identi
 spellings, exact decimal serialisation, and `limit`/`offset` paging. `embeddings`
 is catalogued and deliberately refused — Womblex ships no index, so nothing can
 rank those vectors.
+
+`shape.py` answers how big a thing is without reading it. Counts come from the
+Parquet footer (`read_metadata`), so a corpus- or run-scope answer decodes no rows
+at all; a document-scoped count or tally projects the identity column and the
+declared low-cardinality labels (`read_table(columns=[...])`) and never a column
+carrying text. Tallies are document-scope only — a tally over a whole run scales
+with the run, and the sizing question is always asked of one document. Two tests
+guard the cost, not just the answer: a run scope must call `read_table` zero
+times, and a document scope must project on every call and never name a body
+column. Everything it returns is derived, and is labelled as such.
 
 **The paging the tool surface needs already exists here.** The sidecar takes
 `limit`, `offset` and `documentId` on every asset. What is missing is above it.
@@ -223,7 +235,7 @@ against assumptions the suite and the implementation share.
 purity; no focused tests; source file size; sidecar pytest; ruff. CI runs the same
 gate.
 
-Tests today: 61 TypeScript (2 domain, 10 adapters, 49 MCP) and 116 Python.
+Tests today: 61 TypeScript (2 domain, 10 adapters, 49 MCP) and 135 Python.
 
 ---
 
@@ -235,35 +247,9 @@ tests-first, with an explicit exit test.
 The order below is deliberate: shape discovery comes first because every read
 after it is smaller and safer once a client can size a call before making it.
 
-### 1. Shape aggregation in the sidecar
+### 1. `discover_corpus_shape` — the tool over it
 
-Row counts and filter-value tallies for a corpus, a run, or one document, read
-**without decoding document body**. Parquet keeps row counts in the file footer
-(`pyarrow.parquet.read_metadata`) and allows column projection
-(`read_table(columns=[...])`), so a run-level count decodes no rows at all and a
-per-document count or a `kind` tally reads one column instead of twenty.
-
-Scope discipline on cost: counts at every scope; **tallies at document scope
-only**. A tally over a whole run scales with the run, and the sizing question a
-tally answers is always asked about one document.
-
-The tallied columns are declared per asset and are closed-vocabulary labels, never
-extracted text: `kind`/`extractor` and the `page` range on `elements`,
-`field_type` on `form_fields`, `status`/`ext`/`extraction_method` on `manifest`,
-`locus`/`currency`/`evidence` on `money_spans`, `entity_label`/`entity_type` on
-`entities`, `relation` on `graph_edges`, `doc_type_enriched`/`jurisdiction` on
-`enrichment_meta`, `parent_elem_order` on `table_cells` (which tables exist, and
-how many cells each holds). Entity `name` is deliberately not tallied: it is
-unbounded and it is content.
-
-_Exit: shape answers for the real throsby run — elements 24, chunks 4, entities
-34, graph_edges 156, money_spans 2 — and a projection guard proves no read
-requested a body column; narrowed to the document it tallies `kind` (paragraph
-15, heading 2, …) and reports the `page` range 0–2._
-
-### 2. `discover_corpus_shape` — the tool over it
-
-The MCP surface for step 1, and the call a client is told to make first. Three
+The MCP surface for the sidecar's shape read, and the call a client is told to make first. Three
 levels of narrowing: corpus (which runs exist, how big each is), run (per-asset
 row counts and columns), document (per-asset row counts plus the filter-value
 tallies that make the next retrieval single-shot).
@@ -280,7 +266,7 @@ _Exit: a protocol-level call answers all three scopes against the fixture corpus
 the corpus scope lists two staged runs separately; no payload carries a row of
 document body._
 
-### 3. Column filters and a count mode on the read seam
+### 2. Column filters and a count mode on the read seam
 
 `read_shard` gains exact-match filters on declared columns and a count mode
 (`limit: 0` already returns `available` with no rows — this makes it addressable).
@@ -290,11 +276,11 @@ applied above the seam makes `available` count the wrong set.
 _Exit: a filtered read reports `available` against the filtered set, not the
 whole asset; a count mode returns counts with zero rows._
 
-### 4. `get_document_elements` — paginated verbatim retrieval
+### 3. `get_document_elements` — paginated verbatim retrieval
 
 One document's elements, verbatim, **strictly paginated** — default 20 rows /
 20,000 characters, ceiling 200 / 80,000 — filterable by element kind and by the
-document's printed page, over the seam filters from step 3.
+document's printed page, over the seam filters from step 2.
 
 Two parameters are deliberately distinct because Womblex's schema forces it:
 `ELEMENT_SCHEMA` has a real `page` column (the printed page the element appeared
@@ -319,7 +305,7 @@ _Exit: a document's elements come back 20 at a time, in `elem_order`, with
 filter each narrow the set; the last page reports `truncated: false`; a
 `text: null` element survives to the caller._
 
-### 5. `get_document_entities` — the graph, as navigation
+### 4. `get_document_entities` — the graph, as navigation
 
 One document's entities and graph edges, verbatim: `entity_id`, `entity_label`,
 `name`, `entity_type`, `role`, `mention_start`/`mention_end`, `chunk_index`, and
@@ -338,7 +324,7 @@ _Exit: entities and edges answer from the real fixture (34 and 156 rows), each
 entity carrying its chunk anchor; a run with no enrichment shards says so rather
 than returning empty._
 
-### 6. `get_verbatim_data` — exact bytes for one named thing
+### 5. `get_verbatim_data` — exact bytes for one named thing
 
 Exact bytes for a document plus an element, chunk or cell reference, echoing back
 the anchor it resolved. This is the end of every navigation path: the client has
@@ -347,7 +333,7 @@ narrowed to one passage and wants precisely it.
 _Exit: the returned text is byte-identical to the shard's value for each reference
 kind; an unresolvable reference is a `NOT_FOUND` error, never an empty string._
 
-### 7. `get_schema` — the two scopes that read values
+### 6. `get_schema` — the two scopes that read values
 
 **One extracted table's actual header row**, read verbatim from its cells, and a
 document's graph vocabulary (entity labels and relation names present). The
@@ -359,11 +345,11 @@ lets a client use the words the document actually uses instead of guessing them.
 _Exit: both scopes answer against the real fixture corpus; the table scope returns
 the header row's exact strings, not a normalised form._
 
-### 8. The remaining shard reads
+### 7. The remaining shard reads
 
 `list_runs`, `read_form_fields`, `read_money_spans`, `read_chunks` and
 `read_table_cells` over the asset-reader port, all paginated and document-scoped on
-the same terms as step 4, and all carrying §2's payload-shape rules. The
+the same terms as step 3, and all carrying §2's payload-shape rules. The
 `read_extraction_chunks` and `read_extraction_table_cells` tools, which still
 default to 500 rows, are deleted here.
 
@@ -375,7 +361,7 @@ redo.
 _Exit: every tool answers against the fixture corpus, ordering stable, paging
 honest._
 
-### 9. Retire the per-document read model
+### 8. Retire the per-document read model
 
 Once nothing calls it: `GET /extractions/...`, `records.py`'s DTOs,
 `shard_reader.py`'s mapping and `real_extractor.py`'s three-family read.
@@ -386,7 +372,7 @@ document's currency signal, when a tool needs one, belongs under a labelled
 
 _Exit: the route and its mapping are gone; the sidecar suite stays green._
 
-### 10. A second corpus
+### 9. A second corpus
 
 The fixture has **empty** `table_cells` and `money_columns`, two `money_spans` both
 narrative locus, one document and one run. So it cannot prove the table-cell or
@@ -419,7 +405,7 @@ and `elements` both carry `text`, so counting rows or taking a max over
 number. Aggregating in the sidecar is the answer, and it is cheaper than the note
 above assumed: Parquet keeps row counts in the footer and supports column
 projection, so a count needs no row decode and a page range reads one int column.
-That is step 1, and it is where these counts land.
+That is done: `shape.py` is where these counts land, and `list_documents` can carry them once step 1 serves them.
 
 **Nothing checks the Womblex version.** The contract records v0.4.0. A corpus
 written by an older engine fails at the first missing column rather than at a
@@ -439,12 +425,12 @@ own `DEFAULT_LIMIT` of 500 as a transport guard below the boundary. The tools'
 current `DEFAULT_TOOL_LIMIT` of 500 is inherited from that transport default
 rather than chosen — measured against the real elements capture (mean 711 bytes a
 row) it is ~90k tokens in one call, and on a document with real paragraphs several
-times that. It is replaced tool by tool in steps 4 and 8; until then two reads
+times that. It is replaced tool by tool in steps 3 and 7; until then two reads
 still carry it.
 
 **How large a corpus has this been proven against?** One run, one document. Every
 cost claim above is measured, but measured small — the byte-per-row figures come
-from a 24-element FOI notice. Step 10 is what turns them into evidence.
+from a 24-element FOI notice. Step 9 is what turns them into evidence.
 
 ---
 
