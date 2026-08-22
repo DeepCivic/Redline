@@ -18,13 +18,13 @@ import {
   ok,
 } from "@redline/redline-domain";
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
 const isNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
-const isColumn = (value: unknown): value is ShardColumn =>
+export const isColumn = (value: unknown): value is ShardColumn =>
   isRecord(value) && typeof value.name === "string" && typeof value.type === "string";
 
 const isRow = (value: unknown): value is ShardRow => isRecord(value);

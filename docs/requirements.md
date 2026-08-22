@@ -124,19 +124,77 @@ These hold over every statement below.
 
 Each section corresponds to an outstanding item in `Redline-Status.md` §4.
 
+### Shape aggregation in the sidecar `[BUILT]`
+
+- **Given** a corpus, **when** its shape is requested, **then** each run is reported
+  separately with its document count and per-asset row counts, and runs are never
+  merged into one set of counts.
+- **Given** a run, **when** its shape is requested, **then** every asset reports
+  whether it is present, whether it is readable, its columns and its row count.
+- **Given** a document, **when** its shape is requested, **then** per-asset row
+  counts for that document are returned along with the declared filter-value
+  tallies — `kind` counts and the `page` range on `elements`, and their equivalents
+  per asset.
+- **Given** any shape read, **when** it runs, **then** no document-body column is
+  decoded *and* no whole shard is fetched: row counts come from the Parquet footer
+  via a ranged read, and tallies read only the declared low-cardinality columns.
+- **Given** a corpus with several runs, **when** its shape is read, **then** the
+  corpus prefix is listed once, not once per run per asset.
+- **Given** a run that landed no manifest, **when** its documents are counted,
+  **then** the count comes from an identity projection rather than reporting nought
+  beside a non-zero element count.
+- **Given** an unknown corpus or run id, **when** its shape is requested, **then**
+  the answer is `404`, not an empty corpus.
+- **Given** an entity name, **when** tallies are computed, **then** it is not
+  tallied — it is unbounded, and it is content.
+
+### `discover_corpus_shape` `[BUILT]`
+
+- **Given** a corpus, a run or a document, **when** `discover_corpus_shape` is
+  called, **then** the matching scope's counts are returned and no payload carries a
+  row of document body.
+- **Given** counts in the payload, **when** they are returned, **then** they sit
+  under their own labelled keys as derived values, while the tallied column values
+  themselves are verbatim.
+- **Given** two runs of one corpus, **when** the corpus scope is requested, **then**
+  each run's counts are reported separately and the corpus-level `documents` is
+  `null` — summing them would report one document held by two runs as two.
+- **Given** a `documentId` without a `runId`, **when** the tool is called, **then**
+  it is refused: a document is sized within the run that produced it.
+- **Given** a corpus scope, **when** it is returned, **then** it carries no column
+  schemas — twelve assets' worth answer a question that scope is not asking.
+
+### Column filters and a count mode on the read seam `[NOT BUILT]`
+
+- **Given** a filter on a declared column, **when** a shard is read, **then**
+  `available` counts the filtered set rather than the whole asset.
+- **Given** a count mode, **when** a shard is read, **then** counts are returned
+  with zero rows.
+
 ### `get_document_elements` `[NOT BUILT]`
 
 - **Given** a document, **when** its elements are requested, **then** they are
   returned 20 at a time in `elem_order`, never unbounded, with
   `returned`/`available`/`truncated` honest at every page and `truncated: false` on
   the last.
+- **Given** a page that reaches 20,000 characters before 20 rows, **when** it is
+  returned, **then** it is capped by characters and `truncatedBy` says so.
+- **Given** a `limit` above the ceiling of 200 rows, **when** it is supplied,
+  **then** the ceiling is enforced server-side rather than honoured.
+- **Given** one row that exceeds the character budget on its own, **when** it is
+  returned, **then** its value is served whole and the payload reports that it
+  exceeded budget — a value is never truncated.
 - **Given** `page_number`, **when** it is supplied, **then** the set narrows to that
   printed page, independently of the `offset`/`limit` cursor.
 - **Given** `element_kinds`, **when** it is supplied, **then** the set narrows on
   Womblex's `kind` column.
 - **Given** a non-text kind carrying `text: None`, **when** it is returned, **then**
-  it falls back to `alt_text` then `""` and is never dropped, so `elem_order` stays
-  contiguous.
+  the null is served as null and the element is never dropped, so `elem_order` stays
+  contiguous — `alt_text` is not folded into `text`, because that would put a
+  derived value in an extracted column.
+- **Given** a row with null-valued columns, **when** it is returned, **then** those
+  keys are omitted while `columns` still declares the full shard schema, and the
+  constant `source_hash` is hoisted to the envelope.
 
 ### `get_document_entities` `[NOT BUILT]`
 
@@ -160,8 +218,6 @@ Each section corresponds to an outstanding item in `Redline-Status.md` §4.
 
 ### `get_schema` `[NOT BUILT]`
 
-- **Given** an asset scope, **when** the schema is requested, **then** that asset's
-  columns and types are returned.
 - **Given** a table scope, **when** the schema is requested, **then** that table's
   actual header row is returned as its exact strings, read verbatim from its cells
   and not normalised.

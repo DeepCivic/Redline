@@ -3,7 +3,9 @@ import {
   err,
   isErr,
   ok,
+  type CorpusShape,
   type IWomblexAssetReader,
+  type IWomblexShapeReader,
   type Result,
   type ShardPage,
   type ShardRow,
@@ -22,19 +24,25 @@ import { z } from "zod";
 
 export interface ReportToolDependencies {
   readonly assetReader: IWomblexAssetReader;
+  readonly shapeReader: IWomblexShapeReader;
 }
 
-// Every payload states what it returned against what matched, so a capped read is
-// visible to the caller instead of looking like the whole answer. The counts come
-// straight from the sidecar's page — the seam does the paging, not this layer.
+// Every payload names the corpus it answered for. Beyond that the shape depends
+// on the question: a read pages rows, a shape read counts them.
 export interface ReportToolPayload {
   readonly corpusId: string;
+  readonly [key: string]: unknown;
+}
+
+// A paged read states what it returned against what matched, so a capped read is
+// visible to the caller instead of looking like the whole answer. The counts come
+// straight from the sidecar's page — the seam does the paging, not this layer.
+export interface PagedToolPayload extends ReportToolPayload {
   readonly runId: string;
   readonly asset: string;
   readonly returned: number;
   readonly available: number;
   readonly truncated: boolean;
-  readonly [rows: string]: unknown;
 }
 
 export interface ReportTool {
@@ -121,7 +129,7 @@ const readDocumentShard = async (
   asset: string,
   rowsKey: string,
   args: DocumentShardArgs,
-): Promise<Result<ReportToolPayload>> => {
+): Promise<Result<PagedToolPayload>> => {
   const page = await reader.readShard({
     corpusId: args.corpusId,
     runId: args.runId,
@@ -301,7 +309,75 @@ const listDocuments = async (
   });
 };
 
+// Everything a shape read returns is computed by redline from row metadata: a
+// count, a tally, a bound. None of it is a column womblex wrote, and an assembler
+// that cited one as extracted data would be citing redline's arithmetic as source.
+// The payload says so in its own key rather than leaving the distinction to a tool
+// description the caller may never have read.
+const DERIVED_NOTICE =
+  "Every count, tally and range here is computed by redline from row metadata — none " +
+  "is an extracted column. Tallied values are womblex's own labels, verbatim; the " +
+  "counts beside them are not. Use this to size a read, never to cite a fact.";
+
+const shapePayload = (shape: CorpusShape): ReportToolPayload => ({
+  corpusId: shape.corpusId,
+  runId: shape.runId,
+  documentId: shape.documentId,
+  documents: shape.documents,
+  runs: shape.runs,
+  derived: DERIVED_NOTICE,
+});
+
+const discoverShape = async (
+  reader: IWomblexShapeReader,
+  args: { corpusId: string; runId?: string; documentId?: string },
+): Promise<Result<ReportToolPayload>> => {
+  // A document is sized within the run that produced it. Sizing one across every
+  // run of a corpus would answer with counts whose provenance keys identify
+  // nothing — the failure run-scoping exists to prevent, asked as a question.
+  if (args.documentId !== undefined && args.runId === undefined) {
+    return err(
+      domainError(
+        "VALIDATION_FAILED",
+        "discover_corpus_shape: documentId needs the runId that produced it",
+      ),
+    );
+  }
+
+  const shape = await reader.readShape({
+    corpusId: args.corpusId,
+    ...(args.runId === undefined ? {} : { runId: args.runId }),
+    ...(args.documentId === undefined ? {} : { documentId: args.documentId }),
+  });
+  if (isErr(shape)) return shape;
+  return ok(shapePayload(shape.data));
+};
+
 const navigationTools = (dependencies: ReportToolDependencies): readonly ReportTool[] => [
+  defineTool({
+    name: "discover_corpus_shape",
+    title: "Size a corpus, run or document before reading it",
+    description:
+      "Call this FIRST. It reports how big things are — per-run and per-asset row counts, " +
+      "and for one document the element kinds it holds and the printed pages it spans — so " +
+      "you can choose a page size and a filter instead of discovering them by hitting a cap. " +
+      "Three scopes by narrowing: corpusId alone lists the runs and their sizes; add runId " +
+      "for per-asset counts and columns; add documentId for that document's counts, kind " +
+      "tallies and page range. Costs almost nothing: counts come from Parquet footers and " +
+      "tallies read one column, so no document text is decoded and none is returned. Every " +
+      "number here is derived by redline, not an extracted value — size a read with it, " +
+      "never cite it.",
+    inputShape: {
+      corpusId: CORPUS_ID,
+      runId: RUN_ID.optional().describe(
+        "The run to size. Omit to list every run under the corpus with its sizes.",
+      ),
+      documentId: DOCUMENT_ID.optional().describe(
+        "The document to size and tally, within `runId`. Requires `runId`.",
+      ),
+    },
+    run: (args) => discoverShape(dependencies.shapeReader, args),
+  }),
   defineTool({
     name: "list_documents",
     title: "List a run's documents",

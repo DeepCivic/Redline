@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { domainError, err, isErr, isOk, ok } from "@redline/redline-domain";
 import type {
+  CorpusShape,
   IWomblexAssetReader,
+  IWomblexShapeReader,
   Result,
   ShardPage,
   ShardRow,
   WomblexAssetRequest,
+  WomblexShapeRequest,
 } from "@redline/redline-domain";
 import {
   buildReportTools,
@@ -53,8 +56,59 @@ class FailingAssetReader implements IWomblexAssetReader {
   }
 }
 
+// A shape reader that echoes the scope it was asked for, so a tool test can
+// assert which scope a call resolved to without a sidecar behind it.
+class InMemoryShapeReader implements IWomblexShapeReader {
+  readonly requests: WomblexShapeRequest[] = [];
+
+  async readShape(request: WomblexShapeRequest): Promise<Result<CorpusShape>> {
+    this.requests.push(request);
+    return ok({
+      corpusId: request.corpusId,
+      runId: request.runId ?? null,
+      documentId: request.documentId ?? null,
+      documents: 1,
+      runs: [
+        {
+          runId: request.runId ?? "run-throsby-demo",
+          versioned: true,
+          documents: 1,
+          assets: [
+            {
+              name: "elements",
+              present: true,
+              readable: true,
+              rows: 24,
+              columns: [{ name: "kind", type: "string" }],
+              values:
+                request.documentId === undefined
+                  ? {}
+                  : {
+                      kind: {
+                        counts: [{ value: "paragraph", rows: 15 }],
+                        distinct: 7,
+                        truncated: false,
+                      },
+                    },
+              ranges: request.documentId === undefined ? {} : { page: { min: 0, max: 2 } },
+            },
+          ],
+        },
+      ],
+    });
+  }
+}
+
+class FailingShapeReader implements IWomblexShapeReader {
+  constructor(private readonly error: ReturnType<typeof domainError>) {}
+  async readShape(): Promise<Result<CorpusShape>> {
+    return err(this.error);
+  }
+}
+
 const dependencies = (over: Partial<ReportToolDependencies> = {}): ReportToolDependencies => ({
   assetReader: new InMemoryAssetReader({}),
+  shapeReader: new InMemoryShapeReader(),
   ...over,
 });
 
@@ -76,6 +130,7 @@ describe("buildReportTools — the surface itself", () => {
     const tools = buildReportTools(dependencies());
 
     expect(tools.map((tool) => tool.name)).toEqual([
+      "discover_corpus_shape",
       "list_documents",
       "read_extraction_elements",
       "read_extraction_chunks",
@@ -553,5 +608,94 @@ describe("list_documents — the joins", () => {
     const names = documentsIn(result.data)[0]!.entity_names as Record<string, unknown>;
     expect(names.available).toBe(200);
     expect(names.returned).toBe(DEFAULT_ENTITY_NAME_LIMIT);
+  });
+});
+
+
+describe("discover_corpus_shape", () => {
+  it("sizes a corpus without naming a run", async () => {
+    const shapeReader = new InMemoryShapeReader();
+
+    const result = await toolNamed("discover_corpus_shape", { shapeReader }).call({
+      corpusId: "throsby",
+    });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(shapeReader.requests[0]).toEqual({ corpusId: "throsby" });
+    expect(result.data.documents).toBe(1);
+  });
+
+  it("carries the tallies that let the next retrieval be narrowed", async () => {
+    const result = await toolNamed("discover_corpus_shape").call({
+      corpusId: "throsby",
+      runId: "run-throsby-demo",
+      documentId: "hashA",
+    });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const runs = result.data.runs as { assets: Record<string, unknown>[] }[];
+    const elements = runs[0]!.assets[0] as {
+      rows: number;
+      values: Record<string, { counts: { value: unknown; rows: number }[] }>;
+      ranges: Record<string, { min: unknown; max: unknown }>;
+    };
+    expect(elements.rows).toBe(24);
+    expect(elements.values.kind!.counts[0]).toEqual({ value: "paragraph", rows: 15 });
+    expect(elements.ranges.page).toEqual({ min: 0, max: 2 });
+  });
+
+  it("labels every number in the payload as derived", async () => {
+    const result = await toolNamed("discover_corpus_shape").call({ corpusId: "throsby" });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(typeof result.data.derived).toBe("string");
+    expect(result.data.derived as string).toMatch(/computed/i);
+  });
+
+  it("refuses to size a document without the run that produced it", async () => {
+    const shapeReader = new InMemoryShapeReader();
+
+    const result = await toolNamed("discover_corpus_shape", { shapeReader }).call({
+      corpusId: "throsby",
+      documentId: "hashA",
+    });
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+    expect(shapeReader.requests).toEqual([]);
+  });
+
+  it("requires a corpus", async () => {
+    const result = await toolNamed("discover_corpus_shape").call({});
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("returns the port's error rather than an empty shape", async () => {
+    const shapeReader = new FailingShapeReader(
+      domainError("INFRA_FAILURE", "womblex-ingest is unreachable"),
+    );
+
+    const result = await toolNamed("discover_corpus_shape", { shapeReader }).call({
+      corpusId: "throsby",
+    });
+
+    expect(isErr(result)).toBe(true);
+    if (!isErr(result)) return;
+    expect(result.error.code).toBe("INFRA_FAILURE");
+  });
+
+  it("reads no shard — sizing never touches the verbatim seam", async () => {
+    const assetReader = new InMemoryAssetReader({});
+
+    await toolNamed("discover_corpus_shape", { assetReader }).call({ corpusId: "throsby" });
+
+    expect(assetReader.assetsRead).toEqual([]);
   });
 });
