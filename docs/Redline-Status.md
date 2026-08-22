@@ -82,12 +82,38 @@ opinion on it beyond refusing to do it.
 - **Metadata-first.** A client must be able to scan the whole landscape without
   reading raw text. Counts, names, ids, statuses — enough to choose, and not one
   byte of document body.
-- **Small by default.** Retrieval tools default to a page of tens of rows, not
-  hundreds. A caller may ask for more; it may not get everything by accident.
-- **Every payload says what it withheld.** `returned`, `available`, `truncated`.
-  A capped answer that looks complete is worse than an error.
+- **Small by default, and bounded two ways.** A row is not a unit of cost: measured
+  against the committed captures, a row runs 240 bytes (`entities`) to ~1,500
+  (`chunks`), so one row count bounds a payload by a factor of six either way.
+  Retrieval is therefore capped by **rows and by characters, whichever binds
+  first** — 20 rows / 20,000 characters by default, 200 / 80,000 as the ceiling a
+  caller may raise `limit` to. The ceiling is enforced server-side: `limit` is a
+  request, not a command.
+- **A cap that binds is a navigation failure.** The caps are a backstop for a
+  careless call, not the operating point. A client sizes its read with
+  `discover_corpus_shape` and narrows with filters; on the real fixture every
+  filtered element read returns 5–15 rows, well inside the default. If truncation
+  is routine, the answer is a missing filter or an unmade shape call, not a
+  higher limit.
+- **Sizing is the client's call.** How much context a read may spend depends on
+  the client's remaining window and whether it is reading one document or twenty.
+  Redline cannot know either, so it reports size and lets the caller choose,
+  rather than guessing on the caller's behalf with a default.
+- **Every payload says what it withheld.** `returned`, `available`, `truncated`,
+  and `truncatedBy` — `rows` or `characters`. A capped answer that looks complete
+  is worse than an error, and a client that knows *which* cap bound learns to
+  filter rather than page.
+- **A value is never truncated to meet a budget.** One oversized row is served
+  whole and the payload reports that it exceeded budget. Verbatim outranks the
+  cap; a silently clipped string is the one failure worse than a large payload.
 - **Every row carries its anchor**, so the next call can be narrower than the last.
   Navigation output is only useful if it addresses something.
+- **No payload pays for columns it did not answer with.** A row omits its
+  null-valued keys — `columns` still declares the full shard schema, so absence is
+  unambiguously null — and a document-scoped read hoists the constant
+  `source_hash` to the envelope. On the real elements capture those two together
+  are 32% of the bytes, and `text` is only 30%. Selection is not transformation;
+  no value changes.
 
 ---
 
@@ -206,10 +232,69 @@ Tests today: 61 TypeScript (2 domain, 10 adapters, 49 MCP) and 116 Python.
 Numbered locally; renumbered whenever the set changes. One commit each,
 tests-first, with an explicit exit test.
 
-### 1. `get_document_elements` — paginated verbatim retrieval
+The order below is deliberate: shape discovery comes first because every read
+after it is smaller and safer once a client can size a call before making it.
 
-One document's elements, verbatim, **strictly paginated** — default 20, never
-unbounded — filterable by element kind and by the document's printed page.
+### 1. Shape aggregation in the sidecar
+
+Row counts and filter-value tallies for a corpus, a run, or one document, read
+**without decoding document body**. Parquet keeps row counts in the file footer
+(`pyarrow.parquet.read_metadata`) and allows column projection
+(`read_table(columns=[...])`), so a run-level count decodes no rows at all and a
+per-document count or a `kind` tally reads one column instead of twenty.
+
+Scope discipline on cost: counts at every scope; **tallies at document scope
+only**. A tally over a whole run scales with the run, and the sizing question a
+tally answers is always asked about one document.
+
+The tallied columns are declared per asset and are closed-vocabulary labels, never
+extracted text: `kind`/`extractor` and the `page` range on `elements`,
+`field_type` on `form_fields`, `status`/`ext`/`extraction_method` on `manifest`,
+`locus`/`currency`/`evidence` on `money_spans`, `entity_label`/`entity_type` on
+`entities`, `relation` on `graph_edges`, `doc_type_enriched`/`jurisdiction` on
+`enrichment_meta`, `parent_elem_order` on `table_cells` (which tables exist, and
+how many cells each holds). Entity `name` is deliberately not tallied: it is
+unbounded and it is content.
+
+_Exit: shape answers for the real throsby run — elements 24, chunks 4, entities
+34, graph_edges 156, money_spans 2 — and a projection guard proves no read
+requested a body column; narrowed to the document it tallies `kind` (paragraph
+15, heading 2, …) and reports the `page` range 0–2._
+
+### 2. `discover_corpus_shape` — the tool over it
+
+The MCP surface for step 1, and the call a client is told to make first. Three
+levels of narrowing: corpus (which runs exist, how big each is), run (per-asset
+row counts and columns), document (per-asset row counts plus the filter-value
+tallies that make the next retrieval single-shot).
+
+Counts are derived, so they sit under their own labelled keys and are never
+presented as extracted columns; the tallied *values* are verbatim column values.
+Runs are never merged — a corpus-scope answer reports each run separately, or its
+provenance keys stop identifying anything.
+
+This absorbs `get_schema`'s asset-columns scope: "what columns does this asset
+have" and "how big is it" are one question.
+
+_Exit: a protocol-level call answers all three scopes against the fixture corpus;
+the corpus scope lists two staged runs separately; no payload carries a row of
+document body._
+
+### 3. Column filters and a count mode on the read seam
+
+`read_shard` gains exact-match filters on declared columns and a count mode
+(`limit: 0` already returns `available` with no rows — this makes it addressable).
+Sidecar-side, so the tools above it can filter and still page honestly: a filter
+applied above the seam makes `available` count the wrong set.
+
+_Exit: a filtered read reports `available` against the filtered set, not the
+whole asset; a count mode returns counts with zero rows._
+
+### 4. `get_document_elements` — paginated verbatim retrieval
+
+One document's elements, verbatim, **strictly paginated** — default 20 rows /
+20,000 characters, ceiling 200 / 80,000 — filterable by element kind and by the
+document's printed page, over the seam filters from step 3.
 
 Two parameters are deliberately distinct because Womblex's schema forces it:
 `ELEMENT_SCHEMA` has a real `page` column (the printed page the element appeared
@@ -218,17 +303,23 @@ on, a *filter*), and pagination needs its own cursor. They are `page_number` and
 obvious mistake and would silently mean two different things to caller and
 implementation.
 
-`element_kinds` filters on Womblex's `kind` column. Note that the non-text kinds
-(`table`, `image`, `figure`, `form`, `page_break`, `sheet_meta`, `sheet_cell`)
-carry `text: None` and fall back to `alt_text` then `""` — an element with no text
-is a real element, not a gap, and is never dropped, because dropping one breaks
-`elem_order` contiguity.
+`element_kinds` filters on Womblex's `kind` column. The non-text kinds (`table`,
+`image`, `figure`, `form`, `page_break`, `sheet_meta`, `sheet_cell`) carry
+`text: None`. That null is **served as null** — an element with no text is a real
+element, not a gap, and is never dropped, because dropping one breaks `elem_order`
+contiguity. Folding `alt_text` into `text` is not open to this tool: it would put
+a derived value in an extracted column.
+
+This is the first tool to carry §2's payload-shape rules — null keys omitted,
+`source_hash` hoisted to the envelope, `truncatedBy` reported — and it replaces
+`read_extraction_elements`, which is deleted in the same commit.
 
 _Exit: a document's elements come back 20 at a time, in `elem_order`, with
 `returned`/`available`/`truncated` honest at every page; a kind filter and a page
-filter each narrow the set; the last page reports `truncated: false`._
+filter each narrow the set; the last page reports `truncated: false`; a
+`text: null` element survives to the caller._
 
-### 2. `get_document_entities` — the graph, as navigation
+### 5. `get_document_entities` — the graph, as navigation
 
 One document's entities and graph edges, verbatim: `entity_id`, `entity_label`,
 `name`, `entity_type`, `role`, `mention_start`/`mention_end`, `chunk_index`, and
@@ -247,7 +338,7 @@ _Exit: entities and edges answer from the real fixture (34 and 156 rows), each
 entity carrying its chunk anchor; a run with no enrichment shards says so rather
 than returning empty._
 
-### 3. `get_verbatim_data` — exact bytes for one named thing
+### 6. `get_verbatim_data` — exact bytes for one named thing
 
 Exact bytes for a document plus an element, chunk or cell reference, echoing back
 the anchor it resolved. This is the end of every navigation path: the client has
@@ -256,23 +347,25 @@ narrowed to one passage and wants precisely it.
 _Exit: the returned text is byte-identical to the shard's value for each reference
 kind; an unresolvable reference is a `NOT_FOUND` error, never an empty string._
 
-### 4. `get_schema` — dynamic discovery
+### 7. `get_schema` — the two scopes that read values
 
-Three scopes: an asset's columns and types; **one extracted table's actual header
-row**, read verbatim from its cells; a document's graph vocabulary (entity labels
-and relation names present).
+**One extracted table's actual header row**, read verbatim from its cells, and a
+document's graph vocabulary (entity labels and relation names present). The
+asset-columns scope moved to step 2.
 
 The table scope is the one that matters for defining a report column — it is what
 lets a client use the words the document actually uses instead of guessing them.
 
-_Exit: each scope answers against the real fixture corpus; the table scope returns
+_Exit: both scopes answer against the real fixture corpus; the table scope returns
 the header row's exact strings, not a normalised form._
 
-### 5. The remaining shard reads
+### 8. The remaining shard reads
 
 `list_runs`, `read_form_fields`, `read_money_spans`, `read_chunks` and
 `read_table_cells` over the asset-reader port, all paginated and document-scoped on
-the same terms as step 1.
+the same terms as step 4, and all carrying §2's payload-shape rules. The
+`read_extraction_chunks` and `read_extraction_table_cells` tools, which still
+default to 500 rows, are deleted here.
 
 Money spans carry a caveat the tool description must state, because getting it
 wrong corrupts amounts silently: `value` is exact and **already folds in sign and
@@ -282,7 +375,7 @@ redo.
 _Exit: every tool answers against the fixture corpus, ordering stable, paging
 honest._
 
-### 6. Retire the per-document read model
+### 9. Retire the per-document read model
 
 Once nothing calls it: `GET /extractions/...`, `records.py`'s DTOs,
 `shard_reader.py`'s mapping and `real_extractor.py`'s three-family read.
@@ -293,7 +386,7 @@ document's currency signal, when a tool needs one, belongs under a labelled
 
 _Exit: the route and its mapping are gone; the sidecar suite stays green._
 
-### 7. A second corpus
+### 10. A second corpus
 
 The fixture has **empty** `table_cells` and `money_columns`, two `money_spans` both
 narrative locus, one document and one run. So it cannot prove the table-cell or
@@ -319,14 +412,14 @@ one — is held in full sidecar-side whatever the cap. Correctness at run size i
 affected; the cost is. Pushing the filter and the window down into the Parquet read
 is the fix, and it is a sidecar change, not a tool change.
 
-**A derived count puts breadth and body in one read.** `chunk_count` and
-`page_count` are absent from `list_documents` for this reason: `chunks` and
-`elements` both carry `text`, so counting rows or taking a max over `elements.page`
-pulls every document's body through the seam to produce one number. `read_shard(limit=0)`
-already returns `available` with no rows, so a per-document chunk count is one cheap
-call — but that is one round trip per document, and `page_count` has no equivalent,
-because a max needs the rows. Aggregating in the sidecar is the right answer and is
-a Python change, so it does not belong inside a tool step.
+**A derived count put breadth and body in one read — §4 step 1 is the fix.**
+`chunk_count` and `page_count` are absent from `list_documents` because `chunks`
+and `elements` both carry `text`, so counting rows or taking a max over
+`elements.page` pulled every document's body through the seam to produce one
+number. Aggregating in the sidecar is the answer, and it is cheaper than the note
+above assumed: Parquet keeps row counts in the footer and supports column
+projection, so a count needs no row decode and a page range reads one int column.
+That is step 1, and it is where these counts land.
 
 **Nothing checks the Womblex version.** The contract records v0.4.0. A corpus
 written by an older engine fails at the first missing column rather than at a
@@ -339,10 +432,19 @@ caller identity at all.
 **What is a `corpusId`, to a client?** Redline takes it on trust and has no way to
 validate it beyond "shards exist under that prefix".
 
-**Where does the row cap live?** The sidecar takes `limit`; the MCP tools default
-to `DEFAULT_TOOL_LIMIT` (500) and pass `limit`/`offset` through. Whether a client
-may raise a retrieval cap, and how high, is unsettled — and it is the one setting
-that decides whether a careless call can exhaust a context window.
+**The row cap lives in the tool layer, as a pair.** Settled: 20 rows / 20,000
+characters by default, 200 / 80,000 as the ceiling `limit` may be raised to,
+enforced server-side, with `truncatedBy` naming which bound. The sidecar keeps its
+own `DEFAULT_LIMIT` of 500 as a transport guard below the boundary. The tools'
+current `DEFAULT_TOOL_LIMIT` of 500 is inherited from that transport default
+rather than chosen — measured against the real elements capture (mean 711 bytes a
+row) it is ~90k tokens in one call, and on a document with real paragraphs several
+times that. It is replaced tool by tool in steps 4 and 8; until then two reads
+still carry it.
+
+**How large a corpus has this been proven against?** One run, one document. Every
+cost claim above is measured, but measured small — the byte-per-row figures come
+from a 24-element FOI notice. Step 10 is what turns them into evidence.
 
 ---
 
